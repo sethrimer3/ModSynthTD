@@ -1,0 +1,13 @@
+I just uploaded music and sound effects. For music, play the three "stubMusic" files, one at a time, in random order, with a large crossfade (8 seconds), indefinitely (a random order is picked upon the game starting up, then it continues looping through that order forever).
+
+There is a "lowRumble" ambiance, this is to be looped in the background, very quiet (-10 db), whenever the player is focused on the main render/simulation tab with the equation forge (smooth fade in and out as the player leaves/comes back to that tab).
+
+In Achievements, there are three sound effects: one for when the player earns a new achievement, one for when the player earns a secret achievement, and one for the player clicking on earned achievements to claim their reward.
+
+In menu navigation, the four sound effects have self-explanatory names. Error should be played whenever the player presses on anything they cannot afford, things that aren't unlocked yet, etc...
+
+When a mote is merged, a random sound effect from the motesMerging folder should be played, with a maximum of 2 playing simultaneously.
+
+When the player changes any setting (including sliding the sound effects volume bar to a different setting, but NOT when the player moves the music volume bar to a different setting), a random sound effect should be played from the settingsChange folder.
+
+There is a folder of sound effects for the equation forge charging up (spinning faster and faster in anticipation of a crunch) and a folder with crunch sound effects. A random one should be played from these folders in both cases. The charging sound effect should fade in, then, upon the crunch being played very quickly, fade to 0%. 
