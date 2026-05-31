@@ -1,717 +1,314 @@
-# AI Agent Guidelines for Equatoria Idle
+# AI Agent Guidelines for shipGame Repository
 
-## ⚡ Build Number Requirement
+This repository is being adapted from a space-ship prototype into the game described in `DESIGN.md`, working title **Neon Mote Defense**. The current codebase, README, architecture notes, and test checklist may still contain legacy ship-game assumptions. When legacy behavior conflicts with the new design direction, treat `DESIGN.md` as the product source of truth and update supporting docs as the implementation changes.
 
-**Every time you make a code change or prepare a pull request, increment the build number in `src/buildInfo.ts` by 1.**
-
-The `BUILD_NUMBER` constant in that file is the single source of truth. The Settings tab displays it as "Build #N". Do not skip this step unless the change is documentation-only and the user explicitly says not to bump the build number.
-
-```ts
-// src/buildInfo.ts
-export const BUILD_NUMBER = N;  // ← increment this by 1
-```
+The goals for AI agents are **clarity**, **performance**, **stable gameplay behavior**, and **faithfulness to the design pillars**.
 
 ---
 
-## Required TypeScript / Build Discipline
+## 1. Product Direction
 
-Before completing any PR, run the repository's validation commands, including:
+Before making gameplay or UX changes, read `DESIGN.md`.
 
-- `npm install` if dependencies are missing
-- `npm run typecheck` if available
-- `npm run build`
+The target game is a micro-scale idle tower defense and factory strategy game:
 
-A PR is not complete unless the TypeScript check and production build pass.
+- Compact grid-built bases.
+- Pixel/mote-scale particles inside or around grid structures.
+- Neon retro visuals with low-resolution clarity.
+- Radar-based visibility and expansion.
+- Enemies that eventually attack from multiple directions.
+- First-world debris protection that later breaks for a meaningful surprise.
+- Persistent meta progression across base destruction.
+- Simple initial interactions that reward complex optimization.
 
-If TypeScript errors appear:
-
-1. Fix all TypeScript errors caused by the current change.
-2. Fix pre-existing TypeScript errors when they are small, obviously safe, or directly blocking the build/deploy.
-3. Do not ignore TypeScript errors just because they came from an earlier PR.
-4. Do not perform large unrelated rewrites just to clear old errors unless they are necessary for the requested task.
-5. If old TypeScript errors remain and are too risky or broad to fix within the PR, document them clearly in `nextSteps.md` with:
-   - the exact command that failed
-   - the exact error message
-   - the file and line number
-   - the likely cause
-   - a recommended fix
-
-Never claim the task is complete if the build is failing.
-
-## GitHub Pages Deployment Rule
-
-Because this project deploys to GitHub Pages, the final implementation must preserve a passing production build. Any change that prevents `npm run build` from completing successfully should be treated as incomplete.
-
-If the requested feature works locally but the production build fails, prioritize fixing the build before adding more features.
+Do not drift the game toward a generic shooter, generic tower defense, or generic idle game unless the user explicitly asks. Preserve the core identity: **the player builds clean grid systems that tame chaotic glowing particles**.
 
 ---
 
-This document defines the required standards for AI coding agents working on the Equatoria Idle repository.
+## 2. Prototype Priorities
 
-The project is a mobile-first idle game written in **HTML + CSS + TypeScript**. It uses a **low native internal resolution** that is then upscaled for display, creating a slightly pixelated look while preserving crisp UI and readable math notation. The game must work well on both **mobile and desktop**, in both **portrait and landscape**, with responsive layouts and clean scaling behavior.
+Prioritize the MVP described in `DESIGN.md`:
 
-The core gameplay has two major simulation pillars:
+1. One base slot.
+2. Top-down grid board.
+3. Core in the center.
+4. Debris/rock barrier with one initial enemy entrance.
+5. Grid placement for walls, turrets, radar, and resource structures.
+6. Visible mote/resource movement.
+7. Enemy waves that later breach a second direction.
+8. Base destruction, restart, and simple persistent currency.
 
-1. **Equation progression**
-   - The player upgrades visible parts of a mathematical equation on screen
-   - Tapping the equation and automated systems generate resources
-   - Equation segments are color-tiered and become progressively more complex
-
-2. **Gem particle simulation**
-   - Taps emit gem-like particles
-   - Particles move visually through the scene, bounce, trail, and get drawn into a forge
-   - The forge refines them into actual resources called **Motes**
-
-These guidelines exist to protect:
-- correctness
-- performance
-- readability
-- maintainability
-- visual consistency
-- clean separation of responsibilities
+Avoid implementing late-game systems before the local base loop feels good. The side-view crust system, full nine-slot meta-grid, and advanced planet specialization should remain secondary until the MVP is playable.
 
 ---
 
-## 1. Core Architectural Rule: Hard Separation of Systems
+## 3. Simple to Learn, Hard to Master
 
-The repository must maintain a strong separation between the following layers:
+Every feature should preserve beginner readability. Complexity should come from interacting systems, not opaque UI.
 
-- **sim/**: game rules, resource generation, progression logic, timers, unlocks
-- **render/**: canvas rendering, visual particles, trails, equation display, screen effects
-- **ui/**: DOM-based menus, buttons, tabs, overlays, settings panels
-- **input/**: tap, click, drag, keyboard, gesture translation into actions
-- **audio/**: sound and music playback only
-- **data/**: upgrade definitions, color tiers, formulas, balancing constants
-- **math-render/** or equivalent: formula formatting, expression layout, notation helpers
-- **app/** or root orchestration layer: bootstrapping, screen lifecycle, wiring systems together
+Good complexity sources:
 
-### Non-negotiable rules
-- `sim/` must not depend on DOM APIs
-- `sim/` must not depend on rendering code
-- `sim/` must not depend on CSS, layout state, or audio
-- `render/` must not mutate authoritative simulation state
-- `ui/` must not contain core progression logic
-- `input/` must translate player intent into actions, not directly rewrite arbitrary game state
+- Limited tile space.
+- Resource routing and non-free crossings.
+- Building ports and rotation.
+- Enemy pressure from expanding directions.
+- Radar tradeoffs: more resources, more danger.
+- Particle interactions such as water, ore motes, coolant, heat, dust, gas, or lava.
+- Planet/base-specific module loadouts.
 
-Keep game logic independent from presentation whenever reasonably possible.
+Bad complexity sources:
+
+- Hidden formulas with no feedback.
+- Dense menus before the player understands the core loop.
+- Too many resource types in the first minutes.
+- Simulation behavior the player cannot observe or reason about.
 
 ---
 
-## 2. Platform and Product Priorities
+## 4. Visual and Scale Guidelines
 
-Equatoria Idle is **mobile-first**, but must also feel good on desktop.
+The intended look is neon, readable, and retro.
 
-### Required priorities
-1. **Mobile usability first**
-2. **Responsive layout across aspect ratios**
-3. **Crisp low-resolution visual identity**
-4. **Readable mathematical expressions**
-5. **Smooth performance on modest hardware**
-6. **Clear agent-written code that future agents can safely extend**
+Preferred direction:
 
-### Practical implications
-- UI must scale cleanly on phones and tablets
-- Bottom tab navigation must always remain comfortable to tap
-- Important controls must never rely on hover
-- Desktop should support mouse input naturally without becoming a separate code path unless necessary
-- Portrait and landscape should both function without layout breakage
+- Low native resolution scaled up with nearest-neighbor.
+- Crisp square particles/motes.
+- Dark planetary backgrounds with bright neon resources.
+- Pixelated glow/bloom used carefully for contrast, not blur.
+- Optional build grid that is visible during placement.
+- Clear silhouettes for enemies, walls, turrets, radar, core, and resource nodes.
 
----
+Design scale target:
 
-## 3. Visual Scaling and Pixel Rendering Rules
+- Build structures belong on a tile grid.
+- Motes/particles live at a finer pixel/sub-tile scale.
+- A useful target from `DESIGN.md` is 1 mote at 1 native pixel and 1 build tile around 12 by 12 native pixels, though existing code may use other values during transition.
 
-The game renders at a **lower internal resolution** and is then upscaled. The upscale factor may effectively appear like 2x, 3x, 4x, or similar depending on platform and viewport.
-
-### Rules
-- Treat the internal game resolution as a deliberate artistic coordinate space
-- Preserve crisp scaling whenever possible
-- Avoid blurry canvas presentation unless explicitly desired for a specific effect
-- Keep pixel-style visuals stable across resize events
-- Do not mix “pixel world rendering” and “high-DPI UI rendering” carelessly
-
-### Recommended approach
-- Render the main simulation to a low-resolution canvas or internal surface
-- Upscale the simulation output for display
-- Keep DOM UI readable and responsive at device resolution
-- If separate rendering layers are used, clearly distinguish:
-  - low-resolution simulation visuals
-  - high-resolution UI overlays
-
-### Do not
-- hardcode layout around one phone size
-- assume landscape only
-- let equation text become blurry due to careless CSS scaling
-- stretch the canvas independently in X and Y unless that is a deliberate, documented choice
+Do not let visual polish reduce gameplay readability.
 
 ---
 
-## 4. Math Rendering Is a First-Class System
+## 5. Determinism and Consistency
 
-The equation is the centerpiece of the game. It must be visually clean, understandable, and extensible.
+Gameplay should feel stable and explainable even if it is not a deterministic multiplayer simulation.
 
-### Requirements
-- Equation rendering must be treated as a dedicated concern, not an afterthought
-- Expressions must remain legible on small screens
-- Color-coded segments must be consistent and semantically meaningful
-- Layout must handle increasingly complex expressions without collapsing into unreadable clutter
-
-### Agent rules
-- Prefer structured expression models over ad hoc string concatenation for complex formulas
-- Separate:
-  - expression data
-  - formatting logic
-  - visual rendering logic
-- Build with future complexity in mind:
-  - addition
-  - multiplication
-  - exponents
-  - function notation
-  - nested expressions
-  - secret late-game tiers
-
-### Recommended model
-Represent equations as structured expression trees or typed segments rather than raw strings where possible.
-
-Example conceptual types:
-- `ConstantExpression`
-- `BinaryExpression`
-- `PowerExpression`
-- `FunctionExpression`
-- `TierSegment`
-- `EquationViewModel`
-
-This improves readability, extensibility, testing, and color-tier rendering.
+- Always scale time-based behavior by `dt`, `deltaTime`, or a clearly named seconds value.
+- Avoid frame-dependent gameplay.
+- Avoid hidden randomness without a clear seed or documented reason.
+- Procedural board generation, planet generation, enemy spawns, and resource placement should be seedable or at least reproducible enough for debugging.
+- If adding or changing procedural generation rules, document the seed/inputs or rationale in `DECISIONS.md`.
 
 ---
 
-## 5. Color Tier System Rules
+## 6. Tech Stack Scope
 
-The equation uses a rainbow-style progression with 7 visible tiers and secret 8th and 9th tiers.
-
-### Requirements
-- Tier identity must be consistent across:
-  - equation rendering
-  - resources
-  - upgrades
-  - particles
-  - Mote refinement
-  - UI indicators
-- Tier order must be treated as canonical
-- Avoid magic strings repeated throughout the codebase
-
-### Define a single source of truth
-Use one canonical data definition for tiers, such as:
-- id
-- displayName
-- color
-- unlockOrder
-- visibility
-- associated resource type
-- associated equation role
-
-### Do not
-- scatter tier colors across unrelated files
-- encode tier logic only in UI text
-- hardcode special cases in several places without documenting them
+- Core code is **TypeScript**.
+- Keep strict typing. Avoid implicit `any`.
+- JavaScript should only be used for tooling or external integration.
+- The current build is Webpack-based.
+- Use the existing scripts:
+  - `npm run build` for production build validation.
+  - `npm run dev` for watch-mode local development.
 
 ---
 
-## 6. Resource Model and Progression Rules
+## 7. Performance Expectations
 
-Current working terminology:
-- raw emitted gem particles are visual carriers
-- refined resources are called **Motes**
-- total score is based on the combined refined resources across colors
+This game is expected to render many enemies, particles, motes, projectiles, and grid structures. Aim for smooth 60 FPS where practical.
 
-### Design expectations
-Agents must preserve a clean distinction between:
-- visual particle entities
-- raw collectible or transit state
-- refined Mote totals
-- score computation
-- unlock and upgrade effects
+Hot-path rules:
 
-### Rules
-- Do not make visual particles themselves the sole source of truth for economic state unless explicitly designed that way
-- Keep authoritative resource totals in simulation state
-- Treat score calculations as deterministic and inspectable
-- Avoid hidden side effects in UI or rendering code
+- Avoid avoidable object allocation in per-frame loops.
+- Use `for` loops instead of `map`, `filter`, or `reduce` in hot paths.
+- Prefer in-place array compaction for frequently updated entity lists.
+- Reuse arrays, vectors, objects, canvases, and render buffers where practical.
+- Cache expensive lookups when the underlying state has not changed.
+- Keep particle counts bounded by tile, chunk, viewport, or simulation region.
+- Abstract or summarize far-away/offline particle behavior rather than replaying every mote.
 
-### Important
-Because the total score is the product of tiered refined resources, scaling can become extreme. Agents must implement number systems carefully and document their approach.
-
-Possible approaches:
-- big number library
-- custom scientific notation layer
-- logarithmic helper model for display and comparisons
-
-Whichever approach is used, document it in `DECISIONS.md`.
+Quality settings should degrade expensive visuals before compromising basic readability.
 
 ---
 
-## 7. Particle Simulation Rules
+## 8. Simulation Boundaries
 
-Gem particles are important visually and thematically, but must not compromise performance or code clarity.
+The design wants Powder Game-like life, not an uncontrolled full powder simulator unless the user explicitly redirects the project.
 
-### Particle expectations
-- emitted when equation is tapped or auto-triggered
-- move through the scene
-- leave trails
-- bounce off boundaries and relevant objects
-- can be drawn toward the forge
-- visually reinforce resource generation
+Preferred model:
 
-### Required separation
-If practical, distinguish between:
-- **authoritative gameplay state**
-- **visual particle representation**
+- Buildings and structures are placed on a readable tile grid.
+- Motes move within tile channels, conveyors, pipes, deposits, pools, or active terrain.
+- Resource flows should be visible and satisfying.
+- Simulation should remain bounded, debuggable, and performant.
 
-Not every screen particle needs to be authoritative simulation state. Agents should choose the lightest architecture that preserves intended gameplay behavior.
+When adding particle mechanics:
 
-### Performance rules
-- avoid per-frame garbage in hot loops
-- pool particle objects or use packed arrays where helpful
-- avoid frequent allocation of trail arrays in active paths
-- precompute repeated values where reasonable
-- use explicit lifecycle management for particles
-
-### Do not
-- create hundreds of new objects every frame in core loops
-- use expensive DOM operations for particle motion
-- tie particle counts directly to unbounded late-game resource values without caps, batching, or abstraction
+- Define what the particle represents.
+- Define where it can exist.
+- Define how it is produced, moved, consumed, stored, and destroyed.
+- Define how the player can understand or influence it.
+- Add caps, pooling, or chunking before the mechanic can scale out of control.
 
 ---
 
-## 8. UI and Responsive Layout Rules
+## 9. Input and Game Loop Responsibilities
 
-The game has three bottom tabs:
-1. Equation simulation and equation upgrades
-2. Resources and special upgrades
-3. Settings, credits, visual options, sound options, Discord invitation
+- Input handling should capture user intent and emit actions. Avoid mutating game simulation state directly inside low-level input handlers.
+- The main game loop should orchestrate update order.
+- Keep simulation, rendering, UI, and input separable where feasible.
+- A placed structure should not hide surprise side effects in a renderer or UI class.
+- Save/offline simulation logic should not depend on rendering state.
 
-### Requirements
-- Bottom navigation must remain clear and tappable on phones
-- Layout must adapt gracefully to portrait and landscape
-- Menus and buttons must scale cleanly to screen size
-- Important gameplay information must remain accessible without awkward nesting
+When in doubt, data flows should be:
 
-### Agent rules
-- Use responsive layout systems, not brittle pixel-perfect DOM assumptions
-- Prefer CSS variables, layout tokens, and reusable component classes
-- Preserve large tap targets
-- Avoid hover-only interactions
-- Keep tab state management centralized and predictable
-
-### Do not
-- bury important gameplay actions inside too many modal layers
-- hardcode fixed widths for mobile panels
-- create separate disconnected UI systems for mobile and desktop unless necessary
+`input intent -> game command -> simulation update -> render/UI feedback`
 
 ---
 
-## 9. TypeScript Standards
+## 10. Naming Guidelines
 
-This repository is **TypeScript-first**.
+### General
 
-### Rules
-- Use strict typing
-- Avoid implicit `any`
-- Keep core models and APIs strongly typed
-- Prefer explicit interfaces and discriminated unions where they improve safety
-- Use small, well-named types instead of giant ambiguous objects
+- State: nouns (`position`, `velocity`, `health`, `tile`, `mote`).
+- Actions: verbs (`move`, `fire`, `spawn`, `route`, `reveal`).
+- Commands: imperative verbs (`placeWall`, `spawnBreaker`, `revealRadarRadius`).
 
-### Strongly recommended
-- typed upgrade definitions
-- typed resource identifiers
-- typed tier identifiers
-- typed screen/tab identifiers
-- typed action/event payloads
+### Booleans
 
-### Do not
-- use `any` as a shortcut in core gameplay code
-- pass large untyped blobs between systems
-- rely on fragile string comparisons when a union type would be safer
-
----
-
-## 10. Naming Conventions
-
-Naming must be consistent and precise.
-
-### General rules
-- State uses nouns: `score`, `moteTotals`, `equationState`, `forgeState`
-- Actions use verbs: `tapEquation`, `refineMotes`, `unlockTier`, `spawnParticle`
-- Boolean names start with:
-  - `is`
-  - `has`
-  - `can`
-  - `should`
-  - `needs`
+Booleans must start with `is`, `has`, `can`, `should`, or `needs`.
 
 Examples:
-- `isUnlocked`
-- `hasForgeAccess`
-- `canAffordUpgrade`
-- `shouldShowSecretTier`
-- `needsLayoutRefresh`
 
-### Counts, IDs, and indices
-- counts end with `Count`
-- indices end with `Index`
-- IDs end with `Id`
+- `isVisible`
+- `hasPower`
+- `canRoute`
+- `shouldReveal`
+- `needsRepair`
 
-Examples:
-- `particleCount`
-- `tierIndex`
-- `upgradeId`
+### Counts, Indices, and IDs
 
-### Units and spaces
-Any value with units should include a suffix where relevant.
+- Counts end with `Count`.
+- Indices end with `Index`.
+- IDs end with `Id`.
 
-Examples:
-- `elapsedMs`
-- `tickCount`
-- `positionPx`
-- `velocityPxPerSec`
-- `radiusPx`
+### Units of Measure
 
-For coordinate spaces, use explicit suffixes:
-- `Screen`
-- `Canvas`
-- `World`
-- `Ui`
+Include units in names where ambiguity is possible:
+
+- `Ms`, `Sec`
+- `Px`, `World`, `Tile`
+- `Rad`, `Deg`
+- `NativePx`, `ScreenPx`
+- `MoteCount`, `TileCount`
 
 Examples:
-- `pointerScreen`
-- `forgeCenterCanvas`
-- `particleWorld`
 
-### Mutable vs readonly models
-- mutable state objects end with `State`
-- derived or readonly versions end with `View`, `Snapshot`, or `Model`
-
-Examples:
-- `EquationState`
-- `ForgeState`
-- `EquationViewModel`
-- `ResourceSnapshot`
+- `radarRadiusTile`
+- `elapsedSec`
+- `buildTileSizeNativePx`
+- `enemySpawnAngleRad`
 
 ---
 
-## 11. Keep Files Small and Legible
+## 11. Gameplay Invariants
 
-Agents must keep files reasonably small and focused.
+Preserve these unless the user explicitly changes the design:
 
-### Guideline
-- Prefer files under roughly **1000 lines**
-- Much smaller is better when practical
-- Split earlier rather than later if a file is becoming hard to reason about
-
-### Preferred organization
-- one major concern per file
-- helper modules for formatting or math utilities
-- data definitions separated from rendering and simulation
-- no giant “everything” files
-
-### When splitting files
-- preserve behavior unless intentional changes are requested
-- keep naming stable where possible
-- update imports cleanly
-- document structure changes in `file_index.md`
+- The core is the heart of the base. Losing the core ends the local run.
+- Early play must be understandable quickly.
+- Grid placement should remain clean and readable.
+- Particles should support the gameplay, not obscure it.
+- Radar should create both opportunity and risk.
+- Debris/rocks can teach safety early and later become breakable.
+- Enemies should eventually challenge multiple sides of the base.
+- Persistent/meta resources can survive destruction, but local/base resources should not all be risk-free.
+- Upgrades should change decisions, not only inflate numbers.
 
 ---
 
-## 12. Required File Indexing
+## 12. Documentation Requirements
 
-To help future AI agents, maintain a `file_index.md` and keep it current.
+Maintain:
 
-### Purpose
-This file should briefly summarize:
-- what each important file does
-- key exported functions/classes
-- major sections inside long files
-- notable performance-sensitive areas
-- known extension points
+1. `DESIGN.md` - main product blueprint and design source of truth.
+2. `DECISIONS.md` - important implementation and design decisions.
+3. `ARCHITECTURE.md` - current system overview and data flow.
+4. `manual_test_checklist.md` - manual playtest checklist.
 
-### Suggested style
-For each important file:
-- path
-- purpose
-- major exports
-- line-range style section summary when useful
+When changing gameplay direction, update `DESIGN.md` or add a note if the implementation intentionally diverges from it.
 
-Example:
-- `src/sim/equation/equation-state.ts`
-  - stores authoritative equation progression state
-  - exports `createEquationState`, `applyEquationUpgrade`
-  - lines 20–80: state model
-  - lines 81–160: upgrade application
-  - lines 161–220: derived tap value calculation
+When changing systems, update `ARCHITECTURE.md`.
 
-Keep this concise and accurate.
+When creating a new important rule, tradeoff, scope choice, performance strategy, or procedural generation rule, update `DECISIONS.md`.
+
+When adding player-visible features, update `manual_test_checklist.md`.
+
+Legacy docs may still describe the old ship game. Update them incrementally as systems are replaced.
 
 ---
 
-## 13. Hot-Path Performance Rules
+## 13. Build Number and Validation
 
-Even though this is an idle game, performance still matters because:
-- particle counts may grow
-- mobile devices are a priority
-- UI and rendering must stay smooth
-- late-game activity can become visually dense
+The current code displays a build number at the bottom-left of the game screen.
 
-### Rules
-- avoid hidden allocations in per-frame code
-- avoid repeated array recreation in hot loops
-- avoid unnecessary closures in high-frequency paths
-- prefer simple loops over abstraction-heavy patterns in hot code
-- use pooling where particle counts justify it
-
-### Measure what matters
-When performance-sensitive changes are made, verify:
-- frame stability
-- particle update cost
-- layout thrashing avoidance
-- resize performance
-- idle background behavior on mobile
-
-### Do not
-- over-engineer micro-optimizations in cold code
-- ignore obvious garbage-heavy loops in rendering and particle systems
+- Preserve the visible build number unless the project is intentionally restructured.
+- Increment the build number by 1 with every PR request/change that alters code or behavior.
+- Documentation-only changes do not need a build-number increment unless the user requests it.
+- Run `npm run build` when code changes are made.
+- For docs-only changes, build validation is optional.
 
 ---
 
-## 14. Game Loop and Time Rules
+## 14. Workflow for AI Agents
 
-Agents must keep time handling clear and consistent.
+### Before changes
 
-### Rules
-- Prefer a single authoritative update loop
-- Distinguish clearly between:
-  - simulation step timing
-  - render timing
-  - UI animation timing
-- Use named time units consistently
-- Clamp or handle large time gaps safely after tab switching or device sleep
+1. Read `DESIGN.md`.
+2. Read the relevant source modules.
+3. Check `ARCHITECTURE.md`, `DECISIONS.md`, and `manual_test_checklist.md` for affected systems.
+4. Identify whether the task belongs to design docs, architecture docs, code, tests, or all of them.
+5. Note any legacy ship-game assumptions that may conflict with the new direction.
 
-### Important idle-game concern
-The game may eventually include offline or background progress. If that is implemented:
-- document the model clearly
-- keep the logic deterministic and inspectable
-- separate offline progression calculation from frame-by-frame visual simulation
+### While changing
 
-Do not quietly fake economic state in rendering code.
+1. Keep changes localized and readable.
+2. Follow naming guidelines.
+3. Avoid per-frame allocations in hot paths.
+4. Keep rendering and simulation separated where feasible.
+5. Prefer small, testable systems over large hidden global state.
+6. Preserve player readability and feedback.
 
----
+### After changes
 
-## 15. State Management Rules
-
-Keep game state explicit and predictable.
-
-### Requirements
-Separate at minimum:
-- progression state
-- equation state
-- resource state
-- particle visual state
-- UI state
-- settings state
-
-### Rules
-- avoid one giant mutable global object unless clearly structured and justified
-- keep ownership of each state area clear
-- write state transitions in obvious places
-- prefer named functions for important mutations
-
-Examples:
-- `applyTapToEquation`
-- `applyAutomationTick`
-- `refineParticlesIntoMotes`
-- `setActiveTab`
-- `setVisualScaleMode`
+1. Update docs if design, architecture, or testing expectations changed.
+2. Validate the build when code changed.
+3. Verify the build number rule.
+4. Add or update manual test items for player-visible behavior.
+5. State any uncertainty or incomplete validation in the final response.
 
 ---
 
-## 16. Settings and User Preferences
+## 15. AI Response Expectations
 
-The settings tab includes:
-- color theme
-- visual settings
-- sound settings
-- credits
-- Discord invitation
+When reporting work back to the user:
 
-### Rules
-- settings must be centralized
-- defaults must be explicit
-- persisted settings must be version-tolerant where possible
-- visual settings must not silently break readability or performance
-
-### Recommended examples
-- pixel scale preference
-- reduced particles mode
-- trail intensity
-- screen shake on/off
-- sound/music volume
-- color theme preset
-- accessibility-oriented contrast settings if added later
+- Be specific about what changed.
+- Mention files changed.
+- Mention whether the build was run.
+- Mention commit SHA if a commit was created.
+- Do not claim validation that was not performed.
+- If repo state is legacy or ambiguous, say so instead of guessing.
 
 ---
 
-## 17. Documentation Requirements
+## Summary
 
-Maintain these files and keep them current:
+Prioritize:
 
-### `ARCHITECTURE.md`
-Describe:
-- main runtime flow
-- system boundaries
-- state ownership
-- equation rendering pipeline
-- particle rendering pipeline
-- UI structure
-- resize/scaling strategy
-
-### `DECISIONS.md`
-Document important technical decisions such as:
-- internal render resolution strategy
-- math notation rendering approach
-- big-number strategy
-- particle authority model
-- save format strategy
-- offline progress model
-- canvas/UI layering approach
-
-### `manual_test_checklist.md`
-Include manual checks for:
-- tap responsiveness
-- equation rendering readability
-- portrait and landscape layout
-- tab switching
-- settings persistence
-- particle performance
-- forge behavior
-- upgrade purchasing
-- late-game scaling sanity
-- desktop mouse support
-- mobile touch support
-
-### `file_index.md`
-Keep file-level summaries for agent navigation.
-
----
-
-## 18. Save Data and Persistence Rules
-
-Idle games depend on trustworthy save behavior.
-
-### Requirements
-- save data must be versioned
-- migration logic must be explicit if structure changes
-- do not silently destroy old saves
-- keep saved state minimal but complete
-
-### Rules
-- separate transient visual state from persistent progression state
-- do not persist unnecessary particle visuals unless there is a strong reason
-- document save format changes in `DECISIONS.md` or a changelog entry
-
----
-
-## 19. Workflow for AI Agents
-
-### Before making changes
-1. Read the relevant files fully
-2. Read `ARCHITECTURE.md`, `DECISIONS.md`, and `file_index.md`
-3. Identify the system boundary you are changing
-4. Preserve existing patterns unless there is a clear reason to improve them
-
-### While making changes
-- keep code focused and typed
-- maintain system separation
-- avoid mixing simulation and presentation concerns
-- update nearby docs when structure changes
-- prefer clarity over cleverness
-
-### After making changes
-- verify the app still runs on both mobile-style and desktop-style layouts
-- verify no obvious regressions in equation readability
-- verify no avoidable performance regressions
-- update `file_index.md` if file responsibilities changed
-- update `ARCHITECTURE.md` or `DECISIONS.md` if the technical approach changed
-- increment build/version metadata if the repository uses it
-
----
-
-## 20. Common Pitfalls to Avoid
-
-Do not:
-- blur the equation through careless scaling
-- bury core logic inside DOM event handlers
-- represent complex expressions only as ad hoc strings
-- mix visual particle effects with authoritative economy state without documentation
-- hardcode tier colors in multiple places
-- build layout around one phone resolution
-- create giant monolithic files
-- use weak typing in core progression logic
-- create garbage-heavy particle loops
-- let mobile usability become an afterthought
-- add “temporary” hacks without documenting them
-
----
-
-## 21. Equation Upgrade System Guidance
-
-Because the equation is the heart of the game, its upgrade system must remain extensible.
-
-### Agents should build for progression such as:
-- additive terms
-- tap strength increases
-- automation timing reductions
-- multiplicative terms
-- exponent systems
-- functions
-- nested subexpressions
-- late-game special mechanics
-
-### Strong recommendation
-Design upgrades around data and effect application rather than giant conditional trees.
-
-Prefer patterns like:
-- upgrade definitions
-- effect descriptors
-- typed application functions
-- derived equation builders
-
-This makes balancing and expansion much easier.
-
----
-
-## 22. Suggested Repository Structure
-
-This is only a recommended structure, but agents should stay close to it unless there is a strong reason not to:
-
-```text
-src/
-  app/
-  sim/
-    equation/
-    resources/
-    progression/
-    forge/
-  render/
-    canvas/
-    particles/
-    equation/
-  ui/
-    tabs/
-    panels/
-    components/
-  input/
-  audio/
-  data/
-    tiers/
-    upgrades/
-    balance/
-  settings/
-  util/
+1. Faithfulness to `DESIGN.md`.
+2. Simple-to-learn player experience.
+3. Clear grid-based structures.
+4. Satisfying mote/powder visuals.
+5. Stable and explainable gameplay.
+6. Strong performance.
+7. Documentation that reflects the current direction.
