@@ -90,7 +90,7 @@ const gridHeightTile = 20;
 const nativeWidthPx = gridWidthTile * tileSizePx;
 const nativeHeightPx = gridHeightTile * tileSizePx;
 const coreTile = { x: Math.floor(gridWidthTile / 2), y: Math.floor(gridHeightTile / 2) };
-const depositTile = { x: 5, y: 10 };          // moved closer to base (was {3,2})
+const depositTile = { x: 5, y: 10 };          // Moved closer to base (was {3,2})
 const coalDepositTile = { x: 15, y: 10 };      // coal deposit on the right side of base
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
@@ -126,6 +126,15 @@ const GUNPOWDER_MOTE_SPEED = 0.35;
 
 // Visual effect constants
 const MUZZLE_FLASH_DURATION_SEC = 0.07;
+const GATLING_BARREL_OFFSET_PX = 6;
+const SHELL_EJECT_ANGLE_VARIANCE_RAD = 0.6;
+const SHELL_EJECT_BASE_SPEED_PX = 22;
+const SHELL_EJECT_SPEED_VARIANCE_PX = 22;
+const SHELL_CASING_MIN_LIFETIME_SEC = 0.28;
+const SHELL_CASING_LIFETIME_VARIANCE_SEC = 0.2;
+const SHELL_CASING_BOUNCE_RESTITUTION = -0.55;
+const SHELL_CASING_GRAVITY_PX_PER_SEC2 = 18;
+const SHELL_CASING_FRICTION = 0.96;
 
 const STRUCTURE_MAX_HP: Partial<Record<Structure, number>> = { wall: 50, turret: 30, radar: 25, crusher: 35, gatling: 25 };
 const STRUCTURE_ORE_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 12, radar: 25, crusher: 18, gatling: 18 };
@@ -1645,18 +1654,18 @@ function updateGatlingTurrets(dtSec: number): void {
       });
 
       // Muzzle flash at barrel tip
-      muzzleFlashes.push({ xPx: fromX + Math.cos(angle) * 6, yPx: fromY + Math.sin(angle) * 6, ageSec: 0 });
+      muzzleFlashes.push({ xPx: fromX + Math.cos(angle) * GATLING_BARREL_OFFSET_PX, yPx: fromY + Math.sin(angle) * GATLING_BARREL_OFFSET_PX, ageSec: 0 });
 
       // Shell casing ejected at ~90° from firing direction with randomness
-      const ejectAngle = angle + Math.PI / 2 + (Math.random() - 0.5) * 0.6;
-      const ejectSpeed = 22 + Math.random() * 22;
+      const ejectAngle = angle + Math.PI / 2 + (Math.random() - 0.5) * SHELL_EJECT_ANGLE_VARIANCE_RAD;
+      const ejectSpeed = SHELL_EJECT_BASE_SPEED_PX + Math.random() * SHELL_EJECT_SPEED_VARIANCE_PX;
       shellCasings.push({
         xPx: fromX,
         yPx: fromY,
         vxPx: Math.cos(ejectAngle) * ejectSpeed,
         vyPx: Math.sin(ejectAngle) * ejectSpeed,
         ageSec: 0,
-        maxAgeSec: 0.28 + Math.random() * 0.2,
+        maxAgeSec: SHELL_CASING_MIN_LIFETIME_SEC + Math.random() * SHELL_CASING_LIFETIME_VARIANCE_SEC,
       });
     }
   }
@@ -1684,10 +1693,10 @@ function updateGatlingTurrets(dtSec: number): void {
     if (c.ageSec >= c.maxAgeSec) { shellCasings.splice(i, 1); continue; }
     const newX = c.xPx + c.vxPx * dtSec;
     const newY = c.yPx + c.vyPx * dtSec;
-    if (isSolidPixel(newX, c.yPx)) { c.vxPx *= -0.55; } else { c.xPx = newX; }
-    if (isSolidPixel(c.xPx, newY)) { c.vyPx *= -0.55; } else { c.yPx = newY; }
-    c.vyPx += 18 * dtSec;
-    c.vxPx *= 0.96;
+    if (isSolidPixel(newX, c.yPx)) { c.vxPx *= SHELL_CASING_BOUNCE_RESTITUTION; } else { c.xPx = newX; }
+    if (isSolidPixel(c.xPx, newY)) { c.vyPx *= SHELL_CASING_BOUNCE_RESTITUTION; } else { c.yPx = newY; }
+    c.vyPx += SHELL_CASING_GRAVITY_PX_PER_SEC2 * dtSec;
+    c.vxPx *= SHELL_CASING_FRICTION;
   }
 }
 
@@ -1917,7 +1926,7 @@ function drawGatlingTile(xPx: number, yPx: number, idx: number): void {
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(cx, cy);
-  ctx.lineTo(cx + Math.cos(angle) * 5, cy + Math.sin(angle) * 5);
+  ctx.lineTo(cx + Math.cos(angle) * GATLING_BARREL_OFFSET_PX, cy + Math.sin(angle) * GATLING_BARREL_OFFSET_PX);
   ctx.stroke();
   ctx.restore();
 }
