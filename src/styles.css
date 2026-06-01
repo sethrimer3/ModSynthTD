@@ -52,13 +52,31 @@ body {
   -webkit-user-select: none;
 }
 
+.gameView {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.gameField {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+}
+
 .hud {
+  position: absolute;
+  top: 0.35rem;
+  left: 0.45rem;
+  right: 0.45rem;
+  z-index: 2;
   display: flex;
   justify-content: space-between;
   gap: 0.5rem;
   font-size: 0.78rem;
   line-height: 1.5;
-  padding: 0 0.15rem;
+  padding: 0;
+  pointer-events: none;
+  text-shadow: 0 1px 0 #03050a, 0 0 6px rgba(0, 0, 0, 0.8);
 }
 
 .hudLeft,
@@ -85,9 +103,28 @@ body {
   letter-spacing: 0.01em;
 }
 
+.metaButton {
+  border: 1px solid rgba(120, 190, 255, 0.35);
+  border-radius: 6px;
+  background: rgba(8, 15, 28, 0.78);
+  color: var(--color-meta);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.2;
+  padding: 0.08rem 0.35rem 0.13rem;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 0 8px rgba(120, 190, 255, 0.12);
+}
+
+.metaButton:active {
+  background: rgba(20, 35, 58, 0.9);
+}
+
 .gameCanvas {
   width: 100%;
-  height: auto;
+  height: 100%;
+  display: block;
   image-rendering: pixelated;
   border: 2px solid #2a3d65;
   border-radius: 10px;
@@ -148,7 +185,50 @@ body {
 /* ── Upgrade panel ────────────────────────────────────────────────────────── */
 
 .upgradesPanel {
-  padding: 0.25rem 0 0.5rem;
+  min-height: min(480px, calc(100vw - 1.5rem));
+  border: 2px solid #2a3d65;
+  border-radius: 10px;
+  background: #050914;
+  box-shadow: 0 0 24px rgb(64 145 255 / 20%);
+  padding: 0.75rem;
+}
+
+.metaMenuHeader {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.4rem 0.75rem;
+  align-items: center;
+  margin-bottom: 0.8rem;
+}
+
+.metaMenuTitle {
+  color: #dff6ff;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.metaMenuCurrency {
+  color: var(--color-meta);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.closeMetaButton {
+  grid-column: 1 / -1;
+  border: 1px solid #355286;
+  border-radius: 8px;
+  color: #dff6ff;
+  background: #141f35;
+  min-height: 2.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.closeMetaButton:active {
+  background: #1f3050;
 }
 
 .upgradesPanelLabel {

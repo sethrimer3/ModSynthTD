@@ -4,6 +4,16 @@ This document records important implementation choices, tradeoffs, and design de
 
 ---
 
+## D-000: Square Field and Separate Meta Menu
+
+**Decision**: The local board is a 20 x 20 tile square. The HUD is overlaid inside the square playing field, and the meta currency is shown as a button that opens a separate meta upgrades menu.
+
+**Reason**: The square field matches the compact base identity and keeps resource, wave, radar, and timer information spatially tied to the play area. Moving upgrades behind the meta button prevents permanent upgrade controls from competing with the local build loop.
+
+**Tradeoff**: The meta menu temporarily hides the playing field. This is intentional because permanent upgrade decisions are meta-scale actions rather than direct local placement actions.
+
+---
+
 ## D-001: Single-Module Prototype Architecture
 
 **Decision**: All game logic, rendering, and UI is in one `game.ts` file.
@@ -18,7 +28,7 @@ This document records important implementation choices, tradeoffs, and design de
 
 **Decision**: Enemies navigate using a BFS distance field computed from the core outward, recomputed whenever a structure is placed or destroyed.
 
-**Reason**: Simple, correct, and handles dynamic obstacles (walls) naturally. The field is small (20 × 12 tiles) so full recomputation is cheap.
+**Reason**: Simple, correct, and handles dynamic obstacles (walls) naturally. The field is small (20 x 20 tiles) so full recomputation is cheap.
 
 **Tradeoff**: Recomputation happens synchronously on every structural change. If the grid grows significantly, this may need incremental updates or caching.
 

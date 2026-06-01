@@ -6,8 +6,8 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 
 ## 1. First Load / Cold Start
 
-- [ ] Game canvas renders at correct aspect ratio
-- [ ] HUD shows `HP 100/100`, `Ore 0`, `Wave 0`, `Radar 1`, `Meta <n>`, `Next 8.0s`
+- [ ] Game canvas renders as a square playing field
+- [ ] HUD appears inside the playing field at the top edge and shows `HP 100/100`, `Ore 0`, `Wave 0`, `Radar 1`, a `Meta <n>` button, and `Next 8.0s`
 - [ ] Deposit tile is visible (upper-left area)
 - [ ] Core tile is visible (center)
 - [ ] Debris ring surrounds core with one opening at the left entrance
@@ -133,7 +133,9 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 
 ## 13. Meta Upgrades
 
-- [ ] Upgrade panel is visible below the toolbar
+- [ ] Upgrade panel is hidden during normal play
+- [ ] Clicking the in-field `Meta <n>` button hides the playing field and opens the meta upgrades menu
+- [ ] Clicking `Back to Base` returns to the playing field
 - [ ] Three upgrade buttons: Core Armor, Turret Power, Ore Start
 - [ ] Buttons show current level (0/3), cost in meta, and stat description
 - [ ] Buttons show "MAX" when at level 3
@@ -158,8 +160,9 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 ## 15. Responsive Layout
 
 - [ ] Canvas fills width on narrow mobile screens
+- [ ] Canvas remains square on narrow mobile screens
 - [ ] Toolbar buttons are comfortably tappable on mobile
-- [ ] Upgrade panel buttons are comfortably tappable on mobile
+- [ ] Meta menu and upgrade buttons are comfortably tappable on mobile
 - [ ] No horizontal overflow
 
 ---

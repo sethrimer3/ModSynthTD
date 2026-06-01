@@ -48,21 +48,21 @@ interface MetaUpgradeConfig {
 // ── Constants ──────────────────────────────────────────────────────────────
 const tileSizePx = 12;
 const gridWidthTile = 20;
-const gridHeightTile = 12;
+const gridHeightTile = 20;
 const nativeWidthPx = gridWidthTile * tileSizePx;
 const nativeHeightPx = gridHeightTile * tileSizePx;
 const coreTile = { x: Math.floor(gridWidthTile / 2), y: Math.floor(gridHeightTile / 2) };
 const depositTile = { x: 3, y: 2 };
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 10;
+const currentBuildNumber = 11;
 const turretRangeTile = 4.5;
 const shotFlashDurationSec = 0.12;
 const breakerArrivalDistanceTile = 0.2;
 const coreHpHealthyThreshold = 60;
 const coreHpDamagedThreshold = 30;
 const secondEntranceTile = { x: coreTile.x, y: 0 };
-const deposit2Tile = { x: 15, y: 9 };
+const deposit2Tile = { x: 16, y: 17 };
 const META_SYMBOL = '◆';
 const DEPOSIT2_MIN_REVEAL_RADIUS_TILE = 6;
 const TURRET_BASE_DAMAGE = 10;
@@ -133,6 +133,12 @@ if (!appElement) {
 const rootElement = document.createElement('div');
 rootElement.className = 'gameRoot';
 
+const gameViewElement = document.createElement('div');
+gameViewElement.className = 'gameView';
+
+const gameFieldElement = document.createElement('div');
+gameFieldElement.className = 'gameField';
+
 const hudElement = document.createElement('div');
 hudElement.className = 'hud';
 
@@ -161,9 +167,10 @@ hudLeftElement.append(hudRow1, hudRow2);
 
 const hudRow3 = document.createElement('div');
 hudRow3.className = 'hudRow';
-const metaSpan = document.createElement('span');
-metaSpan.className = 'statChip';
-hudRow3.append(metaSpan);
+const metaButtonElement = document.createElement('button');
+metaButtonElement.type = 'button';
+metaButtonElement.className = 'metaButton statChip';
+hudRow3.append(metaButtonElement);
 
 const hudRow4 = document.createElement('div');
 hudRow4.className = 'hudRow';
@@ -186,6 +193,23 @@ toolbarElement.className = 'toolbar';
 // Upgrade panel DOM
 const upgradePanelElement = document.createElement('div');
 upgradePanelElement.className = 'upgradesPanel';
+
+const metaMenuHeaderElement = document.createElement('div');
+metaMenuHeaderElement.className = 'metaMenuHeader';
+
+const metaMenuTitleElement = document.createElement('div');
+metaMenuTitleElement.className = 'metaMenuTitle';
+metaMenuTitleElement.textContent = 'Meta Upgrades';
+
+const metaMenuCurrencyElement = document.createElement('div');
+metaMenuCurrencyElement.className = 'metaMenuCurrency';
+
+const closeMetaButtonElement = document.createElement('button');
+closeMetaButtonElement.type = 'button';
+closeMetaButtonElement.className = 'closeMetaButton';
+closeMetaButtonElement.textContent = 'Back to Base';
+
+metaMenuHeaderElement.append(metaMenuTitleElement, metaMenuCurrencyElement, closeMetaButtonElement);
 
 const upgradesPanelLabelElement = document.createElement('div');
 upgradesPanelLabelElement.className = 'upgradesPanelLabel';
@@ -220,7 +244,7 @@ for (const key of META_UPGRADE_KEYS) {
   upgradeButtonParts.set(key, { button: btn, labelSpan, levelSpan, descSpan });
 }
 
-upgradePanelElement.append(upgradesPanelLabelElement, upgradeButtonsContainerElement);
+upgradePanelElement.append(metaMenuHeaderElement, upgradesPanelLabelElement, upgradeButtonsContainerElement);
 
 // Status bar DOM (context-sensitive cost hint, shown below toolbar)
 const statusBarElement = document.createElement('div');
@@ -252,7 +276,9 @@ for (let slotIndex = 0; slotIndex < 9; slotIndex += 1) {
 
 slotsPanelElement.append(slotsPanelLabelElement, slotsGridElement);
 
-rootElement.append(hudElement, canvasElement, toolbarElement, statusBarElement, upgradePanelElement, slotsPanelElement);
+gameFieldElement.append(canvasElement, hudElement);
+gameViewElement.append(gameFieldElement, toolbarElement, statusBarElement);
+rootElement.append(gameViewElement, upgradePanelElement, slotsPanelElement);
 appElement.append(rootElement);
 
 // ── Canvas context ─────────────────────────────────────────────────────────
@@ -304,6 +330,7 @@ let overlayTimerSec = 0;
 let hoveredXTile = -1;
 let hoveredYTile = -1;
 let isPointerHeld = false;
+let isMetaMenuOpen = false;
 
 // ── Tool setup ─────────────────────────────────────────────────────────────
 interface ToolConfig {
@@ -345,8 +372,37 @@ for (const tool of toolOrder) {
 }
 updateToolbarState();
 
+function setMetaMenuOpen(shouldOpen: boolean): void {
+  isMetaMenuOpen = shouldOpen;
+  gameViewElement.hidden = shouldOpen;
+  upgradePanelElement.hidden = !shouldOpen;
+  slotsPanelElement.hidden = shouldOpen;
+  if (shouldOpen) {
+    hoveredXTile = -1;
+    hoveredYTile = -1;
+    isPointerHeld = false;
+  }
+}
+
+metaButtonElement.addEventListener('click', () => {
+  setMetaMenuOpen(true);
+});
+
+closeMetaButtonElement.addEventListener('click', () => {
+  setMetaMenuOpen(false);
+});
+
+setMetaMenuOpen(false);
+
 // ── Keyboard shortcuts ─────────────────────────────────────────────────────
 window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && isMetaMenuOpen) {
+    setMetaMenuOpen(false);
+    return;
+  }
+  if (isMetaMenuOpen) {
+    return;
+  }
   const keyMap: Record<string, Tool> = {
     'w': 'wall',   '1': 'wall',
     't': 'turret', '2': 'turret',
@@ -640,6 +696,7 @@ function getCanvasTile(clientX: number, clientY: number): [number, number] {
 }
 
 canvasElement.addEventListener('pointerdown', (event) => {
+  if (isMetaMenuOpen) { return; }
   event.preventDefault();
   isPointerHeld = true;
   canvasElement.setPointerCapture(event.pointerId);
@@ -650,6 +707,7 @@ canvasElement.addEventListener('pointerdown', (event) => {
 });
 
 canvasElement.addEventListener('pointermove', (event) => {
+  if (isMetaMenuOpen) { return; }
   const [xTile, yTile] = getCanvasTile(event.clientX, event.clientY);
   hoveredXTile = xTile;
   hoveredYTile = yTile;
@@ -1684,8 +1742,9 @@ function render(): void {
   radarSpan.textContent = `Radar ${radarLevel}`;
   radarSpan.style.color = '#8d68ff';
 
-  metaSpan.textContent = `Meta ${metaCurrency}`;
-  metaSpan.style.color = '#c0e8ff';
+  metaButtonElement.textContent = `Meta ${metaCurrency}`;
+  metaButtonElement.style.color = '#c0e8ff';
+  metaMenuCurrencyElement.textContent = `${metaCurrency}${META_SYMBOL}`;
 
   nextWaveSpan.textContent = isRunOver ? 'restarting…' : `Next ${waveTimerSec.toFixed(1)}s`;
   nextWaveSpan.style.color = waveTimerSec < 2 && !isRunOver ? '#ff5522' : '#ffcc44';

@@ -54,7 +54,7 @@ All tuning values are `const` declarations at the top of `game.ts`. Structure co
 
 Key constants:
 - `tileSizePx` — native pixel size of one build tile (12)
-- `gridWidthTile` / `gridHeightTile` — board dimensions (20 × 12)
+- `gridWidthTile` / `gridHeightTile` — board dimensions (20 x 20)
 - `coreTile`, `depositTile`, `deposit2Tile` — fixed positions
 - `turretRangeTile` — turret attack range in tiles
 - `TURRET_FIRE_COOLDOWN_SEC` — turret fire cycle duration (0.35 s)
@@ -153,7 +153,9 @@ Upgrades are purchased via `buyUpgrade()` which costs meta currency, applies the
 
 ## 4. Rendering
 
-The canvas renders at native resolution (240 × 144 pixels for a 20 × 12 grid at 12 px/tile). The CSS `image-rendering: pixelated` scales it up to fill its container.
+The canvas renders at native resolution (240 x 240 pixels for a 20 x 20 grid at 12 px/tile). The CSS `image-rendering: pixelated` scales it up to fill its square field container.
+
+The HUD is DOM rendered over the top-left and top-right of the square playing field. The meta currency is a HUD button; activating it hides the playing field and opens the separate meta upgrade menu.
 
 Draw order per frame:
 1. Background clear
