@@ -2460,13 +2460,15 @@ function updateTutorialHints(): void {
   // Don't interrupt a visible overlay
   if (overlayTimerSec > 0.5) { return; }
 
-  if (!shownMiningHint && elapsedSec > 15 && totalStructuresBuilt === 0) {
+  // Mining hint: no extractors placed after 15s
+  if (!shownMiningHint && elapsedSec > 15 && extractorHasRoute.size === 0) {
     shownMiningHint = true;
     showOverlay('PLACE EXTRACTOR [X] NEXT TO DEPOSIT', '#99ffcc', 4.5);
     return;
   }
 
-  if (!shownRouteHint && elapsedSec > 10) {
+  // Routing hint: extractor placed but not connected to core (only after extractors exist)
+  if (!shownRouteHint && elapsedSec > 20 && extractorHasRoute.size > 0) {
     let hasUnrouted = false;
     for (const [, routed] of extractorHasRoute) {
       if (!routed) { hasUnrouted = true; break; }
@@ -3490,8 +3492,8 @@ function render(): void {
 
       ctx.font = '6px monospace';
       ctx.fillStyle = '#667799';
-      const remaining = Math.max(0, gameOverDelaySec);
-      ctx.fillText(`restarting in ${remaining.toFixed(1)}s…`, cx, lineY(26));
+      const remainingDelaySec = Math.max(0, gameOverDelaySec);
+      ctx.fillText(`restarting in ${remainingDelaySec.toFixed(1)}s…`, cx, lineY(26));
     } else {
       const fadeAlpha = Math.min(1, overlayTimerSec) * 0.9;
       ctx.fillStyle = `rgba(0,0,0,${fadeAlpha * 0.5})`;
