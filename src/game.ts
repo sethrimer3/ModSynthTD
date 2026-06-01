@@ -1357,8 +1357,6 @@ function updateEnemies(dtSec: number): void {
           if (enemy.wallAttackCooldownSec <= 0) {
             damageStructure(aIdx, SCUTTLER_ATTACK_DAMAGE);
             enemy.wallAttackCooldownSec = ENEMY_WALL_ATTACK_COOLDOWN_SEC;
-          } else if (enemy.wallAttackCooldownSec < 0) {
-            enemy.wallAttackCooldownSec = 0;
           }
           break;
         }
