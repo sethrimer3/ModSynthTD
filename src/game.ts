@@ -33,6 +33,11 @@ const depositTile = { x: 3, y: 2 };
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
 const currentBuildNumber = 2;
+const turretRangeTile = 4.5;
+const shotFlashDurationSec = 0.12;
+const breakerArrivalDistanceTile = 0.2;
+const coreHpHealthyThreshold = 60;
+const coreHpDamagedThreshold = 30;
 
 // ── DOM ────────────────────────────────────────────────────────────────────
 const appElement = document.getElementById('app');
@@ -435,7 +440,7 @@ function updateEnemies(dtSec: number): void {
       const dxTile = breakerTargetTile.x - enemy.xTile;
       const dyTile = breakerTargetTile.y - enemy.yTile;
       const breakerDistance = Math.hypot(dxTile, dyTile);
-      if (breakerDistance < 0.2) {
+      if (breakerDistance < breakerArrivalDistanceTile) {
         terrainIsDebris[tileIndex(breakerTargetTile.x, breakerTargetTile.y)] = false;
         distanceField = computeDistanceField();
         enemies.splice(enemyIndex, 1);
@@ -523,7 +528,7 @@ function updateTurrets(dtSec: number): void {
           const dxTile = enemy.xTile - xTile;
           const dyTile = enemy.yTile - yTile;
           const dist = Math.hypot(dxTile, dyTile);
-          if (dist < 4.5 && dist < bestDistance) {
+          if (dist < turretRangeTile && dist < bestDistance) {
             bestDistance = dist;
             targetEnemy = enemy;
           }
@@ -557,7 +562,7 @@ function updateTurrets(dtSec: number): void {
 
   for (let i = shotFlashes.length - 1; i >= 0; i -= 1) {
     shotFlashes[i].ageSec += dtSec;
-    if (shotFlashes[i].ageSec > 0.12) {
+    if (shotFlashes[i].ageSec > shotFlashDurationSec) {
       shotFlashes.splice(i, 1);
     }
   }
@@ -690,7 +695,7 @@ function drawRadarTile(xPx: number, yPx: number): void {
 }
 
 function drawCoreTile(xPx: number, yPx: number): void {
-  const coreColor = coreHp > 60 ? '#33ffbb' : coreHp > 30 ? '#ffee44' : '#ff5533';
+  const coreColor = coreHp > coreHpHealthyThreshold ? '#33ffbb' : coreHp > coreHpDamagedThreshold ? '#ffee44' : '#ff5533';
   fillPx(xPx, yPx, tileSizePx, tileSizePx, '#050f0a');
   ctx.fillStyle = coreColor;
   ctx.fillRect(xPx + 4, yPx + 4, 4, 4);
@@ -795,7 +800,7 @@ function render(): void {
 
   // Shot flashes
   for (const flash of shotFlashes) {
-    const alpha = Math.max(0, 1 - flash.ageSec / 0.12);
+    const alpha = Math.max(0, 1 - flash.ageSec / shotFlashDurationSec);
     ctx.strokeStyle = `rgba(39,224,255,${alpha})`;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -867,7 +872,7 @@ function render(): void {
   // HUD spans
   const hpRatio = Math.max(0, coreHp) / 100;
   hpSpan.textContent = `HP ${Math.max(0, Math.ceil(coreHp))}`;
-  hpSpan.style.color = hpRatio > 0.6 ? '#33ffbb' : hpRatio > 0.3 ? '#ffaa44' : '#ff4444';
+  hpSpan.style.color = hpRatio > coreHpHealthyThreshold / 100 ? '#33ffbb' : hpRatio > coreHpDamagedThreshold / 100 ? '#ffaa44' : '#ff4444';
 
   oreSpan.textContent = `Ore ${ore}`;
   oreSpan.style.color = '#f0a600';
