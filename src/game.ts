@@ -23,6 +23,15 @@ interface ShotFlash {
   ageSec: number;
 }
 
+type MetaUpgradeKey = 'coreArmor' | 'turretPower' | 'oreBonus';
+
+interface MetaUpgradeConfig {
+  label: string;
+  costPerLevel: number;
+  maxLevel: number;
+  stat: (level: number) => string;
+}
+
 // ── Constants ──────────────────────────────────────────────────────────────
 const tileSizePx = 12;
 const gridWidthTile = 20;
@@ -33,13 +42,21 @@ const coreTile = { x: Math.floor(gridWidthTile / 2), y: Math.floor(gridHeightTil
 const depositTile = { x: 3, y: 2 };
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 3;
+const currentBuildNumber = 4;
 const turretRangeTile = 4.5;
 const shotFlashDurationSec = 0.12;
 const breakerArrivalDistanceTile = 0.2;
 const coreHpHealthyThreshold = 60;
 const coreHpDamagedThreshold = 30;
 const secondEntranceTile = { x: coreTile.x, y: 0 };
+const deposit2Tile = { x: 15, y: 9 };
+const META_SYMBOL = '◆';
+const DEPOSIT2_MIN_REVEAL_RADIUS_TILE = 6;
+const TURRET_BASE_DAMAGE = 10;
+const TURRET_POWER_DAMAGE_PER_LEVEL = 3;
+const ORE_BONUS_PER_LEVEL = 30;
+const CORE_ARMOR_HP_PER_LEVEL = 20;
+const BASE_CORE_HP = 100;
 
 const STRUCTURE_MAX_HP: Partial<Record<Structure, number>> = { wall: 50, turret: 30, radar: 25 };
 const STRUCTURE_ORE_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 12, radar: 25 };
@@ -56,6 +73,36 @@ const HP_BAR_COLOR_CRITICAL = '#ff4422';
 const ORE_SYMBOL = '⊕';
 // Orthogonal neighbor offsets used in wall-damage and adjacency checks
 const ADJ_OFFSETS: readonly [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const META_UPGRADE_KEYS: MetaUpgradeKey[] = ['coreArmor', 'turretPower', 'oreBonus'];
+const META_UPGRADE_CONFIGS: Record<MetaUpgradeKey, MetaUpgradeConfig> = {
+  coreArmor:   { label: 'Core Armor',   costPerLevel: 5,  maxLevel: 3, stat: (l) => `+${l * CORE_ARMOR_HP_PER_LEVEL} max HP`    },
+  turretPower: { label: 'Turret Power', costPerLevel: 8,  maxLevel: 3, stat: (l) => `+${l * TURRET_POWER_DAMAGE_PER_LEVEL} dmg` },
+  oreBonus:    { label: 'Ore Start',    costPerLevel: 6,  maxLevel: 3, stat: (l) => `+${l * ORE_BONUS_PER_LEVEL} start ore`     },
+};
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v));
+}
+
+function loadUpgrades(): Record<MetaUpgradeKey, number> {
+  try {
+    const raw = localStorage.getItem('tiny-base-idle-upg');
+    if (!raw) return { coreArmor: 0, turretPower: 0, oreBonus: 0 };
+    const saved = JSON.parse(raw) as Partial<Record<MetaUpgradeKey, number>>;
+    return {
+      coreArmor:   clamp(saved.coreArmor   ?? 0, 0, META_UPGRADE_CONFIGS.coreArmor.maxLevel),
+      turretPower: clamp(saved.turretPower  ?? 0, 0, META_UPGRADE_CONFIGS.turretPower.maxLevel),
+      oreBonus:    clamp(saved.oreBonus     ?? 0, 0, META_UPGRADE_CONFIGS.oreBonus.maxLevel),
+    };
+  } catch {
+    return { coreArmor: 0, turretPower: 0, oreBonus: 0 };
+  }
+}
+
+function saveUpgrades(): void {
+  localStorage.setItem('tiny-base-idle-upg', JSON.stringify(upgradeLevel));
+}
 
 // ── DOM ────────────────────────────────────────────────────────────────────
 const appElement = document.getElementById('app');
@@ -116,7 +163,46 @@ canvasElement.setAttribute('aria-label', 'Tiny Base Idle game board');
 const toolbarElement = document.createElement('div');
 toolbarElement.className = 'toolbar';
 
-rootElement.append(hudElement, canvasElement, toolbarElement);
+// Upgrade panel DOM
+const upgradePanelElement = document.createElement('div');
+upgradePanelElement.className = 'upgradesPanel';
+
+const upgradesPanelLabelElement = document.createElement('div');
+upgradesPanelLabelElement.className = 'upgradesPanelLabel';
+upgradesPanelLabelElement.textContent = `META UPGRADES  ${META_SYMBOL}`;
+
+const upgradeButtonsContainerElement = document.createElement('div');
+upgradeButtonsContainerElement.className = 'upgradeButtonsContainer';
+
+interface UpgradeButtonParts {
+  button: HTMLButtonElement;
+  labelSpan: HTMLSpanElement;
+  levelSpan: HTMLSpanElement;
+  descSpan: HTMLSpanElement;
+}
+const upgradeButtonParts = new Map<MetaUpgradeKey, UpgradeButtonParts>();
+
+for (const key of META_UPGRADE_KEYS) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'upgradeButton';
+  btn.addEventListener('click', () => { buyUpgrade(key); });
+
+  const labelSpan = document.createElement('span');
+  labelSpan.className = 'upgLabel';
+  const levelSpan = document.createElement('span');
+  levelSpan.className = 'upgLevel';
+  const descSpan = document.createElement('span');
+  descSpan.className = 'upgDesc';
+  btn.append(labelSpan, levelSpan, descSpan);
+
+  upgradeButtonsContainerElement.append(btn);
+  upgradeButtonParts.set(key, { button: btn, labelSpan, levelSpan, descSpan });
+}
+
+upgradePanelElement.append(upgradesPanelLabelElement, upgradeButtonsContainerElement);
+
+rootElement.append(hudElement, canvasElement, toolbarElement, upgradePanelElement);
 appElement.append(rootElement);
 
 // ── Canvas context ─────────────────────────────────────────────────────────
@@ -147,9 +233,12 @@ let gameOverDelaySec = 0;
 let lastMetaEarned = 0;
 let breakerTriggered = false;
 
+let upgradeLevel = loadUpgrades();
 let enemies: Enemy[] = [];
 let motes: Mote[] = [];
+let motes2: Mote[] = [];
 let shotFlashes: ShotFlash[] = [];
+let mote2SpawnCooldownSec = 0.8;
 
 const structureHp = new Map<number, number>();
 const blueprintGhosts = new Map<number, Structure>();
@@ -216,6 +305,61 @@ window.addEventListener('keydown', (event) => {
     updateToolbarState();
   }
 });
+
+// ── Upgrade panel logic ───────────────────────────────────────────────────
+
+function updateUpgradePanelState(): void {
+  for (const key of META_UPGRADE_KEYS) {
+    const cfg = META_UPGRADE_CONFIGS[key];
+    const level = upgradeLevel[key];
+    const parts = upgradeButtonParts.get(key)!;
+    const isMaxed = level >= cfg.maxLevel;
+    const cost = cfg.costPerLevel;
+    const canAfford = !isMaxed && metaCurrency >= cost;
+
+    parts.button.disabled = isMaxed;
+    parts.button.classList.toggle('affordable', canAfford);
+    parts.button.classList.toggle('unaffordable', !canAfford && !isMaxed);
+    parts.button.classList.toggle('maxed', isMaxed);
+
+    parts.labelSpan.textContent = cfg.label;
+    parts.levelSpan.textContent = isMaxed
+      ? `Lv ${level}/${cfg.maxLevel} · MAX`
+      : `Lv ${level}/${cfg.maxLevel} · ${cost}${META_SYMBOL}`;
+    parts.descSpan.textContent = isMaxed
+      ? cfg.stat(level)
+      : level > 0
+        ? cfg.stat(level)
+        : cfg.stat(1) + '/lv';
+  }
+}
+
+function buyUpgrade(key: MetaUpgradeKey): void {
+  const cfg = META_UPGRADE_CONFIGS[key];
+  const level = upgradeLevel[key];
+  if (level >= cfg.maxLevel) { return; }
+  if (metaCurrency < cfg.costPerLevel) {
+    if (!isRunOver) { showOverlay(`NEED META ${META_SYMBOL}`, '#c0e8ff', 1.5); }
+    return;
+  }
+  metaCurrency -= cfg.costPerLevel;
+  upgradeLevel[key] += 1;
+  localStorage.setItem('tiny-base-idle-meta', String(metaCurrency));
+  saveUpgrades();
+
+  // Apply immediate effect on the current run
+  if (key === 'coreArmor') {
+    const newMax = BASE_CORE_HP + upgradeLevel.coreArmor * CORE_ARMOR_HP_PER_LEVEL;
+    coreHp = Math.min(coreHp + CORE_ARMOR_HP_PER_LEVEL, newMax);
+  } else if (key === 'oreBonus') {
+    ore += ORE_BONUS_PER_LEVEL;
+  }
+  // turretPower is applied dynamically in updateTurrets
+
+  updateUpgradePanelState();
+}
+
+updateUpgradePanelState();
 
 // ── Terrain ────────────────────────────────────────────────────────────────
 buildStarterTerrain();
@@ -491,8 +635,8 @@ function resetRun(): void {
   metaCurrency += Math.max(1, lastMetaEarned);
   localStorage.setItem('tiny-base-idle-meta', String(metaCurrency));
 
-  ore = 0;
-  coreHp = 100;
+  ore = upgradeLevel.oreBonus * ORE_BONUS_PER_LEVEL;
+  coreHp = BASE_CORE_HP + upgradeLevel.coreArmor * CORE_ARMOR_HP_PER_LEVEL;
   radarLevel = 1;
   revealRadiusTile = 5;
   elapsedSec = 0;
@@ -504,6 +648,8 @@ function resetRun(): void {
   gameOverDelaySec = 0;
   enemies = [];
   motes = [];
+  motes2 = [];
+  mote2SpawnCooldownSec = 0.8;
   shotFlashes = [];
   structureHp.clear();
   blueprintGhosts.clear();
@@ -514,6 +660,7 @@ function resetRun(): void {
   buildStarterTerrain();
   distanceField = computeDistanceField();
   showOverlay('', '', 0);
+  updateUpgradePanelState();
 }
 
 function updateEnemies(dtSec: number): void {
@@ -643,7 +790,7 @@ function updateTurrets(dtSec: number): void {
           continue;
         }
 
-        targetEnemy.hp -= 10;
+        targetEnemy.hp -= TURRET_BASE_DAMAGE + upgradeLevel.turretPower * TURRET_POWER_DAMAGE_PER_LEVEL;
         turretAngleRad.set(idx, Math.atan2(targetEnemy.yTile - yTile, targetEnemy.xTile - xTile));
 
         const half = tileSizePx / 2;
@@ -686,6 +833,24 @@ function updateMotes(dtSec: number): void {
       motes.splice(i, 1);
       ore += 1;
     }
+  }
+
+  // Second deposit – only active when radar has revealed it
+  if (revealRadiusTile >= DEPOSIT2_MIN_REVEAL_RADIUS_TILE) {
+    mote2SpawnCooldownSec -= dtSec;
+    if (mote2SpawnCooldownSec <= 0) {
+      mote2SpawnCooldownSec = 0.8;
+      motes2.push({ progress: 0 });
+    }
+    for (let i = motes2.length - 1; i >= 0; i -= 1) {
+      motes2[i].progress += dtSec * 0.35;
+      if (motes2[i].progress >= 1) {
+        motes2.splice(i, 1);
+        ore += 1;
+      }
+    }
+  } else if (motes2.length > 0) {
+    motes2 = [];
   }
 }
 
@@ -820,6 +985,18 @@ function drawDepositTile(xPx: number, yPx: number): void {
   fillPx(xPx + 4, yPx + 7, 1, 1, '#ffd677');
 }
 
+function drawDeposit2Tile(xPx: number, yPx: number): void {
+  fillPx(xPx, yPx, tileSizePx, tileSizePx, '#100a00');
+  fillPx(xPx + 2, yPx + 3, 3, 3, '#7a4010');
+  fillPx(xPx + 6, yPx + 2, 3, 3, '#7a4010');
+  fillPx(xPx + 4, yPx + 7, 3, 3, '#7a4010');
+  fillPx(xPx + 2, yPx + 3, 1, 1, '#ee8833');
+  fillPx(xPx + 6, yPx + 2, 1, 1, '#ee8833');
+  fillPx(xPx + 4, yPx + 7, 1, 1, '#ee8833');
+  // orange tint highlight
+  fillPx(xPx + 4, yPx + 4, 1, 1, '#ff9944');
+}
+
 function drawEnemyHpBar(xPx: number, yPx: number, hp: number, maxHp: number): void {
   const barW = tileSizePx - 2;
   const barXPx = xPx + 1;
@@ -944,6 +1121,58 @@ function render(): void {
     ctx.stroke();
   }
 
+  // Faint grid lines while hovering on canvas
+  if (hoveredXTile >= 0) {
+    ctx.strokeStyle = 'rgba(40,80,140,0.12)';
+    ctx.lineWidth = 0.5;
+    for (let gx = 0; gx <= gridWidthTile; gx += 1) {
+      ctx.beginPath();
+      ctx.moveTo(gx * tileSizePx, 0);
+      ctx.lineTo(gx * tileSizePx, nativeHeightPx);
+      ctx.stroke();
+    }
+    for (let gy = 0; gy <= gridHeightTile; gy += 1) {
+      ctx.beginPath();
+      ctx.moveTo(0, gy * tileSizePx);
+      ctx.lineTo(nativeWidthPx, gy * tileSizePx);
+      ctx.stroke();
+    }
+  }
+
+  // Turret range preview ring when turret tool is selected
+  if (selectedTool === 'turret' && hoveredXTile >= 0 && isInBounds(hoveredXTile, hoveredYTile) && isTileVisible(hoveredXTile, hoveredYTile)) {
+    const cx = hoveredXTile * tileSizePx + tileSizePx / 2;
+    const cy = hoveredYTile * tileSizePx + tileSizePx / 2;
+    ctx.strokeStyle = 'rgba(39,224,255,0.28)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, turretRangeTile * tileSizePx, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Second deposit (visible when radar has expanded enough)
+  if (revealRadiusTile >= DEPOSIT2_MIN_REVEAL_RADIUS_TILE && isTileVisible(deposit2Tile.x, deposit2Tile.y)) {
+    drawDeposit2Tile(deposit2Tile.x * tileSizePx, deposit2Tile.y * tileSizePx);
+    // Dotted route from deposit2 to core
+    const d2xTile = coreTile.x - deposit2Tile.x;
+    const d2yTile = coreTile.y - deposit2Tile.y;
+    ctx.fillStyle = '#2a1500';
+    for (let t = 0.08; t < 0.93; t += 0.1) {
+      const rxPx = Math.round((deposit2Tile.x + d2xTile * t) * tileSizePx + tileSizePx / 2);
+      const ryPx = Math.round((deposit2Tile.y + d2yTile * t) * tileSizePx + tileSizePx / 2);
+      ctx.fillRect(rxPx, ryPx, 1, 1);
+    }
+    // Motes from second deposit
+    ctx.fillStyle = '#ffaa33';
+    for (const mote of motes2) {
+      const xPx = Math.round((deposit2Tile.x + d2xTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+      const yPx = Math.round((deposit2Tile.y + d2yTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+      ctx.fillRect(xPx, yPx, 2, 2);
+    }
+  }
+
   // Ore motes (2×2 pixels)
   ctx.fillStyle = '#ffd677';
   for (const mote of motes) {
@@ -1011,7 +1240,7 @@ function render(): void {
       ctx.fillText('GAME OVER', cx, nativeHeightPx / 2 - 8);
       ctx.font = '7px monospace';
       ctx.fillStyle = '#aaccee';
-      ctx.fillText(`+${lastMetaEarned} meta earned  ·  restarting…`, cx, nativeHeightPx / 2 + 7);
+      ctx.fillText(`Wave ${waveIndex} · ${Math.floor(elapsedSec)}s · +${lastMetaEarned}${META_SYMBOL} meta  ·  restarting…`, cx, nativeHeightPx / 2 + 7);
     } else {
       const fadeAlpha = Math.min(1, overlayTimerSec) * 0.9;
       ctx.fillStyle = `rgba(0,0,0,${fadeAlpha * 0.5})`;
@@ -1054,6 +1283,8 @@ function render(): void {
 
   nextWaveSpan.textContent = isRunOver ? 'restarting…' : `Next ${waveTimerSec.toFixed(1)}s`;
   nextWaveSpan.style.color = waveTimerSec < 2 && !isRunOver ? '#ff5522' : '#ffcc44';
+
+  updateUpgradePanelState();
 }
 
 export function startGame(): void {
