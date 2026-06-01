@@ -32,14 +32,14 @@ AI agents should maintain this file as part of normal implementation work.
 - [x] Add at least one distinct weapon beyond the basic turret, such as Laser or Cannon.
 - [x] Add enemy approach warnings for newly revealed directions.
 - [x] Improve the Breaker breach event with stronger warning and visual telegraphing.
-- [ ] Add one non-worm enemy variant with a meaningfully different counterplay pattern.
+- [x] Add one non-worm enemy variant with a meaningfully different counterplay pattern.
 
 ## Repair, Rebuild, and Destruction
 
 - [ ] Expand the repair brush with better hover cost previews and clearer rebuild state.
 - [x] Add Rebuild All.
 - [x] Add Rebuild Affordable.
-- [ ] Add rebuild filters: walls, turrets, conveyors, and advanced logistics.
+- [x] Add rebuild filters: walls, turrets, conveyors, and advanced logistics.
 - [x] Preserve blueprint ghost data for conveyors and extractors (same ghost system as other structures).
 - [ ] Add visual repair motes, drones, scaffolding, or rebuild animation.
 - [ ] Add one repair automation building.
@@ -67,7 +67,7 @@ AI agents should maintain this file as part of normal implementation work.
 - [ ] Add at least one worm variant, such as Armored, Crystal, Acid, or Siege Worm.
 - [ ] Add segment-specific combat effects for at least one weapon.
 - [ ] Add clearer damage feedback on worm segments.
-- [ ] Add enemy behavior that targets logistics, not only the core or nearby structures.
+- [x] Add enemy behavior that targets logistics, not only the core or nearby structures.
 
 ## Meta and Idle Systems
 
@@ -92,7 +92,7 @@ AI agents should maintain this file as part of normal implementation work.
 ## UI and Polish
 
 - [ ] Add flow rate readouts per route.
-- [ ] Add turret uptime and ammo starvation readouts.
+- [x] Add turret uptime and ammo starvation readouts.
 - [ ] Add optional advanced overlays: heat, bottlenecks, purity, threat forecast.
 - [ ] Improve build previews for multi-tile buildings and routed structures.
 - [ ] Add clearer tutorial prompts for the first route, first turret, first wall, first radar, and first breach.

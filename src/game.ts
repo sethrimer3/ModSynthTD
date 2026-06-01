@@ -26,6 +26,7 @@ interface Enemy {
   speedTilePerSec: number;
   isBreaker: boolean;
   wallAttackCooldownSec: number;
+  isScuttler?: boolean;
 }
 
 interface Mote {
@@ -104,7 +105,7 @@ const depositTile = { x: 5, y: 10 };          // Moved closer to base (was {3,2}
 const coalDepositTile = { x: 15, y: 10 };      // coal deposit on the right side of base
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 15;
+const currentBuildNumber = 16;
 const turretRangeTile = 4.5;
 
 // ── Conveyor/Extractor constants ─────────────────────────────────────────────
@@ -194,6 +195,13 @@ const WORM_SEGMENT_SPACING_TILE = 0.6;
 const WORM_MIN_SURVIVE_SEGMENTS = 3;
 const WORM_SPAWN_START_WAVE = 2;
 const TURRET_FIRE_COOLDOWN_SEC = 0.35;
+
+// Scuttler enemy constants – fast, low-HP enemy that targets logistics structures
+const SCUTTLER_SPAWN_START_WAVE = 3;
+const SCUTTLER_BASE_HP = 14;
+const SCUTTLER_HP_PER_WAVE = 2;
+const SCUTTLER_SPEED_TILE_PER_SEC = 2.2;
+const SCUTTLER_ATTACK_DAMAGE = 6;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function clamp(v: number, lo: number, hi: number): number {
@@ -464,6 +472,10 @@ const extractorHasRoute = new Map<number, boolean>();
 // Direction chosen while the conveyor/extractor tool is active (0=E,1=S,2=W,3=N)
 let conveyorPlacementDir = 0;
 
+// Rebuild filter mode: which ghost types are targeted by the A/Z rebuild shortcuts
+type RebuildFilterMode = 'all' | 'walls' | 'combat' | 'logistics';
+let rebuildFilterMode: RebuildFilterMode = 'all';
+
 let overlayText = '';
 let overlayColor = '#ffee44';
 let overlayTimerSec = 0;
@@ -582,10 +594,17 @@ window.addEventListener('keydown', (event) => {
     selectedCategory = TOOL_TO_CATEGORY[tool];
     updatePaletteState();
   }
-  // Q – rotate conveyor/extractor/splitter placement direction
+  // Q – rotate conveyor/extractor/splitter placement direction, or cycle rebuild filter for repair
   if (event.key.toLowerCase() === 'q' && (selectedTool === 'conveyor' || selectedTool === 'extractor' || selectedTool === 'splitter')) {
     conveyorPlacementDir = (conveyorPlacementDir + 1) % 4;
     showOverlay(`DIR ${DIR_SYMBOLS[conveyorPlacementDir]}`, '#22ddbb', 0.6);
+  }
+  if (event.key.toLowerCase() === 'q' && selectedTool === 'repair') {
+    const filterOrder: RebuildFilterMode[] = ['all', 'walls', 'combat', 'logistics'];
+    const currentIdx = filterOrder.indexOf(rebuildFilterMode);
+    rebuildFilterMode = filterOrder[(currentIdx + 1) % filterOrder.length];
+    const filterLabel: Record<RebuildFilterMode, string> = { all: 'ALL', walls: 'WALLS', combat: 'COMBAT', logistics: 'LOGISTICS' };
+    showOverlay(`FILTER: ${filterLabel[rebuildFilterMode]}`, '#44ff88', 0.8);
   }
   // A – rebuild affordable (cheapest first); Z – rebuild all
   if (event.key.toLowerCase() === 'a' && selectedTool === 'repair') {
@@ -1215,6 +1234,25 @@ function spawnWave(): void {
     worms.push({ segments: segs, speedTilePerSec: 0.75 + waveIndex * 0.04, wallAttackCooldownSec: 0 });
   }
 
+  // Spawn scuttlers starting at SCUTTLER_SPAWN_START_WAVE; count grows with waves
+  if (waveIndex >= SCUTTLER_SPAWN_START_WAVE) {
+    const scuttlerCount = 1 + Math.floor((waveIndex - SCUTTLER_SPAWN_START_WAVE) / 3);
+    for (let si = 0; si < scuttlerCount; si += 1) {
+      const maxHp = SCUTTLER_BASE_HP + waveIndex * SCUTTLER_HP_PER_WAVE;
+      const [ssx, ssy] = getRandomSpawnTile();
+      enemies.push({
+        xTile: ssx,
+        yTile: ssy,
+        hp: maxHp,
+        maxHp,
+        speedTilePerSec: SCUTTLER_SPEED_TILE_PER_SEC,
+        isBreaker: false,
+        wallAttackCooldownSec: 0,
+        isScuttler: true,
+      });
+    }
+  }
+
   showOverlay(`WAVE ${waveIndex}`, '#ffee44', 2);
 }
 
@@ -1260,6 +1298,7 @@ function resetRun(): void {
   extractorSpawnCooldowns.clear();
   extractorHasRoute.clear();
   conveyorPlacementDir = 0;
+  rebuildFilterMode = 'all';
   breakerTriggered = false;
   breachOpened = false;
   breakerWarningActive = false;
@@ -1299,6 +1338,33 @@ function updateEnemies(dtSec: number): void {
       enemy.xTile += dxTile * stepTile;
       enemy.yTile += dyTile * stepTile;
       continue;
+    }
+
+    // Scuttler: prioritize attacking adjacent conveyor/extractor structures over moving to core
+    if (enemy.isScuttler) {
+      const scEx = Math.round(enemy.xTile);
+      const scEy = Math.round(enemy.yTile);
+      let attackedLogistics = false;
+      for (const [ddx, ddy] of ADJ_OFFSETS) {
+        const ax = scEx + ddx;
+        const ay = scEy + ddy;
+        if (!isInBounds(ax, ay)) { continue; }
+        const aIdx = tileIndex(ax, ay);
+        const s = structures[aIdx];
+        if ((s === 'conveyor' || s === 'extractor') && structureHp.has(aIdx)) {
+          attackedLogistics = true;
+          enemy.wallAttackCooldownSec -= dtSec;
+          if (enemy.wallAttackCooldownSec <= 0) {
+            damageStructure(aIdx, SCUTTLER_ATTACK_DAMAGE);
+            enemy.wallAttackCooldownSec = ENEMY_WALL_ATTACK_COOLDOWN_SEC;
+          } else if (enemy.wallAttackCooldownSec < 0) {
+            enemy.wallAttackCooldownSec = 0;
+          }
+          break;
+        }
+      }
+      if (attackedLogistics) { continue; }
+      // No adjacent logistics – fall through to regular BFS movement
     }
 
     const xTile = Math.round(enemy.xTile);
@@ -1907,6 +1973,15 @@ function updateCannonTurrets(dtSec: number): void {
 
 // ── Rebuild utilities ──────────────────────────────────────────────────────────
 
+/** Returns true if the given structure type matches the current rebuild filter. */
+function ghostMatchesFilter(ghost: Structure): boolean {
+  if (rebuildFilterMode === 'all') { return true; }
+  if (rebuildFilterMode === 'walls') { return ghost === 'wall'; }
+  if (rebuildFilterMode === 'combat') { return ghost === 'turret' || ghost === 'gatling' || ghost === 'cannon'; }
+  // 'logistics'
+  return ghost === 'conveyor' || ghost === 'extractor' || ghost === 'splitter' || ghost === 'crusher' || ghost === 'radar';
+}
+
 /** Rebuild all blueprint ghosts the player can currently afford (cheapest first). */
 function rebuildAffordableGhosts(): void {
   // Collect all ghosts and sort by rebuild cost
@@ -1914,6 +1989,7 @@ function rebuildAffordableGhosts(): void {
   for (const [idx, ghost] of blueprintGhosts) {
     const s = structures[idx];
     if (s !== 'empty') { continue; }
+    if (!ghostMatchesFilter(ghost)) { continue; }
     const cost = STRUCTURE_REBUILD_COST[ghost] ?? 0;
     ghosts.push({ idx, ghost, cost });
   }
@@ -1946,6 +2022,7 @@ function rebuildAllGhosts(): void {
   let totalCost = 0;
   for (const [idx, ghost] of blueprintGhosts) {
     if (structures[idx] !== 'empty') { continue; }
+    if (!ghostMatchesFilter(ghost)) { continue; }
     const cost = STRUCTURE_REBUILD_COST[ghost] ?? 0;
     ghosts.push({ idx, ghost, cost });
     totalCost += cost;
@@ -2944,8 +3021,21 @@ function render(): void {
   for (const enemy of enemies) {
     const xPx = Math.round(enemy.xTile * tileSizePx);
     const yPx = Math.round(enemy.yTile * tileSizePx);
-    ctx.fillStyle = enemy.isBreaker ? '#ff42d2' : '#ff5656';
-    ctx.fillRect(xPx + tileSizePx / 2 - 2, yPx + tileSizePx / 2 - 2, 4, 4);
+    const cx = xPx + tileSizePx / 2;
+    const cy = yPx + tileSizePx / 2;
+    if (enemy.isScuttler) {
+      // Scuttler: yellow-green diamond shape (logistics hunter)
+      ctx.fillStyle = '#aaff44';
+      ctx.fillRect(cx - 1, cy - 2, 2, 1);  // top point
+      ctx.fillRect(cx - 2, cy - 1, 5, 2);  // wide middle
+      ctx.fillRect(cx - 1, cy + 1, 2, 1);  // bottom point
+    } else if (enemy.isBreaker) {
+      ctx.fillStyle = '#ff42d2';
+      ctx.fillRect(cx - 2, cy - 2, 4, 4);
+    } else {
+      ctx.fillStyle = '#ff5656';
+      ctx.fillRect(cx - 2, cy - 2, 4, 4);
+    }
     if (enemy.hp < enemy.maxHp) {
       drawEnemyHpBar(xPx, yPx, enemy.hp, enemy.maxHp);
     }
@@ -3093,6 +3183,23 @@ function render(): void {
   waveSpan.textContent = activeThreats > 0 ? `Wave ${waveIndex} · ${activeThreats}` : `Wave ${waveIndex}`;
   waveSpan.style.color = '#ff8844';
 
+  // Turret starvation readout: count turrets/gatlings/cannons with zero ammo
+  {
+    let starvedCount = 0;
+    for (let sy = 0; sy < gridHeightTile; sy += 1) {
+      for (let sx = 0; sx < gridWidthTile; sx += 1) {
+        const sidx = tileIndex(sx, sy);
+        const ss = structures[sidx];
+        if (ss === 'turret' && (turretAmmo.get(sidx) ?? 0) <= 0) { starvedCount += 1; }
+        if (ss === 'gatling' && (gatlingAmmo.get(sidx) ?? 0) <= 0) { starvedCount += 1; }
+        if (ss === 'cannon' && (cannonAmmo.get(sidx) ?? 0) <= 0) { starvedCount += 1; }
+      }
+    }
+    if (starvedCount > 0) {
+      waveSpan.textContent += ` · ⚠${starvedCount}`;
+    }
+  }
+
   radarSpan.textContent = `Radar ${radarLevel}`;
   radarSpan.style.color = '#8d68ff';
 
@@ -3170,6 +3277,13 @@ function render(): void {
         statusText = `Dir [${dirSymbol}] · Q: rotate${costPart}`;
         hasPositiveCost = isValidTile;
       }
+    }
+
+    // Always show filter hint for repair tool even when not hovering
+    if (selectedTool === 'repair') {
+      const filterLabel = rebuildFilterMode.toUpperCase();
+      const filterHint = `Filter: ${filterLabel} · Q: cycle`;
+      statusText = statusText !== '' ? `${statusText} · ${filterHint}` : filterHint;
     }
 
     // Always show direction hint for directional tools even when not hovering
