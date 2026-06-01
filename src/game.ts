@@ -51,6 +51,11 @@ const SECOND_ENTRANCE_SPAWN_RATIO = 0.4;
 const MIN_RADAR_LEVEL = 1;
 const MIN_REVEAL_RADIUS_TILE = 5;
 const STRUCTURE_HP_BAR_WARN_THRESHOLD = 0.5;
+const HP_BAR_COLOR_HEALTHY = '#ffcc44';
+const HP_BAR_COLOR_CRITICAL = '#ff4422';
+const ORE_SYMBOL = '⊕';
+// Orthogonal neighbour offsets used in wall-damage and adjacency checks
+const ADJ_OFFSETS: readonly [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 // ── DOM ────────────────────────────────────────────────────────────────────
 const appElement = document.getElementById('app');
@@ -186,7 +191,7 @@ for (const tool of toolOrder) {
   labelSpan.textContent = cfg.label;
   const keySpan = document.createElement('span');
   keySpan.className = 'toolKey';
-  keySpan.textContent = cfg.cost > 0 ? `[${cfg.key}] ${cfg.cost}⊕` : `[${cfg.key}]`;
+  keySpan.textContent = cfg.cost > 0 ? `[${cfg.key}] ${cfg.cost}${ORE_SYMBOL}` : `[${cfg.key}]`;
   button.append(labelSpan, keySpan);
   button.addEventListener('click', () => {
     selectedTool = tool;
@@ -354,7 +359,7 @@ function attemptPlaceStructure(xTile: number, yTile: number): void {
   }
 
   ore -= cost;
-  structureHp.set(index, STRUCTURE_MAX_HP[selectedTool] ?? STRUCTURE_MAX_HP.wall ?? 50);
+  structureHp.set(index, STRUCTURE_MAX_HP[selectedTool] ?? STRUCTURE_MAX_HP.wall!);
   blueprintGhosts.delete(index);
   distanceField = nextDistanceField;
 }
@@ -590,10 +595,9 @@ function updateEnemies(dtSec: number): void {
     if (enemy.wallAttackCooldownSec <= 0) {
       const ex = Math.round(enemy.xTile);
       const ey = Math.round(enemy.yTile);
-      const adjTiles: [number, number][] = [
-        [ex + 1, ey], [ex - 1, ey], [ex, ey + 1], [ex, ey - 1]
-      ];
-      for (const [ax, ay] of adjTiles) {
+      for (const [dx, dy] of ADJ_OFFSETS) {
+        const ax = ex + dx;
+        const ay = ey + dy;
         if (!isInBounds(ax, ay)) {
           continue;
         }
@@ -835,7 +839,7 @@ function drawStructureHpBar(xPx: number, yPx: number, hp: number, maxHp: number)
   ctx.fillStyle = '#1a0505';
   ctx.fillRect(xPx + 1, yPx + tileSizePx - 2, barW, 1);
   const fillW = Math.max(1, Math.round(barW * ratio));
-  ctx.fillStyle = ratio > STRUCTURE_HP_BAR_WARN_THRESHOLD ? '#ffcc44' : '#ff4422';
+  ctx.fillStyle = ratio > STRUCTURE_HP_BAR_WARN_THRESHOLD ? HP_BAR_COLOR_HEALTHY : HP_BAR_COLOR_CRITICAL;
   ctx.fillRect(xPx + 1, yPx + tileSizePx - 2, fillW, 1);
 }
 
@@ -896,21 +900,16 @@ function render(): void {
       const structure = structures[index];
       if (structure === 'wall') {
         drawWallTile(xPx, yPx);
-        const hp = structureHp.get(index);
-        if (hp !== undefined) {
-          drawStructureHpBar(xPx, yPx, hp, STRUCTURE_MAX_HP.wall ?? 50);
-        }
       } else if (structure === 'turret') {
         drawTurretTile(xPx, yPx, index);
-        const hp = structureHp.get(index);
-        if (hp !== undefined) {
-          drawStructureHpBar(xPx, yPx, hp, STRUCTURE_MAX_HP.turret ?? 30);
-        }
       } else if (structure === 'radar') {
         drawRadarTile(xPx, yPx);
+      }
+      if (structure !== 'empty') {
         const hp = structureHp.get(index);
-        if (hp !== undefined) {
-          drawStructureHpBar(xPx, yPx, hp, STRUCTURE_MAX_HP.radar ?? 25);
+        const maxHp = STRUCTURE_MAX_HP[structure];
+        if (hp !== undefined && maxHp !== undefined) {
+          drawStructureHpBar(xPx, yPx, hp, maxHp);
         }
       }
     }
