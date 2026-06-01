@@ -1,9 +1,26 @@
+@font-face {
+  font-family: 'Pixelify Sans';
+  src: url('../ASSETS/font/Pixelify_Sans/PixelifySans-VariableFont_wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 :root {
+  --color-core: #33ffbb;
+  --color-ore: #f0a600;
+  --color-radar: #8d68ff;
+  --color-wall: #6a8faf;
+  --color-turret: #27e0ff;
+  --color-danger: #ff4444;
+  --color-wave: #ff8844;
+  --color-meta: #c0e8ff;
   color-scheme: dark;
   font-family: 'Pixelify Sans', 'Trebuchet MS', system-ui, sans-serif;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -12,6 +29,7 @@ body {
   width: 100%;
   margin: 0;
   padding: 0;
+  overflow-x: hidden;
   background: radial-gradient(circle at top, #121a2c 0%, #05070d 60%);
   color: #dff6ff;
 }
@@ -23,25 +41,48 @@ body {
 #app {
   display: flex;
   justify-content: center;
-  padding: 1rem 0.75rem 2rem;
+  padding: 0.75rem 0.75rem max(1.5rem, env(safe-area-inset-bottom));
 }
 
 .gameRoot {
   width: min(100%, 480px);
   display: grid;
   gap: 0.5rem;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .hud {
   display: flex;
   justify-content: space-between;
-  gap: 0.75rem;
-  font-size: 0.85rem;
-  line-height: 1.3;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  padding: 0 0.15rem;
 }
 
-.rightStats {
+.hudLeft,
+.hudRight {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.hudRight {
   text-align: right;
+  align-items: flex-end;
+}
+
+.hudRow {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.statChip {
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 .gameCanvas {
@@ -53,12 +94,14 @@ body {
   background: #04050a;
   box-shadow: 0 0 24px rgb(64 145 255 / 25%);
   touch-action: none;
+  cursor: crosshair;
 }
 
 .toolbar {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.45rem;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .toolButton {
@@ -66,11 +109,38 @@ body {
   border-radius: 8px;
   color: #dff6ff;
   background: #141f35;
-  min-height: 2.8rem;
+  min-height: 3rem;
+  font-size: 0.75rem;
   font-weight: 700;
+  font-family: inherit;
+  line-height: 1.2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1rem;
+  padding: 0.35rem 0.2rem;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  transition: background 0.08s;
+}
+
+.toolButton:active {
+  background: #1f3050;
 }
 
 .toolButton.active {
   background: #2f4c84;
-  box-shadow: 0 0 10px rgb(80 180 255 / 35%);
+  border-color: var(--tool-color, #5580c0);
+  box-shadow: 0 0 10px rgba(80, 180, 255, 0.35);
+}
+
+.toolKey {
+  font-size: 0.6rem;
+  color: #5577aa;
+  font-weight: 400;
+}
+
+.toolButton.active .toolKey {
+  color: #99bbdd;
 }
