@@ -97,3 +97,27 @@ This document records important implementation choices, tradeoffs, and design de
 **Reason**: Simplest correct approach. The upgrade panel needs to reflect current `metaCurrency` and `upgradeLevel` at all times. The 3 buttons update only `textContent`, `disabled`, and a few CSS classes — cheap DOM operations that do not cause layout thrash.
 
 **Alternative considered**: Update only when meta currency or upgrade level changes. Rejected because it requires change tracking and is premature optimization for 3 buttons.
+
+---
+
+## D-011: Repair Brush Tool
+
+**Decision**: A fifth tool (`repair`, key `F`/`5`) was added. It calls `attemptRepair()` which handles two cases:
+1. A blueprint ghost exists (structure was enemy-destroyed): rebuild at `STRUCTURE_REBUILD_COST`.
+2. A live structure has missing HP: restore to max HP at a prorated fraction of rebuild cost.
+
+Walls are always free to rebuild/repair (`STRUCTURE_REBUILD_COST.wall = 0`). Repair validates the entrance path (no blocking) when rebuilding ghosts.
+
+**Reason**: The repair brush is the primary recovery mechanic. Separating it from the build tool avoids ambiguity when clicking on a ghost or damaged structure. The prorated cost formula (`ceil(missingHp * rebuildCost / maxHp)`) makes partial repairs cheaper than full rebuilds and is easy to reason about.
+
+**Alternative considered**: Let normal build tools auto-detect ghosts and offer rebuild. Rejected because it would hide the repair flow and require more edge-case handling in the main placement path.
+
+---
+
+## D-012: Nine-Slot Placeholder Screen
+
+**Decision**: A 3×3 DOM grid was added below the upgrade panel. Slot 1 is styled as `ACTIVE`; slots 2–9 are `LOCKED`. No logic is attached.
+
+**Reason**: Milestone 8 requires a visible placeholder for the multi-base meta system. The DOM grid is cheap and lets the layout be reviewed and iterated without coupling to any game logic.
+
+**Alternative considered**: Canvas-rendered slot grid. Rejected because it would mix UI chrome with gameplay rendering and add unnecessary complexity.

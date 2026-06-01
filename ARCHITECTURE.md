@@ -55,6 +55,7 @@ Top-level mutable state is declared as `let` at module level:
 | Variable | Type | Purpose |
 |---|---|---|
 | `ore` | number | Local run currency |
+| `totalOreEarned` | number | Cumulative ore earned this run (for ore/s rate display) |
 | `metaCurrency` | number | Persistent prestige currency |
 | `upgradeLevel` | Record | Purchased permanent upgrade levels |
 | `coreHp` | number | Current core health |
@@ -154,10 +155,11 @@ Draw order per frame:
 12. Deposit 1 motes
 13. Shot flashes
 14. Enemies with HP bars
-15. Hover ghost tile
+15. Hover ghost tile (green tint for repair tool, red for erase)
 16. Overlays (WAVE, BREACH, GAME OVER)
 17. Build number watermark
-18. HUD span updates + upgrade panel state update
+18. HUD span updates (ore shows rate `/s` after 4 s elapsed) + upgrade panel state update
+19. Status bar update (repair cost hint when repair tool selected)
 
 ---
 
@@ -165,7 +167,7 @@ Draw order per frame:
 
 Mouse and touch input is handled via `pointerdown`, `pointermove`, `pointerup`, and `pointercancel` events on the canvas. Pointer capture is used to support drag-placing structures.
 
-Keyboard shortcuts are handled via `keydown` on `window`. Keys `w/1`, `t/2`, `r/3`, `e/4` select tools.
+Keyboard shortcuts are handled via `keydown` on `window`. Keys `w/1`, `t/2`, `r/3`, `e/4`, `f/5` select tools.
 
 ---
 

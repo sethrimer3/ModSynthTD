@@ -815,19 +815,19 @@ The first playable prototype should prove the core loop, not the full meta game.
 
 Minimum viable prototype:
 
-- One base slot.
-- One top-down board.
-- Core in center.
-- Debris barrier with one enemy entrance.
-- Grid placement for walls and turrets.
-- One resource deposit.
-- Drag-line or simple conveyor connection from resource to turret or core.
-- One mote type moving visibly.
-- Enemy waves from one direction.
-- Radar building that reveals a larger area.
-- Breaker enemy that opens a second direction.
-- Base destruction and restart.
-- Simple persistent currency.
+- [x] One base slot.
+- [x] One top-down board.
+- [x] Core in center.
+- [x] Debris barrier with one enemy entrance.
+- [x] Grid placement for walls and turrets.
+- [x] One resource deposit.
+- [x] Drag-line or simple conveyor connection from resource to turret or core.
+- [x] One mote type moving visibly.
+- [x] Enemy waves from one direction.
+- [x] Radar building that reveals a larger area.
+- [x] Breaker enemy that opens a second direction.
+- [x] Base destruction and restart.
+- [x] Simple persistent currency.
 
 ### 16.2 MVP Success Criteria
 
@@ -844,61 +844,61 @@ The prototype is successful if:
 
 ### Milestone 1: Design Foundation
 
-- Create DESIGN.md.
-- Choose working title.
-- Define initial resource names.
-- Define build tile size and native resolution.
-- Define first board dimensions.
+- [x] Create DESIGN.md.
+- [x] Choose working title.
+- [x] Define initial resource names.
+- [x] Define build tile size and native resolution.
+- [x] Define first board dimensions.
 
 ### Milestone 2: Grid and Rendering
 
-- Implement low-res canvas scaling.
-- Implement tile grid overlay.
-- Implement basic terrain, debris, core, and buildable ground.
-- Implement camera and radar visibility mask.
+- [x] Implement low-res canvas scaling.
+- [x] Implement tile grid overlay.
+- [x] Implement basic terrain, debris, core, and buildable ground.
+- [x] Implement camera and radar visibility mask.
 
 ### Milestone 3: Basic Building
 
-- Place walls.
-- Place one turret.
-- Place one resource extractor.
-- Place core.
-- Support basic build preview.
+- [x] Place walls.
+- [x] Place one turret.
+- [x] Place one resource extractor.
+- [x] Place core.
+- [x] Support basic build preview.
 
 ### Milestone 4: Mote Flow
 
-- Spawn ore or energy motes.
-- Move motes along a simple drawn route or conveyor.
-- Deliver motes to a building.
-- Display bottleneck or storage count.
+- [x] Spawn ore or energy motes.
+- [x] Move motes along a simple drawn route or conveyor.
+- [x] Deliver motes to a building.
+- [x] Display bottleneck or storage count.
 
 ### Milestone 5: Enemy Waves
 
-- Spawn enemies from one entrance.
-- Basic pathing toward core.
-- Turret targeting and damage.
-- Core damage and base loss.
+- [x] Spawn enemies from one entrance.
+- [x] Basic pathing toward core.
+- [x] Turret targeting and damage.
+- [x] Core damage and base loss.
 
 ### Milestone 6: Radar Expansion
 
-- Build radar.
-- Reveal more terrain.
-- Reveal a new resource.
-- Expand camera or visible radius.
+- [x] Build radar.
+- [x] Reveal more terrain.
+- [x] Reveal a new resource.
+- [x] Expand camera or visible radius.
 
 ### Milestone 7: Breach Event
 
-- Add Breaker enemy.
-- Break debris.
-- Open a second path.
-- Teach perimeter defense.
+- [x] Add Breaker enemy.
+- [x] Break debris.
+- [x] Open a second path.
+- [x] Teach perimeter defense.
 
 ### Milestone 8: Meta Skeleton
 
-- Add run summary.
-- Add persistent currency.
-- Add one permanent upgrade.
-- Add placeholder nine-slot screen.
+- [x] Add run summary.
+- [x] Add persistent currency.
+- [x] Add one permanent upgrade.
+- [x] Add placeholder nine-slot screen.
 
 ## 18. Open Questions
 
@@ -1277,13 +1277,13 @@ The first prototype should not include all of this, but it should lay the founda
 
 Recommended MVP additions:
 
-- Basic conveyor is infinite.
-- At least one finite strategic piece exists, such as a bridge or splitter.
-- One enemy can damage or destroy structures.
-- Destroyed structures leave blueprint ghosts.
-- The player can use a repair brush to rebuild ghosts.
-- One visible resource mote type moves through conveyors.
-- One tower shows stored ammo or internal resource state.
-- One simple procedural worm enemy can be prototyped later as a reusable linked-segment system.
+- [ ] Basic conveyor is infinite.
+- [ ] At least one finite strategic piece exists, such as a bridge or splitter.
+- [x] One enemy can damage or destroy structures.
+- [x] Destroyed structures leave blueprint ghosts.
+- [x] The player can use a repair brush to rebuild ghosts.
+- [x] One visible resource mote type moves through conveyors.
+- [ ] One tower shows stored ammo or internal resource state.
+- [ ] One simple procedural worm enemy can be prototyped later as a reusable linked-segment system.
 
 The most important early test is whether one small board feels good when the player places structures, watches motes move, survives a breach, repairs damaged sections, and sees how better layout would improve survival.
