@@ -14,6 +14,9 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Fog-of-war hides tiles outside the reveal radius
 - [ ] Radar ring outline is visible around core
 - [ ] Build number watermark is visible bottom-left
+- [ ] `run-desktop.bat` builds and launches the game in an Electron window
+- [ ] `run-desktop-dev.bat` launches Electron against the Webpack dev server and opens DevTools
+- [ ] `run-desktop-no-build.bat` launches the existing `dist` build without rebuilding
 
 ---
 

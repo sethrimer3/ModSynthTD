@@ -4,10 +4,15 @@
   "private": true,
   "scripts": {
     "build": "webpack --mode production",
-    "dev": "webpack serve --mode development --host 0.0.0.0"
+    "dev": "webpack serve --mode development --host 0.0.0.0",
+    "desktop": "npm run build && electron .",
+    "desktop:dev": "electron . --dev",
+    "desktop:no-build": "electron ."
   },
+  "main": "electron/main.cjs",
   "devDependencies": {
     "css-loader": "^7.1.2",
+    "electron": "^31.7.7",
     "html-webpack-plugin": "^5.6.0",
     "style-loader": "^4.0.0",
     "ts-loader": "^9.5.1",

@@ -193,3 +193,13 @@ After the breach event, a smaller worm also spawns from the second entrance ever
 **Decision**: When `coreHp` drops to or below the `coreHpDamagedThreshold` (30% of max), the core tile flashes a red translucent overlay pulsing at 4 Hz using `Math.sin(elapsedSec * Math.PI * 4)`. The pulse is suppressed once `isRunOver` is true to avoid flickering on the game-over screen.
 
 **Reason**: The existing HP bar and color change give text/color feedback for low HP. A pulsing animation provides a more urgent visual alarm that draws attention even in peripheral vision during active combat. The 4 Hz rate is fast enough to feel urgent without being visually disruptive.
+
+---
+
+## D-020: Minimal Electron Desktop Runtime
+
+**Decision**: Electron support is a thin desktop shell around the existing Webpack output. Production desktop mode loads `dist/index.html`; developer desktop mode loads the Webpack dev server at `http://127.0.0.1:8080` by default and opens DevTools. The Electron window keeps `contextIsolation: true` and `nodeIntegration: false`.
+
+**Reason**: The game remains browser-first while gaining a local desktop path. Keeping Electron separate from the TypeScript game code avoids changing gameplay state flow, rendering, input, or persistence.
+
+**Tradeoff**: `run-desktop-dev.bat` starts the Webpack dev server in a separate command window and waits briefly before launching Electron. If the dev server takes longer than expected or uses a different port, set `TINY_BASE_IDLE_DEV_SERVER_URL` before running `npm run desktop:dev`.

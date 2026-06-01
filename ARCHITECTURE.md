@@ -12,6 +12,7 @@ This document describes the current system structure and data flow for the proto
 |---|---|
 | Language | TypeScript (strict mode) |
 | Build | Webpack 5 |
+| Desktop shell | Electron |
 | Rendering | HTML5 Canvas 2D |
 | Persistence | `localStorage` |
 | Styling | CSS (single flat file) |
@@ -19,6 +20,10 @@ This document describes the current system structure and data flow for the proto
 Commands:
 - `npm run build` — production bundle
 - `npm run dev` — watch mode local dev server
+
+- `npm run desktop` - build production bundle, then launch Electron from `dist/index.html`
+- `npm run desktop:dev` - launch Electron against the Webpack dev server URL
+- `npm run desktop:no-build` - launch Electron against the existing `dist/index.html`
 
 ---
 
@@ -32,6 +37,12 @@ src/
   game.ts         — all game systems (monolithic prototype)
   styles.css      — all UI styles
 ```
+
+Desktop runtime:
+- `electron/main.cjs` - Electron main process and BrowserWindow setup.
+- `run-desktop.bat` builds, then launches Electron.
+- `run-desktop-dev.bat` starts the Webpack dev server in a separate terminal, then launches Electron with DevTools.
+- `run-desktop-no-build.bat` launches the existing `dist` bundle without rebuilding.
 
 ---
 
