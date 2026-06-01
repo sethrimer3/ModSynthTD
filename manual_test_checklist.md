@@ -158,3 +158,20 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Toolbar buttons are comfortably tappable on mobile
 - [ ] Upgrade panel buttons are comfortably tappable on mobile
 - [ ] No horizontal overflow
+
+---
+
+## 16. Worm Enemy
+
+- [ ] First worm spawns at wave 2 from the main entrance
+- [ ] Worm head follows BFS path toward the core
+- [ ] Body segments trail the head with smooth chain-constraint movement
+- [ ] Turrets can target and shoot worm segments (beam flash visible)
+- [ ] Killing a middle segment splits the worm into two fragments
+- [ ] Fragment with ≥ 3 segments continues moving; fragment with < 3 is removed
+- [ ] Each killed segment awards 1 ore
+- [ ] Worm head reaching the core deals 6 damage and removes the worm
+- [ ] Core drops to 0 HP from worm → game over flow triggers normally
+- [ ] `worms = []` on run reset: no worms visible after game-over restart
+- [ ] Worm spine (brown line) and segment circles render correctly (amber head, dark-orange body)
+- [ ] Segment color shifts to red when HP < 50%

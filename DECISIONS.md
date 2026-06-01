@@ -121,3 +121,17 @@ Walls are always free to rebuild/repair (`STRUCTURE_REBUILD_COST.wall = 0`). Rep
 **Reason**: Milestone 8 requires a visible placeholder for the multi-base meta system. The DOM grid is cheap and lets the layout be reviewed and iterated without coupling to any game logic.
 
 **Alternative considered**: Canvas-rendered slot grid. Rejected because it would mix UI chrome with gameplay rendering and add unnecessary complexity.
+
+---
+
+## D-013: Worm Enemy System
+
+**Decision**: A segmented worm enemy was added. The worm is a `Worm` object containing a `segments: WormSegment[]` array. Segment 0 is the head. The head uses BFS pathfinding (same distance field as regular enemies). Each subsequent segment uses a chain-constraint: if distance to the preceding segment exceeds `WORM_SEGMENT_SPACING_TILE` (0.6 tiles), the segment is pulled toward the preceding one. Worms split at any dead segment; fragments with fewer than `WORM_MIN_SURVIVE_SEGMENTS` (3) segments are discarded.
+
+**Reason**: The worm fulfils the design doc requirement for a "simple procedural worm enemy" (§21.11). Chain-constraint body movement is a minimal and robust way to produce snake-like motion without inverse kinematics. Splitting rewards focused fire on single segments and creates emergent sub-threat management. Reusing the existing BFS distance field keeps pathfinding consistent across enemy types.
+
+**Tradeoff**: Each worm segment is an individual targeting candidate for turrets, which increases the inner loop cost of `updateTurrets()`. At current worm sizes (6–14 segments) this is negligible, but very large swarms of worms could stress it.
+
+**File size note**: `game.ts` now exceeds the ~1500-line threshold noted in D-001 (~1680 lines after this feature). Module separation was deferred to keep the current implementation sprint focused. This should be addressed in a follow-up refactor.
+
+**Alternative considered**: Storing worm segment positions as world-space floats instead of tile-space floats. Rejected because tile-space coordinates are consistent with all other game objects and the grid-aligned visuals.

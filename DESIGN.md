@@ -1,5 +1,7 @@
 # Game Design Blueprint
 
+> **How to track implementation progress:** Items in this document marked `[x]` are implemented in the current build. Items marked `[ ]` are planned but not yet implemented. When completing a feature, change `[ ]` to `[x]` in the relevant checklist section.
+
 Working title: Neon Mote Defense
 
 This document is the main design blueprint for the project. It is intentionally written as a living plan rather than a fixed specification. The goal is to preserve the core picture of the game while leaving room for iteration, prototyping, and discovery.
@@ -1284,6 +1286,6 @@ Recommended MVP additions:
 - [x] The player can use a repair brush to rebuild ghosts.
 - [x] One visible resource mote type moves through conveyors.
 - [ ] One tower shows stored ammo or internal resource state.
-- [ ] One simple procedural worm enemy can be prototyped later as a reusable linked-segment system.
+- [x] One simple procedural worm enemy: segmented worm with BFS head navigation, chain-constrained body, per-segment HP, and splitting on segment death.
 
 The most important early test is whether one small board feels good when the player places structures, watches motes move, survives a breach, repairs damaged sections, and sees how better layout would improve survival.
