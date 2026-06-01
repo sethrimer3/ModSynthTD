@@ -213,3 +213,43 @@ After the breach event, a smaller worm also spawns from the second entrance ever
 **Reason**: The game remains browser-first while gaining a local desktop path. Keeping Electron separate from the TypeScript game code avoids changing gameplay state flow, rendering, input, or persistence.
 
 **Tradeoff**: `run-desktop-dev.bat` starts the Webpack dev server in a separate command window and waits briefly before launching Electron. If the dev server takes longer than expected or uses a different port, set `TINY_BASE_IDLE_DEV_SERVER_URL` before running `npm run desktop:dev`.
+
+---
+
+## D-021: Conveyor/Extractor Logistics System
+
+**Decision**: Deposits no longer automatically send motes to the core. Mote flow is now gated entirely behind player-built infrastructure. Two new structures were added:
+
+- **Extractor** (hotkey X, free): must be placed adjacent to a deposit. Its output direction determines which tile the mote chain begins from.
+- **Conveyor** (hotkey V, free): each tile stores an output direction (0=E, 1=S, 2=W, 3=N). Chains of conveyors form routes.
+
+Routing is evaluated each tick via `findConveyorRoute()`: a greedy path-follow starting at the extractor's output direction, traversing conveyor tiles in sequence until reaching a valid destination (core, turret, crusher, or gatling) or detecting an invalid or cyclic path (returns null). Route validity is cached in `extractorHasRoute` for visual feedback.
+
+`RoutedMote` objects carry `resourceType`, a full tile path, a segment index, and interpolated progress. They are spawned by `updateExtractors()` and moved by `updateRoutedMotes()`. `deliverMote()` dispatches the resource to the destination.
+
+Q key and right-click on an existing conveyor/extractor rotate its direction.
+
+**Reason**: The design doc calls for player-built logistics as a core identity mechanic. Auto-spawning motes removed all logistics strategy. Conveyors are the minimal viable implementation that produces visible flow and lets the player build intentional routes.
+
+**Tradeoff**: All in-flight `RoutedMote` objects carry a full path copy. For routes up to 64 tiles this is fine. If routes grow much longer, a shared route-handle approach would be needed. The old `motes`, `motes2`, `coalMotes` arrays are kept for legacy drain (in-flight on game start) and will naturally empty.
+
+---
+
+## D-022: Resource-Fed Turret (Ammo System)
+
+**Decision**: The basic turret no longer free-fires on a shared global cooldown. It now consumes one unit of `turretAmmo` per shot. Ammo is supplied by routing ore motes from a deposit through conveyors to the turret tile. Each turret starts with `TURRET_AMMO_STARTING = 4` ammo to ensure the first wave is survivable before logistics are built. The per-turret ammo bar replaces the old shared charge bar: it shows a cyan fill proportional to `TURRET_AMMO_MAX (10)`, and a small red pixel when ammo = 0 (starvation indicator).
+
+The global `turretFireCooldownSec` is retained to throttle the fire cadence; the per-tile ammo check is layered on top.
+
+**Reason**: The design doc requires turrets to depend on supplied resources. The old free-firing model made logistics irrelevant to combat. Starting ammo prevents a hard first-wave difficulty spike, consistent with the "first route should be approachable" design intent.
+
+**Tradeoff**: Ore can flow to either the core (currency income) or turrets (ammo). This creates the intended logistics tension between economic and military routing.
+
+---
+
+## D-023: BASE_STARTING_ORE Bootstrapping Ore
+
+**Decision**: `resetRun` now sets `ore = BASE_STARTING_ORE + oreBonus`, where `BASE_STARTING_ORE = 20`, instead of starting at 0 (plus meta bonus). Conveyors and extractors cost 0 ore.
+
+**Reason**: With deposits no longer auto-delivering ore, the player needs starting capital to place at least one extractor and a short conveyor chain before any income arrives. 20 ore is enough to build one turret (12 ore) with change to spare for conveyors, or to build a short route first and accumulate ammo before the first wave.
+

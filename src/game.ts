@@ -1,6 +1,6 @@
-type Structure = 'empty' | 'wall' | 'turret' | 'radar' | 'crusher' | 'gatling';
-type Tool = 'wall' | 'turret' | 'radar' | 'erase' | 'repair' | 'crusher' | 'gatling';
-type BuildCategory = 'mining' | 'turrets' | 'defense' | 'tech' | 'repair' | 'erase';
+type Structure = 'empty' | 'wall' | 'turret' | 'radar' | 'crusher' | 'gatling' | 'conveyor' | 'extractor';
+type Tool = 'wall' | 'turret' | 'radar' | 'erase' | 'repair' | 'crusher' | 'gatling' | 'conveyor' | 'extractor';
+type BuildCategory = 'mining' | 'turrets' | 'defense' | 'tech' | 'repair' | 'erase' | 'logistics';
 
 interface BuildItemDef {
   id: Tool;
@@ -44,6 +44,15 @@ interface GunpowderMote {
   progress: number;
   fromXTile: number;
   fromYTile: number;
+}
+
+// A mote that follows a player-built conveyor chain from an extractor to a destination.
+interface RoutedMote {
+  pathXTile: number[];
+  pathYTile: number[];
+  segIndex: number;
+  progress: number;  // 0..1 along current segment
+  resourceType: 'ore' | 'coal';
 }
 
 interface MuzzleFlash {
@@ -94,8 +103,19 @@ const depositTile = { x: 5, y: 10 };          // Moved closer to base (was {3,2}
 const coalDepositTile = { x: 15, y: 10 };      // coal deposit on the right side of base
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 12;
+const currentBuildNumber = 13;
 const turretRangeTile = 4.5;
+
+// ── Conveyor/Extractor constants ─────────────────────────────────────────────
+// Direction encoding: 0=East(+x), 1=South(+y), 2=West(-x), 3=North(-y)
+const DIR_OFFSETS: readonly [number, number][] = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+const DIR_SYMBOLS = ['→', '↓', '←', '↑'];
+const CONVEYOR_MOTE_SPEED = 0.55; // conveyor-segments per second
+const EXTRACTOR_ORE_SPAWN_SEC = 0.75;  // ore mote spawn interval from ore extractor
+const EXTRACTOR_COAL_SPAWN_SEC = 1.0;  // coal mote spawn interval from coal extractor
+const TURRET_AMMO_MAX = 10;
+const TURRET_AMMO_STARTING = 4;  // initial ammo so first wave is survivable
+const BASE_STARTING_ORE = 20;    // ore given at run start; player must build first route
 const shotFlashDurationSec = 0.12;
 const breakerArrivalDistanceTile = 0.2;
 const coreHpHealthyThreshold = 60;
@@ -136,9 +156,9 @@ const SHELL_CASING_BOUNCE_RESTITUTION = -0.55;
 const SHELL_CASING_GRAVITY_PX_PER_SEC2 = 18;
 const SHELL_CASING_FRICTION = 0.96;
 
-const STRUCTURE_MAX_HP: Partial<Record<Structure, number>> = { wall: 50, turret: 30, radar: 25, crusher: 35, gatling: 25 };
-const STRUCTURE_ORE_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 12, radar: 25, crusher: 18, gatling: 18 };
-const STRUCTURE_REBUILD_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 6, radar: 12, crusher: 9, gatling: 9 };
+const STRUCTURE_MAX_HP: Partial<Record<Structure, number>> = { wall: 50, turret: 30, radar: 25, crusher: 35, gatling: 25, conveyor: 10, extractor: 20 };
+const STRUCTURE_ORE_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 12, radar: 25, crusher: 18, gatling: 18, conveyor: 0, extractor: 0 };
+const STRUCTURE_REBUILD_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 6, radar: 12, crusher: 9, gatling: 9, conveyor: 0, extractor: 0 };
 const ENEMY_WALL_DAMAGE = 8;
 const ENEMY_WALL_ATTACK_COOLDOWN_SEC = 1.5;
 const SECOND_ENTRANCE_ACTIVATION_WAVE = 7;
@@ -413,6 +433,20 @@ const gatlingFireCooldowns = new Map<number, number>();
 const crusherConversionTimers = new Map<number, number>();
 let breachOpened = false;
 
+// ── Conveyor/Extractor/Routed-mote state ─────────────────────────────────────
+// Direction each conveyor/extractor tile outputs (0=E,1=S,2=W,3=N)
+const conveyorDirection = new Map<number, number>();
+// Per-turret ammo supplied via the logistics network
+const turretAmmo = new Map<number, number>();
+// Motes travelling along player-built conveyor chains
+let routedMotes: RoutedMote[] = [];
+// Countdown timer per extractor tile before next mote spawn
+const extractorSpawnCooldowns = new Map<number, number>();
+// Cached route-validity per extractor; false → show "no route" indicator
+const extractorHasRoute = new Map<number, boolean>();
+// Direction chosen while the conveyor/extractor tool is active (0=E,1=S,2=W,3=N)
+let conveyorPlacementDir = 0;
+
 let overlayText = '';
 let overlayColor = '#ffee44';
 let overlayTimerSec = 0;
@@ -426,7 +460,14 @@ let isMetaMenuOpen = false;
 const BUILD_CATEGORIES: BuildCategoryDef[] = [
   {
     id: 'mining',  label: 'Mining',  color: '#f0a600',
-    items: [{ id: 'crusher', label: 'Crusher', hotkey: 'C', cost: 18, color: '#b87000' }],
+    items: [
+      { id: 'extractor', label: 'Extractor', hotkey: 'X', cost: 0, color: '#f0a600' },
+      { id: 'crusher',   label: 'Crusher',   hotkey: 'C', cost: 18, color: '#b87000' },
+    ],
+  },
+  {
+    id: 'logistics', label: 'Logistics', color: '#22ddbb',
+    items: [{ id: 'conveyor', label: 'Conveyor', hotkey: 'V', cost: 0, color: '#22ddbb' }],
   },
   {
     id: 'turrets', label: 'Turrets', color: '#27e0ff',
@@ -449,7 +490,7 @@ const BUILD_CATEGORIES: BuildCategoryDef[] = [
 
 const TOOL_TO_CATEGORY: Record<Tool, BuildCategory> = {
   wall: 'defense', turret: 'turrets', radar: 'tech', erase: 'erase', repair: 'repair',
-  crusher: 'mining', gatling: 'turrets',
+  crusher: 'mining', gatling: 'turrets', extractor: 'mining', conveyor: 'logistics',
 };
 
 const categoryButtons = new Map<BuildCategory, HTMLButtonElement>();
@@ -508,12 +549,19 @@ window.addEventListener('keydown', (event) => {
     'f': 'repair',  '5': 'repair',
     'g': 'gatling', '6': 'gatling',
     'c': 'crusher', '7': 'crusher',
+    'x': 'extractor',
+    'v': 'conveyor',
   };
   const tool = keyMap[event.key.toLowerCase()];
   if (tool) {
     selectedTool = tool;
     selectedCategory = TOOL_TO_CATEGORY[tool];
     updatePaletteState();
+  }
+  // Q – rotate conveyor/extractor placement direction
+  if (event.key.toLowerCase() === 'q' && (selectedTool === 'conveyor' || selectedTool === 'extractor')) {
+    conveyorPlacementDir = (conveyorPlacementDir + 1) % 4;
+    showOverlay(`DIR ${DIR_SYMBOLS[conveyorPlacementDir]}`, '#22ddbb', 0.6);
   }
 });
 
@@ -808,6 +856,12 @@ function attemptPlaceStructure(xTile: number, yTile: number): void {
     radarLevel += 1;
     revealRadiusTile = Math.min(10, revealRadiusTile + 1);
   }
+  if (selectedTool === 'conveyor' || selectedTool === 'extractor') {
+    conveyorDirection.set(index, conveyorPlacementDir);
+  }
+  if (selectedTool === 'turret') {
+    turretAmmo.set(index, TURRET_AMMO_STARTING);
+  }
 
   ore -= cost;
   // selectedTool is never 'erase' or 'repair' here (both returned early above); fallback covers future Structure additions
@@ -856,6 +910,21 @@ canvasElement.addEventListener('pointerleave', () => {
   if (!isPointerHeld) {
     hoveredXTile = -1;
     hoveredYTile = -1;
+  }
+});
+
+// Right-click on a conveyor or extractor tile rotates its direction
+canvasElement.addEventListener('contextmenu', (event) => {
+  event.preventDefault();
+  if (isMetaMenuOpen) { return; }
+  const [xTile, yTile] = getCanvasTile(event.clientX, event.clientY);
+  const index = tileIndex(xTile, yTile);
+  const s = structures[index];
+  if (s === 'conveyor' || s === 'extractor') {
+    const cur = conveyorDirection.get(index) ?? 0;
+    const next = (cur + 1) % 4;
+    conveyorDirection.set(index, next);
+    extractorHasRoute.delete(index); // force route re-evaluation
   }
 });
 
@@ -1119,7 +1188,7 @@ function resetRun(): void {
   metaCurrency += Math.max(1, lastMetaEarned);
   localStorage.setItem('tiny-base-idle-meta', String(metaCurrency));
 
-  ore = upgradeLevel.oreBonus * ORE_BONUS_PER_LEVEL;
+  ore = BASE_STARTING_ORE + upgradeLevel.oreBonus * ORE_BONUS_PER_LEVEL;
   coal = 0;
   gunpowder = 0;
   coreHp = BASE_CORE_HP + upgradeLevel.coreArmor * CORE_ARMOR_HP_PER_LEVEL;
@@ -1148,6 +1217,12 @@ function resetRun(): void {
   gatlingAmmo.clear();
   gatlingFireCooldowns.clear();
   crusherConversionTimers.clear();
+  conveyorDirection.clear();
+  turretAmmo.clear();
+  routedMotes = [];
+  extractorSpawnCooldowns.clear();
+  extractorHasRoute.clear();
+  conveyorPlacementDir = 0;
   breakerTriggered = false;
   breachOpened = false;
   structures.fill('empty');
@@ -1402,6 +1477,10 @@ function updateTurrets(dtSec: number): void {
           continue;
         }
 
+        // Resource-fed: turret only fires when it has ammo supplied via logistics
+        const ammo = turretAmmo.get(idx) ?? 0;
+        if (ammo <= 0) { continue; }
+
         let targetEnemy: Enemy | undefined;
         let targetWorm: Worm | undefined;
         let targetWormSegIdx = -1;
@@ -1434,6 +1513,9 @@ function updateTurrets(dtSec: number): void {
         if (!targetEnemy && targetWorm === undefined) {
           continue;
         }
+
+        // Consume one ammo on fire
+        turretAmmo.set(idx, ammo - 1);
 
         let targetXTile: number;
         let targetYTile: number;
@@ -1481,12 +1563,8 @@ function updateTurrets(dtSec: number): void {
 }
 
 function updateMotes(dtSec: number): void {
-  moteSpawnCooldownSec -= dtSec;
-  if (moteSpawnCooldownSec <= 0) {
-    moteSpawnCooldownSec = 0.65;
-    motes.push({ progress: 0 });
-  }
-
+  // Auto-spawning from deposits is now gated behind extractors (updateExtractors/updateRoutedMotes).
+  // Drain any in-flight motes that were already spawned before the extractor system was introduced.
   for (let i = motes.length - 1; i >= 0; i -= 1) {
     motes[i].progress += dtSec * 0.4;
     if (motes[i].progress >= 1) {
@@ -1496,31 +1574,15 @@ function updateMotes(dtSec: number): void {
     }
   }
 
-  // Second deposit – only active when radar has revealed it
-  if (revealRadiusTile >= DEPOSIT2_MIN_REVEAL_RADIUS_TILE) {
-    mote2SpawnCooldownSec -= dtSec;
-    if (mote2SpawnCooldownSec <= 0) {
-      mote2SpawnCooldownSec = 0.8;
-      motes2.push({ progress: 0 });
+  for (let i = motes2.length - 1; i >= 0; i -= 1) {
+    motes2[i].progress += dtSec * 0.35;
+    if (motes2[i].progress >= 1) {
+      motes2.splice(i, 1);
+      ore += 1;
+      totalOreEarned += 1;
     }
-    for (let i = motes2.length - 1; i >= 0; i -= 1) {
-      motes2[i].progress += dtSec * 0.35;
-      if (motes2[i].progress >= 1) {
-        motes2.splice(i, 1);
-        ore += 1;
-        totalOreEarned += 1;
-      }
-    }
-  } else if (motes2.length > 0) {
-    motes2 = [];
   }
 
-  // Coal deposit – always active (within initial reveal radius)
-  coalMoteSpawnCooldownSec -= dtSec;
-  if (coalMoteSpawnCooldownSec <= 0) {
-    coalMoteSpawnCooldownSec = COAL_MOTE_SPAWN_SEC;
-    coalMotes.push({ progress: 0 });
-  }
   for (let i = coalMotes.length - 1; i >= 0; i -= 1) {
     coalMotes[i].progress += dtSec * COAL_MOTE_SPEED;
     if (coalMotes[i].progress >= 1) {
@@ -1700,6 +1762,178 @@ function updateGatlingTurrets(dtSec: number): void {
   }
 }
 
+// ── Conveyor/Extractor/RoutedMote logic ──────────────────────────────────────
+
+/** Returns true if any adjacent tile contains an extractor structure. */
+function hasAdjacentExtractor(xTile: number, yTile: number): boolean {
+  for (const [ddx, ddy] of ADJ_OFFSETS) {
+    const nx = xTile + ddx;
+    const ny = yTile + ddy;
+    if (isInBounds(nx, ny) && structures[tileIndex(nx, ny)] === 'extractor') { return true; }
+  }
+  return false;
+}
+
+/** Returns true if (x,y) is one of the three ore/coal deposit tiles. */
+function isDeposit(xTile: number, yTile: number): boolean {
+  return (xTile === depositTile.x && yTile === depositTile.y)
+    || (xTile === deposit2Tile.x && yTile === deposit2Tile.y)
+    || (xTile === coalDepositTile.x && yTile === coalDepositTile.y);
+}
+
+/** True when tile (x,y) is a valid mote destination: core, turret, crusher, or gatling. */
+function isRouteDest(xTile: number, yTile: number): boolean {
+  if (xTile === coreTile.x && yTile === coreTile.y) { return true; }
+  const idx = tileIndex(xTile, yTile);
+  const s = structures[idx];
+  return s === 'turret' || s === 'crusher' || s === 'gatling';
+}
+
+/**
+ * Follow conveyor output directions starting from the tile adjacent to the
+ * extractor in its output direction.  Returns the full tile path (including
+ * extractor tile) if a valid destination is reached, or null if the route is
+ * broken/cyclic/too long.
+ */
+function findConveyorRoute(extX: number, extY: number): { pathXTile: number[]; pathYTile: number[] } | null {
+  const MAX_PATH = 64;
+  const visited = new Set<number>();
+  const pathX: number[] = [extX];
+  const pathY: number[] = [extY];
+  visited.add(tileIndex(extX, extY));
+
+  const extIdx = tileIndex(extX, extY);
+  const dir = conveyorDirection.get(extIdx) ?? 0;
+  const [dx, dy] = DIR_OFFSETS[dir];
+  let cx = extX + dx;
+  let cy = extY + dy;
+
+  while (pathX.length < MAX_PATH) {
+    if (!isInBounds(cx, cy)) { return null; }
+    if (isDeposit(cx, cy)) { return null; }
+
+    const idx = tileIndex(cx, cy);
+    if (visited.has(idx)) { return null; } // cycle
+
+    pathX.push(cx);
+    pathY.push(cy);
+
+    if (isRouteDest(cx, cy)) {
+      return { pathXTile: pathX, pathYTile: pathY };
+    }
+
+    if (structures[idx] !== 'conveyor') { return null; }
+
+    visited.add(idx);
+    const nextDir = conveyorDirection.get(idx) ?? 0;
+    const [ndx, ndy] = DIR_OFFSETS[nextDir];
+    cx += ndx;
+    cy += ndy;
+  }
+  return null; // too long
+}
+
+/** Detect ore type produced by an extractor based on the adjacent deposit. */
+function extractorResourceType(extX: number, extY: number): 'ore' | 'coal' | null {
+  for (const [ddx, ddy] of ADJ_OFFSETS) {
+    const nx = extX + ddx;
+    const ny = extY + ddy;
+    if (nx === depositTile.x && ny === depositTile.y) { return 'ore'; }
+    if (nx === deposit2Tile.x && ny === deposit2Tile.y) { return 'ore'; }
+    if (nx === coalDepositTile.x && ny === coalDepositTile.y) { return 'coal'; }
+  }
+  return null; // no adjacent deposit
+}
+
+/** Spawn and move routed motes from each extractor tile. */
+function updateExtractors(dtSec: number): void {
+  for (let yTile = 0; yTile < gridHeightTile; yTile += 1) {
+    for (let xTile = 0; xTile < gridWidthTile; xTile += 1) {
+      const idx = tileIndex(xTile, yTile);
+      if (structures[idx] !== 'extractor') { continue; }
+
+      const resType = extractorResourceType(xTile, yTile);
+      if (!resType) {
+        extractorHasRoute.set(idx, false);
+        continue;
+      }
+
+      const route = findConveyorRoute(xTile, yTile);
+      extractorHasRoute.set(idx, route !== null);
+      if (!route) { continue; }
+
+      const spawnInterval = resType === 'ore' ? EXTRACTOR_ORE_SPAWN_SEC : EXTRACTOR_COAL_SPAWN_SEC;
+      let cd = extractorSpawnCooldowns.get(idx) ?? spawnInterval;
+      cd -= dtSec;
+      if (cd <= 0) {
+        cd = spawnInterval;
+        routedMotes.push({
+          pathXTile: route.pathXTile,
+          pathYTile: route.pathYTile,
+          segIndex: 0,
+          progress: 0,
+          resourceType: resType,
+        });
+      }
+      extractorSpawnCooldowns.set(idx, cd);
+    }
+  }
+}
+
+/** Deliver a mote that has reached the end of its route to its destination. */
+function deliverMote(mote: RoutedMote): void {
+  const destX = mote.pathXTile[mote.pathXTile.length - 1];
+  const destY = mote.pathYTile[mote.pathYTile.length - 1];
+
+  if (destX === coreTile.x && destY === coreTile.y) {
+    if (mote.resourceType === 'ore') {
+      ore += 1;
+      totalOreEarned += 1;
+    } else {
+      coal += 1;
+    }
+    return;
+  }
+
+  const idx = tileIndex(destX, destY);
+  const s = structures[idx];
+  if (s === 'turret' && mote.resourceType === 'ore') {
+    const cur = turretAmmo.get(idx) ?? 0;
+    // Silently cap at max ammo; the extractor simply stops spawning while route is valid,
+    // but over-delivery just wastes the mote — no separate feedback needed for MVP.
+    turretAmmo.set(idx, Math.min(cur + 1, TURRET_AMMO_MAX));
+  } else if (s === 'crusher' && mote.resourceType === 'coal') {
+    // Coal arrives in the global coal pool; updateCrushers() drains it into gunpowder.
+    // Routing coal to a crusher tile is identical to routing it to the core for now —
+    // both feed the same pool — but destination choice matters when per-building
+    // storage is added (future: crusher has its own coal buffer).
+    coal += 1;
+  } else if (s === 'crusher' && mote.resourceType === 'ore') {
+    // Ore into crusher has no meaningful conversion yet; credit it as raw ore (fallback).
+    ore += 1;
+    totalOreEarned += 1;
+  }
+}
+
+/** Advance all in-flight routed motes along their conveyor chains. */
+function updateRoutedMotes(dtSec: number): void {
+  const speedPerSec = CONVEYOR_MOTE_SPEED; // segments per second
+  for (let i = routedMotes.length - 1; i >= 0; i -= 1) {
+    const m = routedMotes[i];
+    m.progress += dtSec * speedPerSec;
+    while (m.progress >= 1) {
+      m.progress -= 1;
+      m.segIndex += 1;
+      if (m.segIndex >= m.pathXTile.length - 1) {
+        // Reached destination
+        deliverMote(m);
+        routedMotes.splice(i, 1);
+        break;
+      }
+    }
+  }
+}
+
 function update(dtSec: number): void {
   if (isRunOver) {
     if (gameOverDelaySec > 0) {
@@ -1728,6 +1962,8 @@ function update(dtSec: number): void {
   updateGatlingTurrets(dtSec);
   updateCrushers(dtSec);
   updateMotes(dtSec);
+  updateExtractors(dtSec);
+  updateRoutedMotes(dtSec);
 }
 
 // ── Draw helpers ───────────────────────────────────────────────────────────
@@ -1788,20 +2024,20 @@ function drawTurretTile(xPx: number, yPx: number, idx: number): void {
     fillPx(xPx + tipXOff, yPx + tipYOff, 1, 1, '#aaf8ff');
   }
 
-  // Charge bar: full bar at top indicates ready-to-fire; empties after each shot.
-  // During the initial pre-wave delay, turretFireCooldownSec is set to the startup
-  // delay constant (~3 s) which is > TURRET_FIRE_COOLDOWN_SEC (0.35 s), so we
-  // show full charge (turrets appear primed) rather than a misleadingly-empty bar.
-  const chargeRatio = turretFireCooldownSec > TURRET_FIRE_COOLDOWN_SEC
-    ? 1
-    : Math.max(0, 1 - turretFireCooldownSec / TURRET_FIRE_COOLDOWN_SEC);
+  // Ammo bar: fraction of TURRET_AMMO_MAX.  Red when empty (starved), cyan when loaded.
+  const ammo = turretAmmo.get(idx) ?? 0;
+  const ammoRatio = ammo / TURRET_AMMO_MAX;
   const barMaxW = tileSizePx - 2;
-  const chargeW = Math.round(chargeRatio * barMaxW);
+  const ammoW = Math.round(ammoRatio * barMaxW);
   ctx.fillStyle = '#0a2030';
   ctx.fillRect(xPx + 1, yPx + 1, barMaxW, 1);
-  if (chargeW > 0) {
-    ctx.fillStyle = chargeRatio >= 1 ? '#27e0ff' : '#0e6680';
-    ctx.fillRect(xPx + 1, yPx + 1, chargeW, 1);
+  if (ammo <= 0) {
+    // Starvation indicator: red empty bar
+    ctx.fillStyle = '#ff2200';
+    ctx.fillRect(xPx + 1, yPx + 1, 2, 1);
+  } else {
+    ctx.fillStyle = ammoRatio >= 0.5 ? '#27e0ff' : '#0e6680';
+    ctx.fillRect(xPx + 1, yPx + 1, ammoW, 1);
   }
 }
 
@@ -1929,6 +2165,65 @@ function drawGatlingTile(xPx: number, yPx: number, idx: number): void {
   ctx.lineTo(cx + Math.cos(angle) * GATLING_BARREL_OFFSET_PX, cy + Math.sin(angle) * GATLING_BARREL_OFFSET_PX);
   ctx.stroke();
   ctx.restore();
+}
+
+// ── Conveyor belt tile – directional arrow on dark track background ───────────
+function drawConveyorTile(xPx: number, yPx: number, idx: number): void {
+  const dir = conveyorDirection.get(idx) ?? 0;
+  // dark belt body
+  fillPx(xPx, yPx, tileSizePx, tileSizePx, '#0d1a1a');
+  fillPx(xPx + 1, yPx + 1, 10, 10, '#112222');
+  // belt tracks (two parallel lines)
+  if (dir === 0 || dir === 2) {
+    // horizontal
+    fillPx(xPx + 1, yPx + 3, 10, 1, '#1a3a3a');
+    fillPx(xPx + 1, yPx + 8, 10, 1, '#1a3a3a');
+  } else {
+    // vertical
+    fillPx(xPx + 3, yPx + 1, 1, 10, '#1a3a3a');
+    fillPx(xPx + 8, yPx + 1, 1, 10, '#1a3a3a');
+  }
+  // directional arrow pixel art (5×5 centred)
+  const arrowColor = '#22ddbb';
+  if (dir === 0) { // East →
+    fillPx(xPx + 4, yPx + 5, 4, 1, arrowColor);
+    fillPx(xPx + 6, yPx + 4, 1, 3, arrowColor);
+    fillPx(xPx + 7, yPx + 5, 1, 1, arrowColor);
+  } else if (dir === 2) { // West ←
+    fillPx(xPx + 4, yPx + 5, 4, 1, arrowColor);
+    fillPx(xPx + 4, yPx + 4, 1, 3, arrowColor);
+    fillPx(xPx + 3, yPx + 5, 1, 1, arrowColor);
+  } else if (dir === 1) { // South ↓
+    fillPx(xPx + 5, yPx + 4, 1, 4, arrowColor);
+    fillPx(xPx + 4, yPx + 6, 3, 1, arrowColor);
+    fillPx(xPx + 5, yPx + 7, 1, 1, arrowColor);
+  } else { // North ↑
+    fillPx(xPx + 5, yPx + 4, 1, 4, arrowColor);
+    fillPx(xPx + 4, yPx + 4, 3, 1, arrowColor);
+    fillPx(xPx + 5, yPx + 3, 1, 1, arrowColor);
+  }
+}
+
+// ── Extractor tile – gear-like body, directional output indicator ─────────────
+function drawExtractorTile(xPx: number, yPx: number, idx: number): void {
+  const dir = conveyorDirection.get(idx) ?? 0;
+  const hasRoute = extractorHasRoute.get(idx) ?? true; // assume OK until first route eval
+  // body
+  fillPx(xPx, yPx, tileSizePx, tileSizePx, '#1a0f00');
+  fillPx(xPx + 2, yPx + 2, 8, 8, '#5a3800');
+  fillPx(xPx + 3, yPx + 3, 6, 6, '#7a5200');
+  fillPx(xPx + 5, yPx + 5, 2, 2, '#f0a600');
+  // gear teeth
+  fillPx(xPx + 5, yPx + 1, 2, 2, '#5a3800');
+  fillPx(xPx + 5, yPx + 9, 2, 2, '#5a3800');
+  fillPx(xPx + 1, yPx + 5, 2, 2, '#5a3800');
+  fillPx(xPx + 9, yPx + 5, 2, 2, '#5a3800');
+  // output direction indicator (small cyan arrow on edge)
+  const arrowColor = hasRoute ? '#22ddbb' : '#ff3300';
+  if (dir === 0) { fillPx(xPx + 10, yPx + 5, 2, 1, arrowColor); }
+  else if (dir === 1) { fillPx(xPx + 5, yPx + 10, 1, 2, arrowColor); }
+  else if (dir === 2) { fillPx(xPx, yPx + 5, 2, 1, arrowColor); }
+  else { fillPx(xPx + 5, yPx, 1, 2, arrowColor); }
 }
 
 function drawEnemyHpBar(xPx: number, yPx: number, hp: number, maxHp: number): void {
@@ -2095,6 +2390,10 @@ function render(): void {
         drawCrusherTile(xPx, yPx);
       } else if (structure === 'gatling') {
         drawGatlingTile(xPx, yPx, index);
+      } else if (structure === 'conveyor') {
+        drawConveyorTile(xPx, yPx, index);
+      } else if (structure === 'extractor') {
+        drawExtractorTile(xPx, yPx, index);
       }
       if (structure !== 'empty') {
         const hp = structureHp.get(index);
@@ -2109,34 +2408,35 @@ function render(): void {
   drawCoreTile(coreTile.x * tileSizePx, coreTile.y * tileSizePx);
   drawDepositTile(depositTile.x * tileSizePx, depositTile.y * tileSizePx);
 
-  // Dotted route line from deposit to core
-  if (isTileVisible(depositTile.x, depositTile.y)) {
-    const dxTile = coreTile.x - depositTile.x;
-    const dyTile = coreTile.y - depositTile.y;
-    ctx.fillStyle = '#2a1a00';
-    for (let t = 0.08; t < 0.93; t += 0.1) {
-      const rxPx = Math.round((depositTile.x + dxTile * t) * tileSizePx + tileSizePx / 2);
-      const ryPx = Math.round((depositTile.y + dyTile * t) * tileSizePx + tileSizePx / 2);
-      ctx.fillRect(rxPx, ryPx, 1, 1);
-    }
+  // "Build extractor" hint on deposit tiles that have no adjacent extractor
+  if (isTileVisible(depositTile.x, depositTile.y) && !hasAdjacentExtractor(depositTile.x, depositTile.y)) {
+    const hxPx = depositTile.x * tileSizePx;
+    const hyPx = depositTile.y * tileSizePx;
+    ctx.fillStyle = 'rgba(255,160,0,0.5)';
+    ctx.fillRect(hxPx + 5, hyPx + 2, 2, 7);
+    ctx.fillRect(hxPx + 4, hyPx + 8, 4, 2);
   }
 
-  // Coal deposit route + coal motes
+  // Coal deposit
   if (isTileVisible(coalDepositTile.x, coalDepositTile.y)) {
     drawCoalDepositTile(coalDepositTile.x * tileSizePx, coalDepositTile.y * tileSizePx);
-    const cdxTile = coreTile.x - coalDepositTile.x;
-    const cdyTile = coreTile.y - coalDepositTile.y;
-    ctx.fillStyle = '#1a1820';
-    for (let t = 0.08; t < 0.93; t += 0.1) {
-      const rxPx = Math.round((coalDepositTile.x + cdxTile * t) * tileSizePx + tileSizePx / 2);
-      const ryPx = Math.round((coalDepositTile.y + cdyTile * t) * tileSizePx + tileSizePx / 2);
-      ctx.fillRect(rxPx, ryPx, 1, 1);
+    if (!hasAdjacentExtractor(coalDepositTile.x, coalDepositTile.y)) {
+      const hxPx = coalDepositTile.x * tileSizePx;
+      const hyPx = coalDepositTile.y * tileSizePx;
+      ctx.fillStyle = 'rgba(180,140,255,0.5)';
+      ctx.fillRect(hxPx + 5, hyPx + 2, 2, 7);
+      ctx.fillRect(hxPx + 4, hyPx + 8, 4, 2);
     }
-    ctx.fillStyle = '#555566';
-    for (const mote of coalMotes) {
-      const xPx = Math.round((coalDepositTile.x + cdxTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
-      const yPx = Math.round((coalDepositTile.y + cdyTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
-      ctx.fillRect(xPx, yPx, 2, 2);
+    // Legacy coal motes draining to core (from before extractor system)
+    if (coalMotes.length > 0) {
+      const cdxTile = coreTile.x - coalDepositTile.x;
+      const cdyTile = coreTile.y - coalDepositTile.y;
+      ctx.fillStyle = '#555566';
+      for (const mote of coalMotes) {
+        const mxPx = Math.round((coalDepositTile.x + cdxTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+        const myPx = Math.round((coalDepositTile.y + cdyTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+        ctx.fillRect(mxPx, myPx, 2, 2);
+      }
     }
   }
 
@@ -2145,9 +2445,58 @@ function render(): void {
   for (const mote of gunpowderMotes) {
     const dxTile = coreTile.x - mote.fromXTile;
     const dyTile = coreTile.y - mote.fromYTile;
-    const xPx = Math.round((mote.fromXTile + dxTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
-    const yPx = Math.round((mote.fromYTile + dyTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
-    ctx.fillRect(xPx, yPx, 2, 2);
+    const mxPx = Math.round((mote.fromXTile + dxTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+    const myPx = Math.round((mote.fromYTile + dyTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+    ctx.fillRect(mxPx, myPx, 2, 2);
+  }
+
+  // Second deposit (visible when radar has expanded enough)
+  if (revealRadiusTile >= DEPOSIT2_MIN_REVEAL_RADIUS_TILE && isTileVisible(deposit2Tile.x, deposit2Tile.y)) {
+    drawDeposit2Tile(deposit2Tile.x * tileSizePx, deposit2Tile.y * tileSizePx);
+    if (!hasAdjacentExtractor(deposit2Tile.x, deposit2Tile.y)) {
+      const hxPx = deposit2Tile.x * tileSizePx;
+      const hyPx = deposit2Tile.y * tileSizePx;
+      ctx.fillStyle = 'rgba(255,160,0,0.5)';
+      ctx.fillRect(hxPx + 5, hyPx + 2, 2, 7);
+      ctx.fillRect(hxPx + 4, hyPx + 8, 4, 2);
+    }
+    // Legacy motes2 draining
+    if (motes2.length > 0) {
+      const d2xTile = coreTile.x - deposit2Tile.x;
+      const d2yTile = coreTile.y - deposit2Tile.y;
+      ctx.fillStyle = '#ffaa33';
+      for (const mote of motes2) {
+        const mxPx = Math.round((deposit2Tile.x + d2xTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+        const myPx = Math.round((deposit2Tile.y + d2yTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+        ctx.fillRect(mxPx, myPx, 2, 2);
+      }
+    }
+  }
+
+  // Legacy ore motes draining
+  if (motes.length > 0) {
+    const dxTile = coreTile.x - depositTile.x;
+    const dyTile = coreTile.y - depositTile.y;
+    ctx.fillStyle = '#ffd677';
+    for (const mote of motes) {
+      const mxPx = Math.round((depositTile.x + dxTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+      const myPx = Math.round((depositTile.y + dyTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+      ctx.fillRect(mxPx, myPx, 2, 2);
+    }
+  }
+
+  // Routed motes travelling along conveyor chains
+  for (const mote of routedMotes) {
+    const si = mote.segIndex;
+    if (si >= mote.pathXTile.length - 1) { continue; }
+    const ax = mote.pathXTile[si] * tileSizePx + tileSizePx / 2;
+    const ay = mote.pathYTile[si] * tileSizePx + tileSizePx / 2;
+    const bx = mote.pathXTile[si + 1] * tileSizePx + tileSizePx / 2;
+    const by = mote.pathYTile[si + 1] * tileSizePx + tileSizePx / 2;
+    const mxPx = Math.round(ax + (bx - ax) * mote.progress) - 1;
+    const myPx = Math.round(ay + (by - ay) * mote.progress) - 1;
+    ctx.fillStyle = mote.resourceType === 'ore' ? '#ffd677' : '#8866bb';
+    ctx.fillRect(mxPx, myPx, 2, 2);
   }
 
   // Radar reveal-radius ring
@@ -2203,37 +2552,6 @@ function render(): void {
     ctx.arc(cx, cy, turretRangeTile * tileSizePx, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
-  }
-
-  // Second deposit (visible when radar has expanded enough)
-  if (revealRadiusTile >= DEPOSIT2_MIN_REVEAL_RADIUS_TILE && isTileVisible(deposit2Tile.x, deposit2Tile.y)) {
-    drawDeposit2Tile(deposit2Tile.x * tileSizePx, deposit2Tile.y * tileSizePx);
-    // Dotted route from deposit2 to core
-    const d2xTile = coreTile.x - deposit2Tile.x;
-    const d2yTile = coreTile.y - deposit2Tile.y;
-    ctx.fillStyle = '#2a1500';
-    for (let t = 0.08; t < 0.93; t += 0.1) {
-      const rxPx = Math.round((deposit2Tile.x + d2xTile * t) * tileSizePx + tileSizePx / 2);
-      const ryPx = Math.round((deposit2Tile.y + d2yTile * t) * tileSizePx + tileSizePx / 2);
-      ctx.fillRect(rxPx, ryPx, 1, 1);
-    }
-    // Motes from second deposit
-    ctx.fillStyle = '#ffaa33';
-    for (const mote of motes2) {
-      const xPx = Math.round((deposit2Tile.x + d2xTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
-      const yPx = Math.round((deposit2Tile.y + d2yTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
-      ctx.fillRect(xPx, yPx, 2, 2);
-    }
-  }
-
-  // Ore motes (2×2 pixels)
-  ctx.fillStyle = '#ffd677';
-  for (const mote of motes) {
-    const dxTile = coreTile.x - depositTile.x;
-    const dyTile = coreTile.y - depositTile.y;
-    const xPx = Math.round((depositTile.x + dxTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
-    const yPx = Math.round((depositTile.y + dyTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
-    ctx.fillRect(xPx, yPx, 2, 2);
   }
 
   // Shot flashes
