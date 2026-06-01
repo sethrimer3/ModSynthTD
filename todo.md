@@ -41,8 +41,8 @@ AI agents should maintain this file as part of normal implementation work.
 - [x] Add Rebuild Affordable.
 - [x] Add rebuild filters: walls, turrets, conveyors, and advanced logistics.
 - [x] Preserve blueprint ghost data for conveyors and extractors (same ghost system as other structures).
-- [ ] Add visual repair motes, drones, scaffolding, or rebuild animation.
-- [ ] Add one repair automation building.
+- [x] Add visual repair motes, drones, scaffolding, or rebuild animation.
+- [x] Add one repair automation building.
 
 ## Resources and Processing
 
@@ -50,20 +50,20 @@ AI agents should maintain this file as part of normal implementation work.
 - [x] Add one refined resource with a distinct mote size or shape (gunpowder mote is now 1×3 vertical pixel vs coal/ore 2×2 square).
 - [x] Add one resource conversion chain: coal mote → Crusher → gunpowder → Gatling.
 - [ ] Add basic storage behavior for at least one building (full-ammo cap exists on turrets; dedicated storage building deferred).
-- [ ] Add destruction consequences for stored dangerous resources.
+- [x] Add destruction consequences for stored dangerous resources.
 - [ ] Add bottleneck visibility for overproduction, starvation, or full storage (extractor no-route indicator is first step; per-route flow readout deferred).
 
 ## Radar and Expansion
 
 - [ ] Make radar expand visible and buildable area through clearer stages.
 - [x] Add radar-based enemy direction warnings.
-- [ ] Add radar-based resource discovery beyond the current second deposit.
+- [x] Add radar-based resource discovery beyond the current second deposit.
 - [ ] Add radar-based debris weakness or breach warning information.
 - [ ] Add zoom-out behavior tied to radar while keeping particles readable.
 
 ## Procedural Enemies
 
-- [ ] Tune worm splitting so the intended survival threshold is consistent with the design.
+- [x] Tune worm splitting so the intended survival threshold is consistent with the design.
 - [x] Add at least one worm variant, such as Armored, Crystal, Acid, or Siege Worm.
 - [x] Add segment-specific combat effects for at least one weapon.
 - [x] Add clearer damage feedback on worm segments.

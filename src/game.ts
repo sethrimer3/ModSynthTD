@@ -1,5 +1,5 @@
-type Structure = 'empty' | 'wall' | 'turret' | 'radar' | 'crusher' | 'gatling' | 'conveyor' | 'extractor' | 'splitter' | 'cannon';
-type Tool = 'wall' | 'turret' | 'radar' | 'erase' | 'repair' | 'crusher' | 'gatling' | 'conveyor' | 'extractor' | 'splitter' | 'cannon';
+type Structure = 'empty' | 'wall' | 'turret' | 'radar' | 'crusher' | 'gatling' | 'conveyor' | 'extractor' | 'splitter' | 'cannon' | 'repairer';
+type Tool = 'wall' | 'turret' | 'radar' | 'erase' | 'repair' | 'crusher' | 'gatling' | 'conveyor' | 'extractor' | 'splitter' | 'cannon' | 'repairer';
 type BuildCategory = 'mining' | 'turrets' | 'defense' | 'tech' | 'repair' | 'erase' | 'logistics';
 
 interface BuildItemDef {
@@ -63,6 +63,16 @@ interface MuzzleFlash {
   ageSec: number;
 }
 
+interface RepairSparkle {
+  xPx: number;
+  yPx: number;
+  vxPx: number;
+  vyPx: number;
+  ageSec: number;
+  maxAgeSec: number;
+  color: string;
+}
+
 interface ShellCasing {
   xPx: number;
   yPx: number;
@@ -105,6 +115,7 @@ const nativeHeightPx = gridHeightTile * tileSizePx;
 const coreTile = { x: Math.floor(gridWidthTile / 2), y: Math.floor(gridHeightTile / 2) };
 const depositTile = { x: 5, y: 10 };          // Moved closer to base (was {3,2})
 const coalDepositTile = { x: 15, y: 10 };      // coal deposit on the right side of base
+const deposit3Tile = { x: 5, y: 16 };          // 3rd ore deposit — revealed at high radar
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
 const currentBuildNumber = 17;
@@ -130,6 +141,7 @@ const secondEntranceTile = { x: coreTile.x, y: 0 };
 const deposit2Tile = { x: 16, y: 17 };
 const META_SYMBOL = '◆';
 const DEPOSIT2_MIN_REVEAL_RADIUS_TILE = 6;
+const DEPOSIT3_MIN_REVEAL_RADIUS_TILE = 8;  // 3rd deposit requires higher radar
 const TURRET_BASE_DAMAGE = 10;
 const TURRET_POWER_DAMAGE_PER_LEVEL = 3;
 const ORE_BONUS_PER_LEVEL = 30;
@@ -152,6 +164,12 @@ const CANNON_RANGE_TILE = 5.5;
 // Crusher constants
 const CRUSHER_CONVERSION_SEC = 2.5;
 
+// Auto-repair building constants
+const REPAIRER_REPAIR_INTERVAL_SEC = 2.5;    // seconds between repair pulses
+const REPAIRER_REPAIR_AMOUNT_HP = 8;          // HP restored per pulse
+const REPAIRER_ORE_PER_PULSE = 1;             // ore consumed per repair pulse
+const REPAIRER_RANGE_TILE = 1.6;              // range in tiles (covers adjacent tiles)
+
 // Coal / gunpowder mote constants
 const COAL_MOTE_SPAWN_SEC = 0.9;
 const COAL_MOTE_SPEED = 0.35;
@@ -159,6 +177,10 @@ const GUNPOWDER_MOTE_SPEED = 0.35;
 
 // Visual effect constants
 const MUZZLE_FLASH_DURATION_SEC = 0.07;
+const REPAIR_SPARKLE_MAX_AGE_SEC = 0.45;
+const EXPLOSION_RANGE_TILE = 2.5;
+const EXPLOSION_DAMAGE_PER_GUNPOWDER = 12;
+const MAX_GUNPOWDER_PER_EXPLOSION = 5;
 const GATLING_BARREL_OFFSET_PX = 6;
 const SHELL_EJECT_ANGLE_VARIANCE_RAD = 0.6;
 const SHELL_EJECT_BASE_SPEED_PX = 22;
@@ -169,9 +191,9 @@ const SHELL_CASING_BOUNCE_RESTITUTION = -0.55;
 const SHELL_CASING_GRAVITY_PX_PER_SEC2 = 18;
 const SHELL_CASING_FRICTION = 0.96;
 
-const STRUCTURE_MAX_HP: Partial<Record<Structure, number>> = { wall: 50, turret: 30, radar: 25, crusher: 35, gatling: 25, conveyor: 10, extractor: 20, splitter: 15, cannon: 35 };
-const STRUCTURE_ORE_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 12, radar: 25, crusher: 18, gatling: 18, conveyor: 0, extractor: 0, splitter: 8, cannon: 20 };
-const STRUCTURE_REBUILD_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 6, radar: 12, crusher: 9, gatling: 9, conveyor: 0, extractor: 0, splitter: 4, cannon: 10 };
+const STRUCTURE_MAX_HP: Partial<Record<Structure, number>> = { wall: 50, turret: 30, radar: 25, crusher: 35, gatling: 25, conveyor: 10, extractor: 20, splitter: 15, cannon: 35, repairer: 25 };
+const STRUCTURE_ORE_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 12, radar: 25, crusher: 18, gatling: 18, conveyor: 0, extractor: 0, splitter: 8, cannon: 20, repairer: 18 };
+const STRUCTURE_REBUILD_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 6, radar: 12, crusher: 9, gatling: 9, conveyor: 0, extractor: 0, splitter: 4, cannon: 10, repairer: 9 };
 const ENEMY_WALL_DAMAGE = 8;
 const ENEMY_WALL_ATTACK_COOLDOWN_SEC = 1.5;
 const SECOND_ENTRANCE_ACTIVATION_WAVE = 7;
@@ -461,6 +483,8 @@ const crusherConversionTimers = new Map<number, number>();
 const cannonAmmo = new Map<number, number>();
 const cannonFireCooldowns = new Map<number, number>();
 const splitterToggle = new Map<number, boolean>();
+const repairerTimers = new Map<number, number>();
+let repairSparkles: RepairSparkle[] = [];
 let breachOpened = false;
 // True once the Breaker is within BREAKER_WARN_DIST_TILE tiles of its debris target
 let breakerWarningActive = false;
@@ -526,14 +550,16 @@ const BUILD_CATEGORIES: BuildCategoryDef[] = [
     id: 'tech', label: 'Tech', color: '#8d68ff',
     items: [{ id: 'radar', label: 'Radar', hotkey: 'R', cost: 25, color: '#8d68ff' }],
   },
-  { id: 'repair', label: 'Repair', color: '#44ff88', directTool: 'repair', items: [] },
+  { id: 'repair', label: 'Repair', color: '#44ff88', directTool: 'repair', items: [
+    { id: 'repairer', label: 'Auto-Repair', hotkey: 'B', cost: 18, color: '#44ff88' },
+  ] },
   { id: 'erase',  label: 'Erase',  color: '#ff7060', directTool: 'erase',  items: [] },
 ];
 
 const TOOL_TO_CATEGORY: Record<Tool, BuildCategory> = {
   wall: 'defense', turret: 'turrets', radar: 'tech', erase: 'erase', repair: 'repair',
   crusher: 'mining', gatling: 'turrets', extractor: 'mining', conveyor: 'logistics',
-  splitter: 'logistics', cannon: 'turrets',
+  splitter: 'logistics', cannon: 'turrets', repairer: 'repair',
 };
 
 const categoryButtons = new Map<BuildCategory, HTMLButtonElement>();
@@ -596,6 +622,7 @@ window.addEventListener('keydown', (event) => {
     'v': 'conveyor',
     's': 'splitter',
     'n': 'cannon',
+    'b': 'repairer',
   };
   const tool = keyMap[event.key.toLowerCase()];
   if (tool) {
@@ -837,6 +864,7 @@ function attemptRepair(xTile: number, yTile: number): void {
     structureHp.set(index, STRUCTURE_MAX_HP[ghost] ?? STRUCTURE_MAX_HP.wall!);
     blueprintGhosts.delete(index);
     distanceField = computeDistanceField();
+    spawnRepairSparkles((xTile + 0.5) * tileSizePx, (yTile + 0.5) * tileSizePx, '#44ff88', 6);
     return;
   }
 
@@ -857,6 +885,7 @@ function attemptRepair(xTile: number, yTile: number): void {
 
   ore -= repairCost;
   structureHp.set(index, maxHp);
+  spawnRepairSparkles((xTile + 0.5) * tileSizePx, (yTile + 0.5) * tileSizePx, '#44ff88', 6);
 }
 
 function attemptPlaceStructure(xTile: number, yTile: number): void {
@@ -876,6 +905,9 @@ function attemptPlaceStructure(xTile: number, yTile: number): void {
     return;
   }
   if (xTile === deposit2Tile.x && yTile === deposit2Tile.y) {
+    return;
+  }
+  if (xTile === deposit3Tile.x && yTile === deposit3Tile.y) {
     return;
   }
   if (xTile === coalDepositTile.x && yTile === coalDepositTile.y) {
@@ -1015,7 +1047,28 @@ function damageStructure(index: number, amount: number): void {
       radarLevel = Math.max(MIN_RADAR_LEVEL, radarLevel - 1);
       revealRadiusTile = Math.max(MIN_REVEAL_RADIUS_TILE, revealRadiusTile - 1);
     }
+    if (ghostType === 'crusher' && gunpowder > 0) {
+      const explosionGunpowder = Math.min(gunpowder, MAX_GUNPOWDER_PER_EXPLOSION);
+      gunpowder -= explosionGunpowder;
+      const totalDamage = explosionGunpowder * EXPLOSION_DAMAGE_PER_GUNPOWDER;
+      const xTile = index % gridWidthTile;
+      const yTile = Math.floor(index / gridWidthTile);
+      const xPx = (xTile + 0.5) * tileSizePx;
+      const yPx = (yTile + 0.5) * tileSizePx;
+      spawnRepairSparkles(xPx, yPx, '#ff8800', 12);
+      showOverlay(`BOOM! -${totalDamage}hp`, '#ff8800', 2.0);
+      for (const worm of worms) {
+        for (const seg of worm.segments) {
+          const distTile = Math.hypot(seg.xTile - xTile, seg.yTile - yTile);
+          if (distTile <= EXPLOSION_RANGE_TILE) {
+            const dmg = Math.round(totalDamage * (1 - distTile / EXPLOSION_RANGE_TILE));
+            seg.hp = Math.max(0, seg.hp - dmg);
+          }
+        }
+      }
+    }
     turretAngleRad.delete(index);
+    repairerTimers.delete(index);
     distanceField = computeDistanceField();
   } else {
     structureHp.set(index, next);
@@ -1324,6 +1377,8 @@ function resetRun(): void {
   routedMotes = [];
   extractorSpawnCooldowns.clear();
   extractorHasRoute.clear();
+  repairerTimers.clear();
+  repairSparkles = [];
   conveyorPlacementDir = 0;
   rebuildFilterMode = 'all';
   breakerTriggered = false;
@@ -1593,7 +1648,7 @@ function cleanDeadWormSegments(): void {
         ore += 1;
         totalOreEarned += 1;
         if (fragment.length >= WORM_MIN_SURVIVE_SEGMENTS) {
-          nextWorms.push({ segments: fragment, speedTilePerSec: worm.speedTilePerSec, wallAttackCooldownSec: 0 });
+          nextWorms.push({ segments: fragment, speedTilePerSec: worm.speedTilePerSec, wallAttackCooldownSec: 0, isArmored: worm.isArmored });
         }
         fragment = [];
       } else {
@@ -1601,7 +1656,7 @@ function cleanDeadWormSegments(): void {
       }
     }
     if (fragment.length >= WORM_MIN_SURVIVE_SEGMENTS) {
-      nextWorms.push({ segments: fragment, speedTilePerSec: worm.speedTilePerSec, wallAttackCooldownSec: worm.wallAttackCooldownSec });
+      nextWorms.push({ segments: fragment, speedTilePerSec: worm.speedTilePerSec, wallAttackCooldownSec: worm.wallAttackCooldownSec, isArmored: worm.isArmored });
     }
   }
   worms = nextWorms;
@@ -1908,6 +1963,73 @@ function updateGatlingTurrets(dtSec: number): void {
 }
 
 // ── Cannon turret – slow, high-damage, ore-fed ────────────────────────────────
+function spawnRepairSparkles(xPx: number, yPx: number, color: string, count: number = 6): void {
+  for (let i = 0; i < count; i += 1) {
+    const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+    const speed = 8 + Math.random() * 12;
+    repairSparkles.push({
+      xPx, yPx,
+      vxPx: Math.cos(angle) * speed,
+      vyPx: Math.sin(angle) * speed,
+      ageSec: 0,
+      maxAgeSec: REPAIR_SPARKLE_MAX_AGE_SEC,
+      color,
+    });
+  }
+}
+
+// ── Auto-Repair building ──────────────────────────────────────────────────────
+function updateRepairers(dtSec: number): void {
+  for (let yTile = 0; yTile < gridHeightTile; yTile += 1) {
+    for (let xTile = 0; xTile < gridWidthTile; xTile += 1) {
+      const idx = tileIndex(xTile, yTile);
+      if (structures[idx] !== 'repairer') { continue; }
+      if (ore < REPAIRER_ORE_PER_PULSE) { continue; }
+
+      let timer = repairerTimers.get(idx) ?? 0;
+      timer -= dtSec;
+      if (timer > 0) { repairerTimers.set(idx, timer); continue; }
+
+      // Find an adjacent damaged structure within range
+      let bestIdx = -1;
+      let bestMissing = 0;
+      for (let dy = -Math.ceil(REPAIRER_RANGE_TILE); dy <= Math.ceil(REPAIRER_RANGE_TILE); dy += 1) {
+        for (let dx = -Math.ceil(REPAIRER_RANGE_TILE); dx <= Math.ceil(REPAIRER_RANGE_TILE); dx += 1) {
+          if (dx === 0 && dy === 0) { continue; }
+          if (Math.hypot(dx, dy) > REPAIRER_RANGE_TILE) { continue; }
+          const nx = xTile + dx;
+          const ny = yTile + dy;
+          if (!isInBounds(nx, ny)) { continue; }
+          const ni = tileIndex(nx, ny);
+          const hp = structureHp.get(ni);
+          if (hp === undefined) { continue; }
+          const s = structures[ni];
+          const maxHp = STRUCTURE_MAX_HP[s] ?? 0;
+          const missing = maxHp - hp;
+          if (missing > bestMissing) {
+            bestMissing = missing;
+            bestIdx = ni;
+          }
+        }
+      }
+
+      if (bestIdx < 0) { repairerTimers.set(idx, REPAIRER_REPAIR_INTERVAL_SEC); continue; }
+
+      ore -= REPAIRER_ORE_PER_PULSE;
+      const currentHp = structureHp.get(bestIdx)!;
+      const s = structures[bestIdx];
+      const maxHp = STRUCTURE_MAX_HP[s] ?? 0;
+      structureHp.set(bestIdx, Math.min(maxHp, currentHp + REPAIRER_REPAIR_AMOUNT_HP));
+
+      const targetX = (bestIdx % gridWidthTile + 0.5) * tileSizePx;
+      const targetY = (Math.floor(bestIdx / gridWidthTile) + 0.5) * tileSizePx;
+      spawnRepairSparkles(targetX, targetY, '#44ff88', 4);
+      repairerTimers.set(idx, REPAIRER_REPAIR_INTERVAL_SEC);
+    }
+  }
+}
+
+
 function updateCannonTurrets(dtSec: number): void {
   const half = tileSizePx / 2;
   const damage = CANNON_BASE_DAMAGE;
@@ -2096,10 +2218,11 @@ function hasAdjacentExtractor(xTile: number, yTile: number): boolean {
   return false;
 }
 
-/** Returns true if (x,y) is one of the three ore/coal deposit tiles. */
+/** Returns true if (x,y) is one of the four ore/coal deposit tiles. */
 function isDeposit(xTile: number, yTile: number): boolean {
   return (xTile === depositTile.x && yTile === depositTile.y)
     || (xTile === deposit2Tile.x && yTile === deposit2Tile.y)
+    || (xTile === deposit3Tile.x && yTile === deposit3Tile.y)
     || (xTile === coalDepositTile.x && yTile === coalDepositTile.y);
 }
 
@@ -2164,6 +2287,7 @@ function extractorResourceType(extX: number, extY: number): 'ore' | 'coal' | nul
     const ny = extY + ddy;
     if (nx === depositTile.x && ny === depositTile.y) { return 'ore'; }
     if (nx === deposit2Tile.x && ny === deposit2Tile.y) { return 'ore'; }
+    if (nx === deposit3Tile.x && ny === deposit3Tile.y) { return 'ore'; }
     if (nx === coalDepositTile.x && ny === coalDepositTile.y) { return 'coal'; }
   }
   return null; // no adjacent deposit
@@ -2321,9 +2445,20 @@ function update(dtSec: number): void {
   updateGatlingTurrets(dtSec);
   updateCannonTurrets(dtSec);
   updateCrushers(dtSec);
+  updateRepairers(dtSec);
   updateMotes(dtSec);
   updateExtractors(dtSec);
   updateRoutedMotes(dtSec);
+
+  // Advance repair sparkles
+  for (let i = repairSparkles.length - 1; i >= 0; i -= 1) {
+    const sp = repairSparkles[i];
+    sp.ageSec += dtSec;
+    if (sp.ageSec >= REPAIR_SPARKLE_MAX_AGE_SEC) { repairSparkles.splice(i, 1); continue; }
+    sp.xPx += sp.vxPx * dtSec;
+    sp.yPx += sp.vyPx * dtSec;
+    sp.vyPx += 30 * dtSec; // gravity
+  }
 }
 
 // ── Draw helpers ───────────────────────────────────────────────────────────
@@ -2602,6 +2737,17 @@ function drawSplitterTile(xPx: number, yPx: number, idx: number): void {
 }
 
 // ── Conveyor belt tile – directional arrow on dark track background ───────────
+function drawRepairerTile(xPx: number, yPx: number): void {
+  // Dark green body
+  fillPx(xPx, yPx, tileSizePx, tileSizePx, '#071a0d');
+  fillPx(xPx + 1, yPx + 1, 10, 10, '#0e2a17');
+  // Cross symbol (green)
+  fillPx(xPx + 5, yPx + 2, 2, 8, '#22cc66');
+  fillPx(xPx + 2, yPx + 5, 8, 2, '#22cc66');
+  // Highlight center
+  fillPx(xPx + 5, yPx + 5, 2, 2, '#88ffaa');
+}
+
 function drawConveyorTile(xPx: number, yPx: number, idx: number): void {
   const dir = conveyorDirection.get(idx) ?? 0;
   // dark belt body
@@ -2858,6 +3004,8 @@ function render(): void {
         drawSplitterTile(xPx, yPx, index);
       } else if (structure === 'cannon') {
         drawCannonTile(xPx, yPx, index);
+      } else if (structure === 'repairer') {
+        drawRepairerTile(xPx, yPx);
       }
       if (structure !== 'empty') {
         const hp = structureHp.get(index);
@@ -2934,6 +3082,18 @@ function render(): void {
         const myPx = Math.round((deposit2Tile.y + d2yTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
         ctx.fillRect(mxPx, myPx, 2, 2);
       }
+    }
+  }
+
+  // Third ore deposit (visible at max radar level)
+  if (revealRadiusTile >= DEPOSIT3_MIN_REVEAL_RADIUS_TILE && isTileVisible(deposit3Tile.x, deposit3Tile.y)) {
+    drawDeposit2Tile(deposit3Tile.x * tileSizePx, deposit3Tile.y * tileSizePx);
+    if (!hasAdjacentExtractor(deposit3Tile.x, deposit3Tile.y)) {
+      const hxPx = deposit3Tile.x * tileSizePx;
+      const hyPx = deposit3Tile.y * tileSizePx;
+      ctx.fillStyle = 'rgba(255,160,0,0.5)';
+      ctx.fillRect(hxPx + 5, hyPx + 2, 2, 7);
+      ctx.fillRect(hxPx + 4, hyPx + 8, 4, 2);
     }
   }
 
@@ -3062,6 +3222,16 @@ function render(): void {
     const alpha = Math.max(0, 1 - c.ageSec / c.maxAgeSec);
     ctx.fillStyle = `rgba(220,190,50,${alpha})`;
     ctx.fillRect(Math.round(c.xPx), Math.round(c.yPx), 2, 1);
+  }
+
+  // Repair/explosion sparkles
+  for (const sp of repairSparkles) {
+    const alpha = Math.max(0, 1 - sp.ageSec / REPAIR_SPARKLE_MAX_AGE_SEC);
+    const r = parseInt(sp.color.slice(1, 3), 16);
+    const g = parseInt(sp.color.slice(3, 5), 16);
+    const b = parseInt(sp.color.slice(5, 7), 16);
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+    ctx.fillRect(Math.round(sp.xPx), Math.round(sp.yPx), 2, 2);
   }
 
   // Enemies and their HP bars
