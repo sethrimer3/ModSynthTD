@@ -870,7 +870,7 @@ The prototype is successful if:
 - [x] Spawn ore or energy motes.
 - [x] Move motes along a simple drawn route or conveyor.
 - [x] Deliver motes to a building.
-- [ ] Display bottleneck or storage count.
+- [x] Display bottleneck or storage count.
 
 ### Milestone 5: Enemy Waves
 
@@ -898,7 +898,7 @@ The prototype is successful if:
 - [x] Add run summary.
 - [x] Add persistent currency.
 - [x] Add one permanent upgrade.
-- [ ] Add placeholder nine-slot screen.
+- [x] Add placeholder nine-slot screen.
 
 ## 18. Open Questions
 
@@ -1281,7 +1281,7 @@ Recommended MVP additions:
 - [ ] At least one finite strategic piece exists, such as a bridge or splitter.
 - [x] One enemy can damage or destroy structures.
 - [x] Destroyed structures leave blueprint ghosts.
-- [ ] The player can use a repair brush to rebuild ghosts.
+- [x] The player can use a repair brush to rebuild ghosts.
 - [x] One visible resource mote type moves through conveyors.
 - [ ] One tower shows stored ammo or internal resource state.
 - [ ] One simple procedural worm enemy can be prototyped later as a reusable linked-segment system.

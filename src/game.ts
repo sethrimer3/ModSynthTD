@@ -1,5 +1,5 @@
 type Structure = 'empty' | 'wall' | 'turret' | 'radar';
-type Tool = 'wall' | 'turret' | 'radar' | 'erase';
+type Tool = 'wall' | 'turret' | 'radar' | 'erase' | 'repair';
 
 interface Enemy {
   xTile: number;
@@ -42,7 +42,7 @@ const coreTile = { x: Math.floor(gridWidthTile / 2), y: Math.floor(gridHeightTil
 const depositTile = { x: 3, y: 2 };
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 4;
+const currentBuildNumber = 5;
 const turretRangeTile = 4.5;
 const shotFlashDurationSec = 0.12;
 const breakerArrivalDistanceTile = 0.2;
@@ -71,6 +71,7 @@ const STRUCTURE_HP_BAR_WARN_THRESHOLD = 0.5;
 const HP_BAR_COLOR_HEALTHY = '#ffcc44';
 const HP_BAR_COLOR_CRITICAL = '#ff4422';
 const ORE_SYMBOL = '⊕';
+const ORE_RATE_SAMPLE_WINDOW_SEC = 10; // rolling window for ore/sec display
 // Orthogonal neighbor offsets used in wall-damage and adjacency checks
 const ADJ_OFFSETS: readonly [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const META_UPGRADE_KEYS: MetaUpgradeKey[] = ['coreArmor', 'turretPower', 'oreBonus'];
@@ -202,7 +203,37 @@ for (const key of META_UPGRADE_KEYS) {
 
 upgradePanelElement.append(upgradesPanelLabelElement, upgradeButtonsContainerElement);
 
-rootElement.append(hudElement, canvasElement, toolbarElement, upgradePanelElement);
+// Status bar DOM (context-sensitive cost hint, shown below toolbar)
+const statusBarElement = document.createElement('div');
+statusBarElement.className = 'statusBar';
+
+// Nine-slot placeholder DOM
+const slotsPanelElement = document.createElement('div');
+slotsPanelElement.className = 'slotsPanel';
+
+const slotsPanelLabelElement = document.createElement('div');
+slotsPanelLabelElement.className = 'slotsPanelLabel';
+slotsPanelLabelElement.textContent = 'BASE SLOTS';
+
+const slotsGridElement = document.createElement('div');
+slotsGridElement.className = 'slotsGrid';
+
+for (let slotIndex = 0; slotIndex < 9; slotIndex += 1) {
+  const slotBtn = document.createElement('div');
+  slotBtn.className = slotIndex === 0 ? 'slotButton slotActive' : 'slotButton slotLocked';
+  const slotNameSpan = document.createElement('span');
+  slotNameSpan.className = 'slotName';
+  slotNameSpan.textContent = `Slot ${slotIndex + 1}`;
+  const slotStatusSpan = document.createElement('span');
+  slotStatusSpan.className = 'slotStatus';
+  slotStatusSpan.textContent = slotIndex === 0 ? 'ACTIVE' : 'LOCKED';
+  slotBtn.append(slotNameSpan, slotStatusSpan);
+  slotsGridElement.append(slotBtn);
+}
+
+slotsPanelElement.append(slotsPanelLabelElement, slotsGridElement);
+
+rootElement.append(hudElement, canvasElement, toolbarElement, statusBarElement, upgradePanelElement, slotsPanelElement);
 appElement.append(rootElement);
 
 // ── Canvas context ─────────────────────────────────────────────────────────
@@ -232,6 +263,10 @@ let isRunOver = false;
 let gameOverDelaySec = 0;
 let lastMetaEarned = 0;
 let breakerTriggered = false;
+
+// Ore rate tracking: ring buffer of (time, ore) sample pairs for rolling window
+let oreRateSamples: { timeSec: number; ore: number }[] = [];
+let totalOreEarned = 0;
 
 let upgradeLevel = loadUpgrades();
 let enemies: Enemy[] = [];
@@ -265,8 +300,9 @@ const toolConfigs: Record<Tool, ToolConfig> = {
   turret: { label: 'Turret', key: 'T', color: '#27e0ff', cost: 12 },
   radar:  { label: 'Radar',  key: 'R', color: '#8d68ff', cost: 25 },
   erase:  { label: 'Erase',  key: 'E', color: '#ff7060', cost: 0  },
+  repair: { label: 'Repair', key: 'F', color: '#44ff88', cost: 0  },
 };
-const toolOrder: Tool[] = ['wall', 'turret', 'radar', 'erase'];
+const toolOrder: Tool[] = ['wall', 'turret', 'radar', 'erase', 'repair'];
 const toolButtons = new Map<Tool, HTMLButtonElement>();
 let selectedTool: Tool = 'wall';
 
@@ -298,6 +334,7 @@ window.addEventListener('keydown', (event) => {
     't': 'turret', '2': 'turret',
     'r': 'radar',  '3': 'radar',
     'e': 'erase',  '4': 'erase',
+    'f': 'repair', '5': 'repair',
   };
   const tool = keyMap[event.key.toLowerCase()];
   if (tool) {
@@ -447,10 +484,75 @@ function computeDistanceField(): Int16Array {
   return distances;
 }
 
+function attemptRepair(xTile: number, yTile: number): void {
+  if (!isInBounds(xTile, yTile)) { return; }
+  if (xTile === coreTile.x && yTile === coreTile.y) { return; }
+  if (xTile === depositTile.x && yTile === depositTile.y) { return; }
+  if (xTile === deposit2Tile.x && yTile === deposit2Tile.y) { return; }
+
+  const index = tileIndex(xTile, yTile);
+  if (terrainIsDebris[index]) { return; }
+
+  const ghost = blueprintGhosts.get(index);
+  const structure = structures[index];
+
+  // Case 1: rebuild a blueprint ghost (enemy-destroyed structure)
+  if (ghost !== undefined && structure === 'empty') {
+    const cost = STRUCTURE_REBUILD_COST[ghost] ?? 0;
+    if (ore < cost) {
+      showOverlay('NEED ORE', '#ff8844', 1.5);
+      return;
+    }
+    structures[index] = ghost;
+    if (ghost === 'radar') {
+      radarLevel += 1;
+      revealRadiusTile = Math.min(10, revealRadiusTile + 1);
+    }
+    const nextDistanceField = computeDistanceField();
+    if (nextDistanceField[tileIndex(entranceTile.x, entranceTile.y)] === -1) {
+      structures[index] = 'empty';
+      if (ghost === 'radar') {
+        radarLevel -= 1;
+        revealRadiusTile = Math.max(MIN_REVEAL_RADIUS_TILE, revealRadiusTile - 1);
+      }
+      return;
+    }
+    ore -= cost;
+    structureHp.set(index, STRUCTURE_MAX_HP[ghost] ?? STRUCTURE_MAX_HP.wall!);
+    blueprintGhosts.delete(index);
+    distanceField = nextDistanceField;
+    return;
+  }
+
+  // Case 2: repair a damaged (but not destroyed) structure
+  if (structure === 'empty') { return; }
+  const currentHp = structureHp.get(index);
+  const maxHp = STRUCTURE_MAX_HP[structure];
+  if (currentHp === undefined || maxHp === undefined || currentHp >= maxHp) { return; }
+
+  const missingHp = maxHp - currentHp;
+  const rebuildCost = STRUCTURE_REBUILD_COST[structure] ?? 0;
+  const repairCost = Math.ceil(missingHp * rebuildCost / maxHp);
+
+  if (ore < repairCost) {
+    if (repairCost > 0) { showOverlay('NEED ORE', '#ff8844', 1.5); }
+    return;
+  }
+
+  ore -= repairCost;
+  structureHp.set(index, maxHp);
+}
+
 function attemptPlaceStructure(xTile: number, yTile: number): void {
   if (!isInBounds(xTile, yTile)) {
     return;
   }
+
+  if (selectedTool === 'repair') {
+    attemptRepair(xTile, yTile);
+    return;
+  }
+
   if (xTile === coreTile.x && yTile === coreTile.y) {
     return;
   }
@@ -503,7 +605,7 @@ function attemptPlaceStructure(xTile: number, yTile: number): void {
   }
 
   ore -= cost;
-  // selectedTool is never 'erase' here (returned early above); fallback covers future Structure additions
+  // selectedTool is never 'erase' or 'repair' here (both returned early above); fallback covers future Structure additions
   structureHp.set(index, STRUCTURE_MAX_HP[selectedTool] ?? STRUCTURE_MAX_HP.wall!);
   blueprintGhosts.delete(index);
   distanceField = nextDistanceField;
@@ -657,6 +759,8 @@ function resetRun(): void {
   breachOpened = false;
   structures.fill('empty');
   turretAngleRad.clear();
+  totalOreEarned = 0;
+  oreRateSamples = [];
   buildStarterTerrain();
   distanceField = computeDistanceField();
   showOverlay('', '', 0);
@@ -809,6 +913,7 @@ function updateTurrets(dtSec: number): void {
     if (enemies[i].hp <= 0) {
       enemies.splice(i, 1);
       ore += 2;
+      totalOreEarned += 2;
     }
   }
 
@@ -832,6 +937,7 @@ function updateMotes(dtSec: number): void {
     if (motes[i].progress >= 1) {
       motes.splice(i, 1);
       ore += 1;
+      totalOreEarned += 1;
     }
   }
 
@@ -847,6 +953,7 @@ function updateMotes(dtSec: number): void {
       if (motes2[i].progress >= 1) {
         motes2.splice(i, 1);
         ore += 1;
+        totalOreEarned += 1;
       }
     }
   } else if (motes2.length > 0) {
@@ -1217,6 +1324,9 @@ function render(): void {
     } else if (selectedTool === 'erase') {
       ctx.fillStyle = 'rgba(255,100,80,0.28)';
       ctx.strokeStyle = 'rgba(255,100,80,0.55)';
+    } else if (selectedTool === 'repair') {
+      ctx.fillStyle = 'rgba(68,255,136,0.22)';
+      ctx.strokeStyle = 'rgba(68,255,136,0.6)';
     } else {
       ctx.fillStyle = 'rgba(100,180,255,0.18)';
       ctx.strokeStyle = 'rgba(100,200,255,0.45)';
@@ -1269,7 +1379,9 @@ function render(): void {
   hpSpan.textContent = `HP ${Math.max(0, Math.ceil(coreHp))}`;
   hpSpan.style.color = hpRatio > coreHpHealthyThreshold / 100 ? '#33ffbb' : hpRatio > coreHpDamagedThreshold / 100 ? '#ffaa44' : '#ff4444';
 
-  oreSpan.textContent = `Ore ${ore}`;
+  oreSpan.textContent = elapsedSec > 4
+    ? `Ore ${ore} · ${(totalOreEarned / elapsedSec).toFixed(1)}/s`
+    : `Ore ${ore}`;
   oreSpan.style.color = '#f0a600';
 
   waveSpan.textContent = `Wave ${waveIndex}`;
@@ -1285,6 +1397,35 @@ function render(): void {
   nextWaveSpan.style.color = waveTimerSec < 2 && !isRunOver ? '#ff5522' : '#ffcc44';
 
   updateUpgradePanelState();
+
+  // Status bar: show repair cost hint when repair tool is selected and hovering a tile
+  if (selectedTool === 'repair' && isInBounds(hoveredXTile, hoveredYTile)) {
+    const hovIndex = tileIndex(hoveredXTile, hoveredYTile);
+    const ghost = blueprintGhosts.get(hovIndex);
+    const hovStructure = structures[hovIndex];
+
+    let statusText = '';
+    let statusCost = 0;
+
+    if (ghost !== undefined && hovStructure === 'empty') {
+      statusCost = STRUCTURE_REBUILD_COST[ghost] ?? 0;
+      statusText = statusCost === 0 ? 'Rebuild: free' : `Rebuild: ${statusCost}${ORE_SYMBOL}`;
+    } else if (hovStructure !== 'empty') {
+      const currentHp = structureHp.get(hovIndex);
+      const maxHp = STRUCTURE_MAX_HP[hovStructure];
+      if (currentHp !== undefined && maxHp !== undefined && currentHp < maxHp) {
+        const missingHp = maxHp - currentHp;
+        const rebuildCost = STRUCTURE_REBUILD_COST[hovStructure] ?? 0;
+        statusCost = Math.ceil(missingHp * rebuildCost / maxHp);
+        statusText = statusCost === 0 ? 'Repair: free' : `Repair: ${statusCost}${ORE_SYMBOL}`;
+      }
+    }
+
+    statusBarElement.textContent = statusText;
+    statusBarElement.style.color = statusText === '' ? '' : ore >= statusCost ? '#44ff88' : '#ff6655';
+  } else {
+    statusBarElement.textContent = '';
+  }
 }
 
 export function startGame(): void {
