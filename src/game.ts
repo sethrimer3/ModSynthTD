@@ -1,5 +1,5 @@
-type Structure = 'empty' | 'wall' | 'turret' | 'radar' | 'crusher' | 'gatling' | 'conveyor' | 'extractor';
-type Tool = 'wall' | 'turret' | 'radar' | 'erase' | 'repair' | 'crusher' | 'gatling' | 'conveyor' | 'extractor';
+type Structure = 'empty' | 'wall' | 'turret' | 'radar' | 'crusher' | 'gatling' | 'conveyor' | 'extractor' | 'splitter' | 'cannon';
+type Tool = 'wall' | 'turret' | 'radar' | 'erase' | 'repair' | 'crusher' | 'gatling' | 'conveyor' | 'extractor' | 'splitter' | 'cannon';
 type BuildCategory = 'mining' | 'turrets' | 'defense' | 'tech' | 'repair' | 'erase' | 'logistics';
 
 interface BuildItemDef {
@@ -38,6 +38,7 @@ interface ShotFlash {
   toXPx: number;
   toYPx: number;
   ageSec: number;
+  flashColor?: string;
 }
 
 interface GunpowderMote {
@@ -103,7 +104,7 @@ const depositTile = { x: 5, y: 10 };          // Moved closer to base (was {3,2}
 const coalDepositTile = { x: 15, y: 10 };      // coal deposit on the right side of base
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 13;
+const currentBuildNumber = 14;
 const turretRangeTile = 4.5;
 
 // ── Conveyor/Extractor constants ─────────────────────────────────────────────
@@ -136,6 +137,13 @@ const GATLING_BASE_DAMAGE = 7;
 const GATLING_MAX_AMMO = 20;
 const GATLING_SHOTS_PER_POWDER = 5;
 
+// Cannon turret constants
+const CANNON_FIRE_COOLDOWN_SEC = 1.4;
+const CANNON_BASE_DAMAGE = 35;
+const CANNON_AMMO_MAX = 5;
+const CANNON_AMMO_STARTING = 2;
+const CANNON_RANGE_TILE = 5.5;
+
 // Crusher constants
 const CRUSHER_CONVERSION_SEC = 2.5;
 
@@ -156,9 +164,9 @@ const SHELL_CASING_BOUNCE_RESTITUTION = -0.55;
 const SHELL_CASING_GRAVITY_PX_PER_SEC2 = 18;
 const SHELL_CASING_FRICTION = 0.96;
 
-const STRUCTURE_MAX_HP: Partial<Record<Structure, number>> = { wall: 50, turret: 30, radar: 25, crusher: 35, gatling: 25, conveyor: 10, extractor: 20 };
-const STRUCTURE_ORE_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 12, radar: 25, crusher: 18, gatling: 18, conveyor: 0, extractor: 0 };
-const STRUCTURE_REBUILD_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 6, radar: 12, crusher: 9, gatling: 9, conveyor: 0, extractor: 0 };
+const STRUCTURE_MAX_HP: Partial<Record<Structure, number>> = { wall: 50, turret: 30, radar: 25, crusher: 35, gatling: 25, conveyor: 10, extractor: 20, splitter: 15, cannon: 35 };
+const STRUCTURE_ORE_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 12, radar: 25, crusher: 18, gatling: 18, conveyor: 0, extractor: 0, splitter: 8, cannon: 20 };
+const STRUCTURE_REBUILD_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 6, radar: 12, crusher: 9, gatling: 9, conveyor: 0, extractor: 0, splitter: 4, cannon: 10 };
 const ENEMY_WALL_DAMAGE = 8;
 const ENEMY_WALL_ATTACK_COOLDOWN_SEC = 1.5;
 const SECOND_ENTRANCE_ACTIVATION_WAVE = 7;
@@ -431,6 +439,9 @@ const blueprintGhosts = new Map<number, Structure>();
 const gatlingAmmo = new Map<number, number>();
 const gatlingFireCooldowns = new Map<number, number>();
 const crusherConversionTimers = new Map<number, number>();
+const cannonAmmo = new Map<number, number>();
+const cannonFireCooldowns = new Map<number, number>();
+const splitterToggle = new Map<number, boolean>();
 let breachOpened = false;
 
 // ── Conveyor/Extractor/Routed-mote state ─────────────────────────────────────
@@ -467,13 +478,17 @@ const BUILD_CATEGORIES: BuildCategoryDef[] = [
   },
   {
     id: 'logistics', label: 'Logistics', color: '#22ddbb',
-    items: [{ id: 'conveyor', label: 'Conveyor', hotkey: 'V', cost: 0, color: '#22ddbb' }],
+    items: [
+      { id: 'conveyor', label: 'Conveyor', hotkey: 'V', cost: 0, color: '#22ddbb' },
+      { id: 'splitter', label: 'Splitter', hotkey: 'S', cost: 8, color: '#ff88ff' },
+    ],
   },
   {
     id: 'turrets', label: 'Turrets', color: '#27e0ff',
     items: [
       { id: 'turret',  label: 'Turret',  hotkey: 'T', cost: 12, color: '#27e0ff' },
       { id: 'gatling', label: 'Gatling', hotkey: 'G', cost: 18, color: '#ffcc44' },
+      { id: 'cannon',  label: 'Cannon',  hotkey: 'N', cost: 20, color: '#ff7733' },
     ],
   },
   {
@@ -491,6 +506,7 @@ const BUILD_CATEGORIES: BuildCategoryDef[] = [
 const TOOL_TO_CATEGORY: Record<Tool, BuildCategory> = {
   wall: 'defense', turret: 'turrets', radar: 'tech', erase: 'erase', repair: 'repair',
   crusher: 'mining', gatling: 'turrets', extractor: 'mining', conveyor: 'logistics',
+  splitter: 'logistics', cannon: 'turrets',
 };
 
 const categoryButtons = new Map<BuildCategory, HTMLButtonElement>();
@@ -551,6 +567,8 @@ window.addEventListener('keydown', (event) => {
     'c': 'crusher', '7': 'crusher',
     'x': 'extractor',
     'v': 'conveyor',
+    's': 'splitter',
+    'n': 'cannon',
   };
   const tool = keyMap[event.key.toLowerCase()];
   if (tool) {
@@ -558,10 +576,17 @@ window.addEventListener('keydown', (event) => {
     selectedCategory = TOOL_TO_CATEGORY[tool];
     updatePaletteState();
   }
-  // Q – rotate conveyor/extractor placement direction
-  if (event.key.toLowerCase() === 'q' && (selectedTool === 'conveyor' || selectedTool === 'extractor')) {
+  // Q – rotate conveyor/extractor/splitter placement direction
+  if (event.key.toLowerCase() === 'q' && (selectedTool === 'conveyor' || selectedTool === 'extractor' || selectedTool === 'splitter')) {
     conveyorPlacementDir = (conveyorPlacementDir + 1) % 4;
     showOverlay(`DIR ${DIR_SYMBOLS[conveyorPlacementDir]}`, '#22ddbb', 0.6);
+  }
+  // A – rebuild all ghosts; Z – rebuild affordable ghosts
+  if (event.key.toLowerCase() === 'a' && selectedTool === 'repair') {
+    rebuildAllGhosts();
+  }
+  if (event.key.toLowerCase() === 'z' && selectedTool === 'repair') {
+    rebuildAffordableGhosts();
   }
 });
 
@@ -856,11 +881,14 @@ function attemptPlaceStructure(xTile: number, yTile: number): void {
     radarLevel += 1;
     revealRadiusTile = Math.min(10, revealRadiusTile + 1);
   }
-  if (selectedTool === 'conveyor' || selectedTool === 'extractor') {
+  if (selectedTool === 'conveyor' || selectedTool === 'extractor' || selectedTool === 'splitter') {
     conveyorDirection.set(index, conveyorPlacementDir);
   }
   if (selectedTool === 'turret') {
     turretAmmo.set(index, TURRET_AMMO_STARTING);
+  }
+  if (selectedTool === 'cannon') {
+    cannonAmmo.set(index, CANNON_AMMO_STARTING);
   }
 
   ore -= cost;
@@ -920,7 +948,7 @@ canvasElement.addEventListener('contextmenu', (event) => {
   const [xTile, yTile] = getCanvasTile(event.clientX, event.clientY);
   const index = tileIndex(xTile, yTile);
   const s = structures[index];
-  if (s === 'conveyor' || s === 'extractor') {
+  if (s === 'conveyor' || s === 'extractor' || s === 'splitter') {
     const cur = conveyorDirection.get(index) ?? 0;
     const next = (cur + 1) % 4;
     conveyorDirection.set(index, next);
@@ -1217,6 +1245,9 @@ function resetRun(): void {
   gatlingAmmo.clear();
   gatlingFireCooldowns.clear();
   crusherConversionTimers.clear();
+  cannonAmmo.clear();
+  cannonFireCooldowns.clear();
+  splitterToggle.clear();
   conveyorDirection.clear();
   turretAmmo.clear();
   routedMotes = [];
@@ -1762,6 +1793,171 @@ function updateGatlingTurrets(dtSec: number): void {
   }
 }
 
+// ── Cannon turret – slow, high-damage, ore-fed ────────────────────────────────
+function updateCannonTurrets(dtSec: number): void {
+  const half = tileSizePx / 2;
+  const damage = CANNON_BASE_DAMAGE;
+
+  for (let yTile = 0; yTile < gridHeightTile; yTile += 1) {
+    for (let xTile = 0; xTile < gridWidthTile; xTile += 1) {
+      const idx = tileIndex(xTile, yTile);
+      if (structures[idx] !== 'cannon') { continue; }
+
+      const ammo = cannonAmmo.get(idx) ?? 0;
+      if (ammo <= 0) { continue; }
+
+      let cooldown = cannonFireCooldowns.get(idx) ?? 0;
+      cooldown -= dtSec;
+      if (cooldown > 0) { cannonFireCooldowns.set(idx, cooldown); continue; }
+
+      // Find nearest target within cannon range
+      let targetEnemy: Enemy | undefined;
+      let targetWorm: Worm | undefined;
+      let targetWormSegIdx = -1;
+      let bestDist = Number.POSITIVE_INFINITY;
+
+      for (const enemy of enemies) {
+        const dist = Math.hypot(enemy.xTile - xTile, enemy.yTile - yTile);
+        if (dist < CANNON_RANGE_TILE && dist < bestDist) {
+          bestDist = dist;
+          targetEnemy = enemy;
+          targetWorm = undefined;
+        }
+      }
+      for (const worm of worms) {
+        for (let si = 0; si < worm.segments.length; si += 1) {
+          const seg = worm.segments[si];
+          const dist = Math.hypot(seg.xTile - xTile, seg.yTile - yTile);
+          if (dist < CANNON_RANGE_TILE && dist < bestDist) {
+            bestDist = dist;
+            targetWorm = worm;
+            targetWormSegIdx = si;
+            targetEnemy = undefined;
+          }
+        }
+      }
+
+      if (!targetEnemy && targetWorm === undefined) { continue; }
+
+      cooldown = CANNON_FIRE_COOLDOWN_SEC;
+      cannonFireCooldowns.set(idx, cooldown);
+      cannonAmmo.set(idx, ammo - 1);
+
+      let tx: number;
+      let ty: number;
+      if (targetEnemy) {
+        targetEnemy.hp -= damage;
+        tx = targetEnemy.xTile;
+        ty = targetEnemy.yTile;
+      } else {
+        const seg = targetWorm!.segments[targetWormSegIdx];
+        seg.hp -= damage;
+        tx = seg.xTile;
+        ty = seg.yTile;
+      }
+
+      const angle = Math.atan2(ty - yTile, tx - xTile);
+      turretAngleRad.set(idx, angle);
+
+      // Orange shot flash for cannon
+      const fromX = xTile * tileSizePx + half;
+      const fromY = yTile * tileSizePx + half;
+      shotFlashes.push({
+        fromXPx: fromX,
+        fromYPx: fromY,
+        toXPx: Math.round(tx * tileSizePx + half),
+        toYPx: Math.round(ty * tileSizePx + half),
+        ageSec: 0,
+        flashColor: '#ff7733',
+      });
+
+      // Muzzle flash at barrel tip
+      muzzleFlashes.push({
+        xPx: fromX + Math.cos(angle) * (GATLING_BARREL_OFFSET_PX + 2),
+        yPx: fromY + Math.sin(angle) * (GATLING_BARREL_OFFSET_PX + 2),
+        ageSec: 0,
+      });
+    }
+  }
+
+  // Remove cannon-killed enemies
+  for (let i = enemies.length - 1; i >= 0; i -= 1) {
+    if (enemies[i].hp <= 0) {
+      enemies.splice(i, 1);
+      ore += 2;
+      totalOreEarned += 2;
+    }
+  }
+  cleanDeadWormSegments();
+}
+
+// ── Rebuild utilities ──────────────────────────────────────────────────────────
+
+/** Rebuild all blueprint ghosts the player can currently afford (cheapest first). */
+function rebuildAffordableGhosts(): void {
+  // Collect all ghosts and sort by rebuild cost
+  const ghosts: { idx: number; ghost: Structure; cost: number }[] = [];
+  for (const [idx, ghost] of blueprintGhosts) {
+    const s = structures[idx];
+    if (s !== 'empty') { continue; }
+    const cost = STRUCTURE_REBUILD_COST[ghost] ?? 0;
+    ghosts.push({ idx, ghost, cost });
+  }
+  ghosts.sort((a, b) => a.cost - b.cost);
+
+  let rebuilt = 0;
+  for (const { idx, ghost, cost } of ghosts) {
+    if (ore < cost) { continue; }
+    structures[idx] = ghost;
+    if (ghost === 'radar') {
+      radarLevel += 1;
+      revealRadiusTile = Math.min(10, revealRadiusTile + 1);
+    }
+    ore -= cost;
+    structureHp.set(idx, STRUCTURE_MAX_HP[ghost] ?? STRUCTURE_MAX_HP.wall!);
+    blueprintGhosts.delete(idx);
+    rebuilt += 1;
+  }
+  if (rebuilt > 0) {
+    distanceField = computeDistanceField();
+    showOverlay(`REBUILT ${rebuilt}`, '#44ff88', 1.5);
+  } else {
+    showOverlay('NEED ORE', '#ff8844', 1.5);
+  }
+}
+
+/** Rebuild ALL blueprint ghosts at once (requires enough ore for all). */
+function rebuildAllGhosts(): void {
+  const ghosts: { idx: number; ghost: Structure; cost: number }[] = [];
+  let totalCost = 0;
+  for (const [idx, ghost] of blueprintGhosts) {
+    if (structures[idx] !== 'empty') { continue; }
+    const cost = STRUCTURE_REBUILD_COST[ghost] ?? 0;
+    ghosts.push({ idx, ghost, cost });
+    totalCost += cost;
+  }
+  if (ghosts.length === 0) {
+    showOverlay('NO GHOSTS', '#88ccff', 1.2);
+    return;
+  }
+  if (ore < totalCost) {
+    showOverlay(`NEED ${totalCost}${ORE_SYMBOL}`, '#ff8844', 1.5);
+    return;
+  }
+  for (const { idx, ghost, cost } of ghosts) {
+    structures[idx] = ghost;
+    if (ghost === 'radar') {
+      radarLevel += 1;
+      revealRadiusTile = Math.min(10, revealRadiusTile + 1);
+    }
+    ore -= cost;
+    structureHp.set(idx, STRUCTURE_MAX_HP[ghost] ?? STRUCTURE_MAX_HP.wall!);
+    blueprintGhosts.delete(idx);
+  }
+  distanceField = computeDistanceField();
+  showOverlay(`REBUILT ALL ${ghosts.length}`, '#44ff88', 1.5);
+}
+
 // ── Conveyor/Extractor/RoutedMote logic ──────────────────────────────────────
 
 /** Returns true if any adjacent tile contains an extractor structure. */
@@ -1781,32 +1977,34 @@ function isDeposit(xTile: number, yTile: number): boolean {
     || (xTile === coalDepositTile.x && yTile === coalDepositTile.y);
 }
 
-/** True when tile (x,y) is a valid mote destination: core, turret, crusher, or gatling. */
+/** True when tile (x,y) is a valid mote destination: core, turret, crusher, gatling, cannon, or splitter. */
 function isRouteDest(xTile: number, yTile: number): boolean {
   if (xTile === coreTile.x && yTile === coreTile.y) { return true; }
   const idx = tileIndex(xTile, yTile);
   const s = structures[idx];
-  return s === 'turret' || s === 'crusher' || s === 'gatling';
+  return s === 'turret' || s === 'crusher' || s === 'gatling' || s === 'cannon' || s === 'splitter';
 }
 
 /**
  * Follow conveyor output directions starting from the tile adjacent to the
- * extractor in its output direction.  Returns the full tile path (including
- * extractor tile) if a valid destination is reached, or null if the route is
+ * start tile in its output direction.  Returns the full tile path (including
+ * start tile) if a valid destination is reached, or null if the route is
  * broken/cyclic/too long.
+ * Pass dirOverride to use a specific output direction instead of looking it up
+ * (used by splitters to compute their two onward routes).
  */
-function findConveyorRoute(extX: number, extY: number): { pathXTile: number[]; pathYTile: number[] } | null {
+function findConveyorRoute(startX: number, startY: number, dirOverride?: number): { pathXTile: number[]; pathYTile: number[] } | null {
   const MAX_PATH = 64;
   const visited = new Set<number>();
-  const pathX: number[] = [extX];
-  const pathY: number[] = [extY];
-  visited.add(tileIndex(extX, extY));
+  const pathX: number[] = [startX];
+  const pathY: number[] = [startY];
+  visited.add(tileIndex(startX, startY));
 
-  const extIdx = tileIndex(extX, extY);
-  const dir = conveyorDirection.get(extIdx) ?? 0;
+  const startIdx = tileIndex(startX, startY);
+  const dir = dirOverride ?? (conveyorDirection.get(startIdx) ?? 0);
   const [dx, dy] = DIR_OFFSETS[dir];
-  let cx = extX + dx;
-  let cy = extY + dy;
+  let cx = startX + dx;
+  let cy = startY + dy;
 
   while (pathX.length < MAX_PATH) {
     if (!isInBounds(cx, cy)) { return null; }
@@ -1897,11 +2095,42 @@ function deliverMote(mote: RoutedMote): void {
 
   const idx = tileIndex(destX, destY);
   const s = structures[idx];
+
+  if (s === 'splitter') {
+    // Splitter: alternately forward the mote down the primary or secondary onward route.
+    // Primary output = conveyorDirection for this splitter.
+    // Secondary output = primary + 1 (mod 4), i.e. 90° clockwise.
+    const primaryDir = conveyorDirection.get(idx) ?? 0;
+    const secondaryDir = (primaryDir + 1) % 4;
+    const usePrimary = !(splitterToggle.get(idx) ?? false);
+    splitterToggle.set(idx, usePrimary); // toggle for next mote
+
+    const firstDir = usePrimary ? primaryDir : secondaryDir;
+    const fallbackDir = usePrimary ? secondaryDir : primaryDir;
+    let route = findConveyorRoute(destX, destY, firstDir);
+    if (!route) {
+      route = findConveyorRoute(destX, destY, fallbackDir);
+    }
+    if (route) {
+      routedMotes.push({
+        pathXTile: route.pathXTile,
+        pathYTile: route.pathYTile,
+        segIndex: 0,
+        progress: 0,
+        resourceType: mote.resourceType,
+      });
+    }
+    return;
+  }
+
   if (s === 'turret' && mote.resourceType === 'ore') {
     const cur = turretAmmo.get(idx) ?? 0;
     // Silently cap at max ammo; the extractor simply stops spawning while route is valid,
     // but over-delivery just wastes the mote — no separate feedback needed for MVP.
     turretAmmo.set(idx, Math.min(cur + 1, TURRET_AMMO_MAX));
+  } else if (s === 'cannon' && mote.resourceType === 'ore') {
+    const cur = cannonAmmo.get(idx) ?? 0;
+    cannonAmmo.set(idx, Math.min(cur + 1, CANNON_AMMO_MAX));
   } else if (s === 'crusher' && mote.resourceType === 'coal') {
     // Coal arrives in the global coal pool; updateCrushers() drains it into gunpowder.
     // Routing coal to a crusher tile is identical to routing it to the core for now —
@@ -1960,6 +2189,7 @@ function update(dtSec: number): void {
   updateWorms(dtSec);
   updateTurrets(dtSec);
   updateGatlingTurrets(dtSec);
+  updateCannonTurrets(dtSec);
   updateCrushers(dtSec);
   updateMotes(dtSec);
   updateExtractors(dtSec);
@@ -2167,6 +2397,80 @@ function drawGatlingTile(xPx: number, yPx: number, idx: number): void {
   ctx.restore();
 }
 
+// ── Cannon tile – heavy armored barrel, slow-fire, ore-fed ───────────────────
+function drawCannonTile(xPx: number, yPx: number, idx: number): void {
+  const half = tileSizePx / 2;
+  const barMaxW = tileSizePx - 2;
+
+  // Ammo bar (top, orange)
+  const ammo = cannonAmmo.get(idx) ?? 0;
+  fillPx(xPx + 1, yPx, barMaxW, 1, '#333');
+  const ammoW = Math.round(barMaxW * (ammo / CANNON_AMMO_MAX));
+  if (ammo <= 0) {
+    ctx.fillStyle = '#ff2200';
+    ctx.fillRect(xPx + 1, yPx, 2, 1);
+  } else {
+    fillPx(xPx + 1, yPx, ammoW, 1, '#ff7733');
+  }
+
+  // Cooldown bar (second row, dark orange)
+  const cd = cannonFireCooldowns.get(idx) ?? 0;
+  fillPx(xPx + 1, yPx + 1, barMaxW, 1, '#222');
+  const cdW = Math.round(barMaxW * Math.max(0, cd / CANNON_FIRE_COOLDOWN_SEC));
+  if (cdW > 0) { fillPx(xPx + 1, yPx + 1, cdW, 1, '#993300'); }
+
+  // Heavy base (darker, more armored look than gatling)
+  fillPx(xPx + 1, yPx + 2, 10, 8, '#302010');
+  fillPx(xPx + 2, yPx + 3, 8, 6, '#4a3020');
+  fillPx(xPx + 4, yPx + 4, 4, 4, '#603820');
+  fillPx(xPx + 5, yPx + 5, 2, 2, '#ff7733');
+  // Corner bolts
+  fillPx(xPx + 2, yPx + 3, 1, 1, '#804020');
+  fillPx(xPx + 9, yPx + 3, 1, 1, '#804020');
+  fillPx(xPx + 2, yPx + 8, 1, 1, '#804020');
+  fillPx(xPx + 9, yPx + 8, 1, 1, '#804020');
+
+  // Barrel (thicker than gatling: 2px line)
+  const angle = turretAngleRad.get(idx) ?? 0;
+  const cx = xPx + half;
+  const cy = yPx + half;
+  ctx.save();
+  ctx.strokeStyle = '#ff7733';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(angle) * (GATLING_BARREL_OFFSET_PX + 2), cy + Math.sin(angle) * (GATLING_BARREL_OFFSET_PX + 2));
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── Splitter tile – Y-fork shape, shows primary and secondary outputs ─────────
+function drawSplitterTile(xPx: number, yPx: number, idx: number): void {
+  const dir = conveyorDirection.get(idx) ?? 0;
+  const secDir = (dir + 1) % 4;
+
+  // Dark body
+  fillPx(xPx, yPx, tileSizePx, tileSizePx, '#1a0a1a');
+  fillPx(xPx + 1, yPx + 1, 10, 10, '#280a28');
+  // Central junction
+  fillPx(xPx + 4, yPx + 4, 4, 4, '#441144');
+  fillPx(xPx + 5, yPx + 5, 2, 2, '#ff88ff');
+
+  // Primary output arrow (magenta)
+  const pColor = '#ff88ff';
+  if (dir === 0) { fillPx(xPx + 8, yPx + 5, 3, 1, pColor); fillPx(xPx + 10, yPx + 4, 1, 3, pColor); }
+  else if (dir === 1) { fillPx(xPx + 5, yPx + 8, 1, 3, pColor); fillPx(xPx + 4, yPx + 10, 3, 1, pColor); }
+  else if (dir === 2) { fillPx(xPx + 1, yPx + 5, 3, 1, pColor); fillPx(xPx + 1, yPx + 4, 1, 3, pColor); }
+  else { fillPx(xPx + 5, yPx + 1, 1, 3, pColor); fillPx(xPx + 4, yPx + 1, 3, 1, pColor); }
+
+  // Secondary output arrow (dim magenta, 90° CW of primary)
+  const sColor = '#994499';
+  if (secDir === 0) { fillPx(xPx + 8, yPx + 5, 3, 1, sColor); }
+  else if (secDir === 1) { fillPx(xPx + 5, yPx + 8, 1, 3, sColor); }
+  else if (secDir === 2) { fillPx(xPx + 1, yPx + 5, 3, 1, sColor); }
+  else { fillPx(xPx + 5, yPx + 1, 1, 3, sColor); }
+}
+
 // ── Conveyor belt tile – directional arrow on dark track background ───────────
 function drawConveyorTile(xPx: number, yPx: number, idx: number): void {
   const dir = conveyorDirection.get(idx) ?? 0;
@@ -2289,6 +2593,20 @@ function drawBlueprintGhost(xPx: number, yPx: number, ghostType: Structure): voi
     ctx.strokeRect(xPx + 0.5, yPx + 0.5, tileSizePx - 1, tileSizePx - 1);
     ctx.fillStyle = 'rgba(255,204,68,0.3)';
     ctx.fillRect(xPx + 4, yPx + 4, 4, 4);
+  } else if (ghostType === 'cannon') {
+    ctx.fillStyle = 'rgba(255,119,51,0.12)';
+    ctx.fillRect(xPx + 1, yPx + 1, tileSizePx - 2, tileSizePx - 2);
+    ctx.strokeStyle = 'rgba(255,119,51,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(xPx + 0.5, yPx + 0.5, tileSizePx - 1, tileSizePx - 1);
+    ctx.fillStyle = 'rgba(255,119,51,0.3)';
+    ctx.fillRect(xPx + 4, yPx + 4, 4, 4);
+  } else if (ghostType === 'splitter') {
+    ctx.fillStyle = 'rgba(255,136,255,0.12)';
+    ctx.fillRect(xPx + 1, yPx + 1, tileSizePx - 2, tileSizePx - 2);
+    ctx.strokeStyle = 'rgba(255,136,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(xPx + 0.5, yPx + 0.5, tileSizePx - 1, tileSizePx - 1);
   }
 }
 
@@ -2394,6 +2712,10 @@ function render(): void {
         drawConveyorTile(xPx, yPx, index);
       } else if (structure === 'extractor') {
         drawExtractorTile(xPx, yPx, index);
+      } else if (structure === 'splitter') {
+        drawSplitterTile(xPx, yPx, index);
+      } else if (structure === 'cannon') {
+        drawCannonTile(xPx, yPx, index);
       }
       if (structure !== 'empty') {
         const hp = structureHp.get(index);
@@ -2440,14 +2762,14 @@ function render(): void {
     }
   }
 
-  // Gunpowder motes from crushers to core
+  // Gunpowder motes from crushers to core (1×3 vertical pixel = distinct shape vs coal/ore 2×2)
   ctx.fillStyle = '#c8a850';
   for (const mote of gunpowderMotes) {
     const dxTile = coreTile.x - mote.fromXTile;
     const dyTile = coreTile.y - mote.fromYTile;
-    const mxPx = Math.round((mote.fromXTile + dxTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+    const mxPx = Math.round((mote.fromXTile + dxTile * mote.progress) * tileSizePx + tileSizePx / 2);
     const myPx = Math.round((mote.fromYTile + dyTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
-    ctx.fillRect(mxPx, myPx, 2, 2);
+    ctx.fillRect(mxPx, myPx, 1, 3);
   }
 
   // Second deposit (visible when radar has expanded enough)
@@ -2554,11 +2876,34 @@ function render(): void {
     ctx.setLineDash([]);
   }
 
+  // Cannon range preview ring
+  if (selectedTool === 'cannon' && hoveredXTile >= 0 && isInBounds(hoveredXTile, hoveredYTile) && isTileVisible(hoveredXTile, hoveredYTile)) {
+    const cx = hoveredXTile * tileSizePx + tileSizePx / 2;
+    const cy = hoveredYTile * tileSizePx + tileSizePx / 2;
+    ctx.strokeStyle = 'rgba(255,119,51,0.30)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, CANNON_RANGE_TILE * tileSizePx, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   // Shot flashes
   for (const flash of shotFlashes) {
     const alpha = Math.max(0, 1 - flash.ageSec / shotFlashDurationSec);
-    ctx.strokeStyle = `rgba(39,224,255,${alpha})`;
-    ctx.lineWidth = 1;
+    const baseColor = flash.flashColor ?? '39,224,255';
+    // If flashColor is a hex like '#ff7733', extract rgb components
+    if (flash.flashColor) {
+      const r = parseInt(flash.flashColor.slice(1, 3), 16);
+      const g = parseInt(flash.flashColor.slice(3, 5), 16);
+      const b = parseInt(flash.flashColor.slice(5, 7), 16);
+      ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
+      ctx.lineWidth = 2;
+    } else {
+      ctx.strokeStyle = `rgba(${baseColor},${alpha})`;
+      ctx.lineWidth = 1;
+    }
     ctx.beginPath();
     ctx.moveTo(flash.fromXPx, flash.fromYPx);
     ctx.lineTo(flash.toXPx, flash.toYPx);
@@ -2718,7 +3063,7 @@ function render(): void {
         if (hovStructure !== 'empty') {
           statusText = `Erase: ${hovStructure}`;
         }
-      } else if (selectedTool === 'turret' || selectedTool === 'radar' || selectedTool === 'crusher' || selectedTool === 'gatling') {
+      } else if (selectedTool === 'turret' || selectedTool === 'radar' || selectedTool === 'crusher' || selectedTool === 'gatling' || selectedTool === 'cannon' || selectedTool === 'splitter') {
         const isValidTile = !terrainIsDebris[hovIndex]
           && hovStructure === 'empty'
           && !(hoveredXTile === coreTile.x && hoveredYTile === coreTile.y)
