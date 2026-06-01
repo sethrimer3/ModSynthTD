@@ -749,15 +749,15 @@ function spawnWave(): void {
 
   // Spawn one worm per wave starting at WORM_SPAWN_START_WAVE
   if (waveIndex >= WORM_SPAWN_START_WAVE) {
-    const segCount = Math.min(14, 6 + Math.floor((waveIndex - WORM_SPAWN_START_WAVE) / 2));
-    const segHp = Math.floor(WORM_SEGMENT_HP_BASE + waveIndex * WORM_SEGMENT_HP_PER_WAVE);
+    const segmentCount = Math.min(14, 6 + Math.floor((waveIndex - WORM_SPAWN_START_WAVE) / 2));
+    const segmentHp = Math.floor(WORM_SEGMENT_HP_BASE + waveIndex * WORM_SEGMENT_HP_PER_WAVE);
     const segs: WormSegment[] = [];
-    for (let s = 0; s < segCount; s += 1) {
+    for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
       segs.push({
-        xTile: entranceTile.x - s * WORM_SEGMENT_SPACING_TILE,
+        xTile: entranceTile.x - segmentIndex * WORM_SEGMENT_SPACING_TILE,
         yTile: entranceTile.y,
-        hp: segHp,
-        maxHp: segHp,
+        hp: segmentHp,
+        maxHp: segmentHp,
       });
     }
     worms.push({ segments: segs, speedTilePerSec: 0.75 + waveIndex * 0.04, wallAttackCooldownSec: 0 });
@@ -923,21 +923,21 @@ function updateWorms(dtSec: number): void {
     }
 
     // Move head via BFS distance field
-    const hxTile = Math.round(head.xTile);
-    const hyTile = Math.round(head.yTile);
-    if (!isInBounds(hxTile, hyTile)) {
+    const headXTile = Math.round(head.xTile);
+    const headYTile = Math.round(head.yTile);
+    if (!isInBounds(headXTile, headYTile)) {
       worms.splice(wi, 1);
       continue;
     }
 
-    const currentDist = distanceField[tileIndex(hxTile, hyTile)];
+    const currentDist = distanceField[tileIndex(headXTile, headYTile)];
     if (currentDist > 0) {
-      let bestXTile = hxTile;
-      let bestYTile = hyTile;
+      let bestXTile = headXTile;
+      let bestYTile = headYTile;
       let bestDist = currentDist;
       for (const [dx, dy] of ADJ_OFFSETS) {
-        const nx = hxTile + dx;
-        const ny = hyTile + dy;
+        const nx = headXTile + dx;
+        const ny = headYTile + dy;
         if (!isInBounds(nx, ny)) { continue; }
         const d = distanceField[tileIndex(nx, ny)];
         if (d >= 0 && d < bestDist) { bestDist = d; bestXTile = nx; bestYTile = ny; }
@@ -953,9 +953,9 @@ function updateWorms(dtSec: number): void {
     }
 
     // Each body segment follows the one in front, maintaining max spacing
-    for (let si = 1; si < worm.segments.length; si += 1) {
-      const prev = worm.segments[si - 1];
-      const seg = worm.segments[si];
+    for (let segmentIndex = 1; segmentIndex < worm.segments.length; segmentIndex += 1) {
+      const prev = worm.segments[segmentIndex - 1];
+      const seg = worm.segments[segmentIndex];
       const dxTile = prev.xTile - seg.xTile;
       const dyTile = prev.yTile - seg.yTile;
       const dist = Math.hypot(dxTile, dyTile);
@@ -1068,10 +1068,10 @@ function updateTurrets(dtSec: number): void {
           targetXTile = targetEnemy.xTile;
           targetYTile = targetEnemy.yTile;
         } else {
-          const seg = targetWorm!.segments[targetWormSegIdx];
-          seg.hp -= damage;
-          targetXTile = seg.xTile;
-          targetYTile = seg.yTile;
+          const targetSegment = targetWorm!.segments[targetWormSegIdx];
+          targetSegment.hp -= damage;
+          targetXTile = targetSegment.xTile;
+          targetYTile = targetSegment.yTile;
         }
 
         turretAngleRad.set(idx, Math.atan2(targetYTile - yTile, targetXTile - xTile));
