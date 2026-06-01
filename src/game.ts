@@ -55,7 +55,7 @@ const coreTile = { x: Math.floor(gridWidthTile / 2), y: Math.floor(gridHeightTil
 const depositTile = { x: 3, y: 2 };
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 7;
+const currentBuildNumber = 8;
 const turretRangeTile = 4.5;
 const shotFlashDurationSec = 0.12;
 const breakerArrivalDistanceTile = 0.2;
@@ -575,6 +575,9 @@ function attemptPlaceStructure(xTile: number, yTile: number): void {
     return;
   }
   if (xTile === depositTile.x && yTile === depositTile.y) {
+    return;
+  }
+  if (xTile === deposit2Tile.x && yTile === deposit2Tile.y) {
     return;
   }
 
@@ -1291,6 +1294,14 @@ function drawCoreTile(xPx: number, yPx: number): void {
   const hpFracCore = coreHp / maxCoreHpForColor;
   const coreColor = hpFracCore > coreHpHealthyThreshold / 100 ? '#33ffbb' : hpFracCore > coreHpDamagedThreshold / 100 ? '#ffee44' : '#ff5533';
   fillPx(xPx, yPx, tileSizePx, tileSizePx, '#050f0a');
+
+  // Pulsing alarm glow when critically damaged
+  if (!isRunOver && hpFracCore <= coreHpDamagedThreshold / 100) {
+    const pulseAlpha = (Math.sin(elapsedSec * Math.PI * 4) * 0.5 + 0.5) * 0.35;
+    ctx.fillStyle = `rgba(255,60,30,${pulseAlpha.toFixed(3)})`;
+    ctx.fillRect(xPx, yPx, tileSizePx, tileSizePx);
+  }
+
   ctx.fillStyle = coreColor;
   ctx.fillRect(xPx + 4, yPx + 4, 4, 4);
   ctx.fillRect(xPx + 5, yPx + 2, 2, 2);
@@ -1378,15 +1389,26 @@ function drawWorm(worm: Worm): void {
   if (segs.length === 0) { return; }
   const half = tileSizePx / 2;
 
-  // Draw spine connecting segments
-  ctx.strokeStyle = '#6b3311';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(segs[0].xTile * tileSizePx + half, segs[0].yTile * tileSizePx + half);
-  for (let i = 1; i < segs.length; i += 1) {
-    ctx.lineTo(segs[i].xTile * tileSizePx + half, segs[i].yTile * tileSizePx + half);
+  // Draw smooth body skin using midpoint quadratic bezier
+  if (segs.length >= 2) {
+    ctx.save();
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#7a3310';
+    ctx.beginPath();
+    ctx.moveTo(segs[0].xTile * tileSizePx + half, segs[0].yTile * tileSizePx + half);
+    for (let i = 1; i < segs.length - 1; i += 1) {
+      const cpX = segs[i].xTile * tileSizePx + half;
+      const cpY = segs[i].yTile * tileSizePx + half;
+      const nextX = segs[i + 1].xTile * tileSizePx + half;
+      const nextY = segs[i + 1].yTile * tileSizePx + half;
+      ctx.quadraticCurveTo(cpX, cpY, (cpX + nextX) / 2, (cpY + nextY) / 2);
+    }
+    ctx.lineTo(segs[segs.length - 1].xTile * tileSizePx + half, segs[segs.length - 1].yTile * tileSizePx + half);
+    ctx.stroke();
+    ctx.restore();
   }
-  ctx.stroke();
 
   // Draw segments tail-to-head so head renders on top
   for (let i = segs.length - 1; i >= 0; i -= 1) {
@@ -1400,6 +1422,24 @@ function drawWorm(worm: Worm): void {
     ctx.beginPath();
     ctx.arc(cx, cy, i === 0 ? 3 : 2, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  // Draw eyes on the worm head, oriented toward movement direction
+  if (segs.length >= 2) {
+    const dx = segs[0].xTile - segs[1].xTile;
+    const dy = segs[0].yTile - segs[1].yTile;
+    const len = Math.hypot(dx, dy);
+    if (len > 0.001) {
+      const forwardX = dx / len;
+      const forwardY = dy / len;
+      const rightX = -forwardY; // rightward perpendicular
+      const rightY = forwardX;
+      const headCenterXPx = segs[0].xTile * tileSizePx + half;
+      const headCenterYPx = segs[0].yTile * tileSizePx + half;
+      ctx.fillStyle = '#1a0800';
+      ctx.fillRect(Math.round(headCenterXPx + rightX * 1.4 + forwardX * 1.4), Math.round(headCenterYPx + rightY * 1.4 + forwardY * 1.4), 1, 1);
+      ctx.fillRect(Math.round(headCenterXPx - rightX * 1.4 + forwardX * 1.4), Math.round(headCenterYPx - rightY * 1.4 + forwardY * 1.4), 1, 1);
+    }
   }
 }
 
@@ -1652,33 +1692,62 @@ function render(): void {
 
   updateUpgradePanelState();
 
-  // Status bar: show repair cost hint when repair tool is selected and hovering a tile
-  if (selectedTool === 'repair' && isInBounds(hoveredXTile, hoveredYTile)) {
-    const hovIndex = tileIndex(hoveredXTile, hoveredYTile);
-    const ghost = blueprintGhosts.get(hovIndex);
-    const hovStructure = structures[hovIndex];
-
+  // Status bar: context-sensitive hints for the selected tool
+  {
     let statusText = '';
     let statusCost = 0;
+    let hasPositiveCost = false;
 
-    if (ghost !== undefined && hovStructure === 'empty') {
-      statusCost = STRUCTURE_REBUILD_COST[ghost] ?? 0;
-      statusText = statusCost === 0 ? 'Rebuild: free' : `Rebuild: ${statusCost}${ORE_SYMBOL}`;
-    } else if (hovStructure !== 'empty') {
-      const currentHp = structureHp.get(hovIndex);
-      const maxHp = STRUCTURE_MAX_HP[hovStructure];
-      if (currentHp !== undefined && maxHp !== undefined && currentHp < maxHp) {
-        const missingHp = maxHp - currentHp;
-        const rebuildCost = STRUCTURE_REBUILD_COST[hovStructure] ?? 0;
-        statusCost = Math.ceil(missingHp * rebuildCost / maxHp);
-        statusText = statusCost === 0 ? 'Repair: free' : `Repair: ${statusCost}${ORE_SYMBOL}`;
+    if (isInBounds(hoveredXTile, hoveredYTile)) {
+      const hovIndex = tileIndex(hoveredXTile, hoveredYTile);
+      const ghost = blueprintGhosts.get(hovIndex);
+      const hovStructure = structures[hovIndex];
+
+      if (selectedTool === 'repair') {
+        if (ghost !== undefined && hovStructure === 'empty') {
+          statusCost = STRUCTURE_REBUILD_COST[ghost] ?? 0;
+          statusText = statusCost === 0 ? 'Rebuild: free' : `Rebuild: ${statusCost}${ORE_SYMBOL}`;
+          hasPositiveCost = statusCost > 0;
+        } else if (hovStructure !== 'empty') {
+          const currentHp = structureHp.get(hovIndex);
+          const maxHp = STRUCTURE_MAX_HP[hovStructure];
+          if (currentHp !== undefined && maxHp !== undefined && currentHp < maxHp) {
+            const missingHp = maxHp - currentHp;
+            const rebuildCost = STRUCTURE_REBUILD_COST[hovStructure] ?? 0;
+            statusCost = Math.ceil(missingHp * rebuildCost / maxHp);
+            statusText = statusCost === 0 ? 'Repair: free' : `Repair: ${statusCost}${ORE_SYMBOL}`;
+            hasPositiveCost = statusCost > 0;
+          }
+        }
+      } else if (selectedTool === 'erase') {
+        if (hovStructure !== 'empty') {
+          statusText = `Erase: ${hovStructure}`;
+        }
+      } else if (selectedTool === 'turret' || selectedTool === 'radar') {
+        const isValidTile = !terrainIsDebris[hovIndex]
+          && hovStructure === 'empty'
+          && !(hoveredXTile === coreTile.x && hoveredYTile === coreTile.y)
+          && !(hoveredXTile === depositTile.x && hoveredYTile === depositTile.y)
+          && !(hoveredXTile === deposit2Tile.x && hoveredYTile === deposit2Tile.y)
+          && isTileVisible(hoveredXTile, hoveredYTile);
+        if (isValidTile) {
+          const isRebuild = ghost === selectedTool;
+          const costTable = isRebuild ? STRUCTURE_REBUILD_COST : STRUCTURE_ORE_COST;
+          statusCost = costTable[selectedTool] ?? 0;
+          statusText = isRebuild ? `Rebuild: ${statusCost}${ORE_SYMBOL}` : `Cost: ${statusCost}${ORE_SYMBOL}`;
+          hasPositiveCost = true;
+        }
       }
     }
 
     statusBarElement.textContent = statusText;
-    statusBarElement.style.color = statusText === '' ? '' : ore >= statusCost ? '#44ff88' : '#ff6655';
-  } else {
-    statusBarElement.textContent = '';
+    if (statusText === '') {
+      statusBarElement.style.color = '';
+    } else if (!hasPositiveCost) {
+      statusBarElement.style.color = '#ff7060'; // erase or free actions
+    } else {
+      statusBarElement.style.color = ore >= statusCost ? '#44ff88' : '#ff6655';
+    }
   }
 }
 
