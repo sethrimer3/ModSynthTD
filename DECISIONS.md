@@ -155,3 +155,41 @@ After the breach event, a smaller worm also spawns from the second entrance ever
 **Decision**: The HUD now shows `HP current/max` (e.g. `HP 80/160`) and the color thresholds in both the HUD and core tile are computed as fractions of `maxCoreHp = BASE_CORE_HP + upgradeLevel.coreArmor * CORE_ARMOR_HP_PER_LEVEL` rather than a hardcoded 100.
 
 **Reason**: Previously the HP ratio used `/100`, which caused the green→yellow and yellow→red color thresholds to fire at wrong HP values when Core Armor was purchased. With max HP 160, `coreHp = 80` (50%) would incorrectly show as healthy green (`80 > 60`), when it should show as damaged yellow (50% < 60%). Showing `current/max` also helps the player understand the benefit of Core Armor upgrades immediately.
+
+---
+
+## D-016: Smooth Worm Body Rendering
+
+**Decision**: The worm spine line (lineWidth 2, straight segments) was replaced with a smooth quadratic bezier curve body skin (lineWidth 4, `lineCap: 'round'`, `lineJoin: 'round'`). Two tiny eye pixels are drawn on the head, oriented toward the head's movement direction (away from the second segment).
+
+**Reason**: The design doc (§21.2) calls for "smooth body skins rendered over hit segments". The midpoint quadratic bezier produces a smooth organic body without heavy math: for each middle control point, the bezier endpoint is the midpoint between that segment and the next, creating C1 continuity. The thick rounded path naturally creates a tapered worm silhouette.
+
+**Tradeoff**: The bezier path uses canvas save/restore for `lineWidth`/`lineCap`/`lineJoin` settings, adding minimal per-frame cost. Per-segment circles are still rendered on top so HP damage states remain visible.
+
+---
+
+## D-017: Deposit 2 Tile Protection in Structure Placement
+
+**Decision**: `attemptPlaceStructure` now guards against placing structures on `deposit2Tile`, matching the existing guard for `depositTile` and `coreTile`.
+
+**Reason**: The second deposit tile was not protected in the placement path (only in the repair path). Once `revealRadiusTile >= 6`, the player could overwrite the deposit 2 tile with a wall or other structure. This was unintended — the tile should behave like `depositTile` and be unplaceable.
+
+---
+
+## D-018: Status Bar Cost Hints for All Build Tools
+
+**Decision**: The status bar below the toolbar now shows contextual hints for all tool types, not just the repair tool:
+- **Turret / Radar**: shows `Cost: N⊕` or `Rebuild: N⊕` when hovering a valid empty tile; green if affordable, red if not.
+- **Erase**: shows `Erase: <type>` in the erase color when hovering a placed structure.
+- **Repair**: existing rebuild/repair cost hint behavior unchanged.
+- **Wall**: no hint shown (walls are free; cost is already shown in the toolbar key as `[W]`).
+
+**Reason**: The player needs quick feedback about whether they can afford a placement before clicking. Showing the cost in context (green = can afford, red = cannot) prevents the "NEED ORE" overlay from being the only indicator. The erase hint gives a quick sanity-check of what will be removed.
+
+---
+
+## D-019: Core Damage Pulse Animation
+
+**Decision**: When `coreHp` drops to or below the `coreHpDamagedThreshold` (30% of max), the core tile flashes a red translucent overlay pulsing at 4 Hz using `Math.sin(elapsedSec * Math.PI * 4)`. The pulse is suppressed once `isRunOver` is true to avoid flickering on the game-over screen.
+
+**Reason**: The existing HP bar and color change give text/color feedback for low HP. A pulsing animation provides a more urgent visual alarm that draws attention even in peripheral vision during active combat. The 4 Hz rate is fast enough to feel urgent without being visually disruptive.

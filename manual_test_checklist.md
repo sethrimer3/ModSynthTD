@@ -173,8 +173,10 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Worm head reaching the core deals 6 damage and removes the worm
 - [ ] Core drops to 0 HP from worm → game over flow triggers normally
 - [ ] `worms = []` on run reset: no worms visible after game-over restart
-- [ ] Worm spine (brown line) and segment circles render correctly (amber head, dark-orange body)
-- [ ] Segment color shifts to red when HP < 50%
+- [ ] Worm body renders as a smooth curved skin (quadratic bezier, rounded, brown/dark-orange)
+- [ ] Amber head circle visible on top of body skin; dark-orange body circles show below
+- [ ] Segment HP circles shift to red when HP < 50%
+- [ ] Two tiny eye pixels on the head, oriented toward movement direction
 
 ---
 
@@ -202,3 +204,23 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Worm head enters from the top and paths to the core via BFS
 - [ ] Second-entrance worm is smaller (≤ 10 segments) than the main-entrance worm
 - [ ] If breach has not occurred, no worm spawns from the second entrance
+
+---
+
+## 20. Core Damage Pulse
+
+- [ ] When core HP drops to ≤ 30% of max, the core tile pulses with a red overlay
+- [ ] Pulse rate is visibly fast (approximately 4 Hz)
+- [ ] Pulse stops / is not visible when HP is above 30% threshold
+- [ ] Pulse does not appear on the game-over screen (suppressed when run is over)
+
+---
+
+## 21. Status Bar Hints
+
+- [ ] With Turret tool selected, hovering a valid empty tile shows `Cost: 12⊕` (green if affordable, red if not)
+- [ ] With Radar tool selected, hovering a valid empty tile shows `Cost: 25⊕` (green if affordable, red if not)
+- [ ] With Turret/Radar tool, hovering a ghost tile shows `Rebuild: N⊕` with correct half-price
+- [ ] With Erase tool, hovering a placed structure shows `Erase: <type>` in the erase red color
+- [ ] With Wall tool, no cost hint is shown (walls are free)
+- [ ] Status bar clears when not hovering a relevant tile or when pointer leaves canvas
