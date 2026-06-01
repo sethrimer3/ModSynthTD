@@ -36,7 +36,7 @@ AI agents should maintain this file as part of normal implementation work.
 
 ## Repair, Rebuild, and Destruction
 
-- [ ] Expand the repair brush with better hover cost previews and clearer rebuild state.
+- [x] Expand the repair brush with better hover cost previews and clearer rebuild state.
 - [x] Add Rebuild All.
 - [x] Add Rebuild Affordable.
 - [x] Add rebuild filters: walls, turrets, conveyors, and advanced logistics.
@@ -56,7 +56,7 @@ AI agents should maintain this file as part of normal implementation work.
 ## Radar and Expansion
 
 - [ ] Make radar expand visible and buildable area through clearer stages.
-- [ ] Add radar-based enemy direction warnings.
+- [x] Add radar-based enemy direction warnings.
 - [ ] Add radar-based resource discovery beyond the current second deposit.
 - [ ] Add radar-based debris weakness or breach warning information.
 - [ ] Add zoom-out behavior tied to radar while keeping particles readable.
@@ -64,9 +64,9 @@ AI agents should maintain this file as part of normal implementation work.
 ## Procedural Enemies
 
 - [ ] Tune worm splitting so the intended survival threshold is consistent with the design.
-- [ ] Add at least one worm variant, such as Armored, Crystal, Acid, or Siege Worm.
-- [ ] Add segment-specific combat effects for at least one weapon.
-- [ ] Add clearer damage feedback on worm segments.
+- [x] Add at least one worm variant, such as Armored, Crystal, Acid, or Siege Worm.
+- [x] Add segment-specific combat effects for at least one weapon.
+- [x] Add clearer damage feedback on worm segments.
 - [x] Add enemy behavior that targets logistics, not only the core or nearby structures.
 
 ## Meta and Idle Systems
@@ -91,7 +91,7 @@ AI agents should maintain this file as part of normal implementation work.
 
 ## UI and Polish
 
-- [ ] Add flow rate readouts per route.
+- [x] Add flow rate readouts per route.
 - [x] Add turret uptime and ammo starvation readouts.
 - [ ] Add optional advanced overlays: heat, bottlenecks, purity, threat forecast.
 - [ ] Improve build previews for multi-tile buildings and routed structures.

@@ -77,12 +77,14 @@ interface WormSegment {
   yTile: number;
   hp: number;
   maxHp: number;
+  hitFlashTimerSec?: number;
 }
 
 interface Worm {
   segments: WormSegment[];
   speedTilePerSec: number;
   wallAttackCooldownSec: number;
+  isArmored?: boolean;
 }
 
 type MetaUpgradeKey = 'coreArmor' | 'turretPower' | 'oreBonus';
@@ -105,7 +107,7 @@ const depositTile = { x: 5, y: 10 };          // Moved closer to base (was {3,2}
 const coalDepositTile = { x: 15, y: 10 };      // coal deposit on the right side of base
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 16;
+const currentBuildNumber = 17;
 const turretRangeTile = 4.5;
 
 // ── Conveyor/Extractor constants ─────────────────────────────────────────────
@@ -202,6 +204,12 @@ const SCUTTLER_BASE_HP = 14;
 const SCUTTLER_HP_PER_WAVE = 2;
 const SCUTTLER_SPEED_TILE_PER_SEC = 2.2;
 const SCUTTLER_ATTACK_DAMAGE = 6;
+
+// Armored Worm constants – high-HP variant that appears on later waves
+const ARMORED_WORM_SPAWN_START_WAVE = 6;
+const ARMORED_WORM_HP_MULTIPLIER = 2.0;
+const ARMORED_WORM_SPEED_BASE = 0.55; // slower than regular worm
+const WORM_SEGMENT_HIT_FLASH_SEC = 0.14; // how long a hit flash lasts on a segment
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function clamp(v: number, lo: number, hi: number): number {
@@ -1234,6 +1242,24 @@ function spawnWave(): void {
     worms.push({ segments: segs, speedTilePerSec: 0.75 + waveIndex * 0.04, wallAttackCooldownSec: 0 });
   }
 
+  // Spawn an Armored Worm on later waves — high-HP, slower, grey-green
+  if (waveIndex >= ARMORED_WORM_SPAWN_START_WAVE && waveIndex % 2 === 0) {
+    const segmentCount = Math.min(10, 4 + Math.floor((waveIndex - ARMORED_WORM_SPAWN_START_WAVE) / 2));
+    const segmentHpBase = Math.floor((WORM_SEGMENT_HP_BASE + waveIndex * WORM_SEGMENT_HP_PER_WAVE) * ARMORED_WORM_HP_MULTIPLIER);
+    const armorSegs: WormSegment[] = [];
+    const [awx, awy] = getRandomSpawnTile();
+    for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
+      armorSegs.push({
+        xTile: awx - segmentIndex * WORM_SEGMENT_SPACING_TILE,
+        yTile: awy,
+        hp: segmentHpBase,
+        maxHp: segmentHpBase,
+      });
+    }
+    const armorSpeed = Math.max(0.35, ARMORED_WORM_SPEED_BASE + waveIndex * 0.02);
+    worms.push({ segments: armorSegs, speedTilePerSec: armorSpeed, wallAttackCooldownSec: 0, isArmored: true });
+  }
+
   // Spawn scuttlers starting at SCUTTLER_SPAWN_START_WAVE; count grows with waves
   if (waveIndex >= SCUTTLER_SPAWN_START_WAVE) {
     const scuttlerCount = 1 + Math.floor((waveIndex - SCUTTLER_SPAWN_START_WAVE) / 3);
@@ -1524,6 +1550,13 @@ function updateWorms(dtSec: number): void {
       }
     }
 
+    // Decay hit flash timers on all segments
+    for (const seg of worm.segments) {
+      if ((seg.hitFlashTimerSec ?? 0) > 0) {
+        seg.hitFlashTimerSec = Math.max(0, (seg.hitFlashTimerSec ?? 0) - dtSec);
+      }
+    }
+
     // Head attacks adjacent structures
     worm.wallAttackCooldownSec -= dtSec;
     if (worm.wallAttackCooldownSec <= 0) {
@@ -1635,6 +1668,7 @@ function updateTurrets(dtSec: number): void {
         } else {
           const targetSegment = targetWorm!.segments[targetWormSegIdx];
           targetSegment.hp -= damage;
+          targetSegment.hitFlashTimerSec = WORM_SEGMENT_HIT_FLASH_SEC;
           targetXTile = targetSegment.xTile;
           targetYTile = targetSegment.yTile;
         }
@@ -1807,6 +1841,7 @@ function updateGatlingTurrets(dtSec: number): void {
       } else {
         const seg = targetWorm!.segments[targetWormSegIdx];
         seg.hp -= damage;
+        seg.hitFlashTimerSec = WORM_SEGMENT_HIT_FLASH_SEC;
         tx = seg.xTile;
         ty = seg.yTile;
       }
@@ -1930,6 +1965,7 @@ function updateCannonTurrets(dtSec: number): void {
       } else {
         const seg = targetWorm!.segments[targetWormSegIdx];
         seg.hp -= damage;
+        seg.hitFlashTimerSec = WORM_SEGMENT_HIT_FLASH_SEC;
         tx = seg.xTile;
         ty = seg.yTile;
       }
@@ -2707,6 +2743,7 @@ function drawWorm(worm: Worm): void {
   const segs = worm.segments;
   if (segs.length === 0) { return; }
   const half = tileSizePx / 2;
+  const isArmored = worm.isArmored === true;
 
   // Draw smooth body skin using midpoint quadratic bezier
   if (segs.length >= 2) {
@@ -2714,7 +2751,7 @@ function drawWorm(worm: Worm): void {
     ctx.lineWidth = 4;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#7a3310';
+    ctx.strokeStyle = isArmored ? '#4a5c44' : '#7a3310';
     ctx.beginPath();
     ctx.moveTo(segs[0].xTile * tileSizePx + half, segs[0].yTile * tileSizePx + half);
     for (let i = 1; i < segs.length - 1; i += 1) {
@@ -2735,9 +2772,20 @@ function drawWorm(worm: Worm): void {
     const cx = seg.xTile * tileSizePx + half;
     const cy = seg.yTile * tileSizePx + half;
     const hpRatio = seg.hp / seg.maxHp;
-    ctx.fillStyle = i === 0
-      ? '#ff9944'
-      : hpRatio > 0.5 ? '#cc5522' : '#dd3300';
+    const isFlashing = (seg.hitFlashTimerSec ?? 0) > 0;
+    let segColor: string;
+    if (isFlashing) {
+      segColor = '#ffffff';
+    } else if (i === 0) {
+      segColor = isArmored ? '#8ab080' : '#ff9944';
+    } else {
+      if (isArmored) {
+        segColor = hpRatio > 0.5 ? '#5a7050' : '#6e3a2a';
+      } else {
+        segColor = hpRatio > 0.5 ? '#cc5522' : '#dd3300';
+      }
+    }
+    ctx.fillStyle = segColor;
     ctx.beginPath();
     ctx.arc(cx, cy, i === 0 ? 3 : 2, 0, Math.PI * 2);
     ctx.fill();
@@ -3057,8 +3105,25 @@ function render(): void {
       ctx.fillStyle = 'rgba(255,100,80,0.28)';
       ctx.strokeStyle = 'rgba(255,100,80,0.55)';
     } else if (selectedTool === 'repair') {
-      ctx.fillStyle = 'rgba(68,255,136,0.22)';
-      ctx.strokeStyle = 'rgba(68,255,136,0.6)';
+      // Tint green if affordable, amber if not
+      const hIdx = tileIndex(hoveredXTile, hoveredYTile);
+      const hovStructure = structures[hIdx];
+      const hovHp = structureHp.get(hIdx);
+      const hovMaxHp = hovStructure !== undefined ? (STRUCTURE_MAX_HP[hovStructure] ?? undefined) : undefined;
+      let canAffordRepair = true;
+      if (hovStructure !== undefined && hovStructure !== 'empty' && hovHp !== undefined && hovMaxHp !== undefined) {
+        const missingHp = hovMaxHp - hovHp;
+        const rebuildCostVal = (STRUCTURE_REBUILD_COST as Partial<Record<string, number>>)[hovStructure] ?? 0;
+        const repairCostVal = Math.ceil(missingHp * rebuildCostVal / hovMaxHp);
+        canAffordRepair = ore >= repairCostVal;
+      }
+      if (canAffordRepair) {
+        ctx.fillStyle = 'rgba(68,255,136,0.22)';
+        ctx.strokeStyle = 'rgba(68,255,136,0.6)';
+      } else {
+        ctx.fillStyle = 'rgba(255,160,40,0.28)';
+        ctx.strokeStyle = 'rgba(255,160,40,0.75)';
+      }
     } else {
       ctx.fillStyle = 'rgba(100,180,255,0.18)';
       ctx.strokeStyle = 'rgba(100,200,255,0.45)';
@@ -3198,6 +3263,24 @@ function render(): void {
     }
   }
 
+  // Radar threat direction indicators (requires radarLevel >= 2)
+  if (radarLevel >= 2 && activeThreats > 0) {
+    const cx = coreTile.x;
+    const cy = coreTile.y;
+    const north = enemies.some(e => e.yTile < cy - 2) || worms.some(w => w.segments.length > 0 && w.segments[0].yTile < cy - 2);
+    const south = enemies.some(e => e.yTile > cy + 2) || worms.some(w => w.segments.length > 0 && w.segments[0].yTile > cy + 2);
+    const west = enemies.some(e => e.xTile < cx - 2) || worms.some(w => w.segments.length > 0 && w.segments[0].xTile < cx - 2);
+    const east = enemies.some(e => e.xTile > cx + 2) || worms.some(w => w.segments.length > 0 && w.segments[0].xTile > cx + 2);
+    const arrowParts: string[] = [];
+    if (north) { arrowParts.push('↑'); }
+    if (south) { arrowParts.push('↓'); }
+    if (west) { arrowParts.push('←'); }
+    if (east) { arrowParts.push('→'); }
+    if (arrowParts.length > 0) {
+      waveSpan.textContent += ` ${arrowParts.join('')}`;
+    }
+  }
+
   radarSpan.textContent = `Radar ${radarLevel}`;
   radarSpan.style.color = '#8d68ff';
 
@@ -3274,6 +3357,16 @@ function render(): void {
         const costPart = isValidTile ? (isRebuild ? ` · Rebuild: ${statusCost}${ORE_SYMBOL}` : ` · Cost: ${statusCost}${ORE_SYMBOL}`) : '';
         statusText = `Dir [${dirSymbol}] · Q: rotate${costPart}`;
         hasPositiveCost = isValidTile;
+      } else if (hovStructure === 'extractor') {
+        // Show extractor flow rate when hovering an existing extractor with any tool
+        const resType = extractorResourceType(hoveredXTile, hoveredYTile);
+        const hasRoute = extractorHasRoute.get(hovIndex) ?? false;
+        if (resType !== null) {
+          const spawnInterval = resType === 'ore' ? EXTRACTOR_ORE_SPAWN_SEC : EXTRACTOR_COAL_SPAWN_SEC;
+          const flowRate = hasRoute ? (1 / spawnInterval).toFixed(2) : '0.00';
+          const resSymbol = resType === 'ore' ? ORE_SYMBOL : '▪';
+          statusText = `Extractor [${resType}] · ${flowRate}/s ${resSymbol}`;
+        }
       }
     }
 
