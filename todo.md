@@ -2,6 +2,17 @@
 
 This file is the condensed implementation checklist for the project. Keep `design.md` focused on vision, design intent, and system explanations. Track concrete implementation work here.
 
+## Agent Maintenance Rules
+
+AI agents should maintain this file as part of normal implementation work.
+
+- When a checklist item is fully implemented and validated, mark it `[x]` in the same change set.
+- If an item is only partially implemented, leave it unchecked and add or refine a follow-up item for what remains.
+- If work is deferred, descoped, blocked, or intentionally skipped, add a concise unchecked item under the most relevant section.
+- If implementation reveals new required work, add it here rather than burying it in chat, commit notes, or `design.md`.
+- Keep items short, concrete, and implementation-oriented.
+- Do not use this file for broad design vision. Put design intent in `design.md`.
+
 ## Current Priority: Make the Core Factory-Defense Loop Real
 
 - [ ] Add actual conveyor placement as the basic infinite logistics tool.
