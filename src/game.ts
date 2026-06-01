@@ -3103,9 +3103,15 @@ function drawWorm(worm: Worm): void {
 
 // ── Environment helpers ────────────────────────────────────────────────────
 
+/** Returns how strongly a transition window is active: 1 at its midpoint, 0 outside. */
+function phaseWindowPeak(phase: number, start: number, end: number): number {
+  if (phase < start || phase > end) return 0;
+  const half = (end - start) / 2;
+  return 1 - Math.abs(phase - (start + half)) / half;
+}
+
 function getSunState(env: EnvironmentState): SunState {
   const phase = env.dayNightTimeSec / DAY_NIGHT_CYCLE_SEC;
-  const isNight = phase < SUNRISE_START_PHASE || phase > SUNSET_END_PHASE;
 
   // Raw daylight 0..1 across sunrise/sunset windows
   let raw: number;
@@ -3119,6 +3125,7 @@ function getSunState(env: EnvironmentState): SunState {
     raw = 1 - (phase - SUNSET_START_PHASE) / (SUNSET_END_PHASE - SUNSET_START_PHASE);
   }
   const daylightAmount = raw * raw * (3 - 2 * raw); // smoothstep
+  const isNight = daylightAmount < 0.01;
 
   // Sun sweeps east→west during the day; altitude peaks at noon
   const dayFrac = clamp(
@@ -3130,15 +3137,11 @@ function getSunState(env: EnvironmentState): SunState {
   const dirX = Math.cos(sweepAngle);          // +1=east(dawn), 0=noon, -1=west(dusk)
   const dirY = -Math.sin(sweepAngle) * 0.35;  // slight north-tilt shadow at noon
 
-  // Warmth peaks at midpoint of sunrise / sunset windows
-  let warmthAmount = 0;
-  if (phase >= SUNRISE_START_PHASE && phase <= SUNRISE_END_PHASE) {
-    const half = (SUNRISE_END_PHASE - SUNRISE_START_PHASE) / 2;
-    warmthAmount = 1 - Math.abs(phase - (SUNRISE_START_PHASE + half)) / half;
-  } else if (phase >= SUNSET_START_PHASE && phase <= SUNSET_END_PHASE) {
-    const half = (SUNSET_END_PHASE - SUNSET_START_PHASE) / 2;
-    warmthAmount = 1 - Math.abs(phase - (SUNSET_START_PHASE + half)) / half;
-  }
+  // Warmth peaks at midpoint of each sunrise/sunset window
+  const warmthAmount = Math.max(
+    phaseWindowPeak(phase, SUNRISE_START_PHASE, SUNRISE_END_PHASE),
+    phaseWindowPeak(phase, SUNSET_START_PHASE,  SUNSET_END_PHASE),
+  );
 
   return { phase, altitude, dirX, dirY, daylightAmount, warmthAmount, isNight };
 }
@@ -3174,6 +3177,11 @@ function drawTileShadows(sunState: SunState): void {
   ctx.restore();
 }
 
+// Each entry: [x-offset from canvas centre (px), beam width (px)]
+const SUNBEAM_DEFS: readonly [number, number][] = [
+  [-65, 5], [-42, 8], [-18, 3], [12, 9], [38, 5], [62, 4],
+];
+
 function drawSunBeams(sunState: SunState): void {
   if (sunState.daylightAmount < 0.05 || sunState.warmthAmount < 0.02) return;
   const alpha = sunState.warmthAmount * BEAM_MAX_ALPHA;
@@ -3183,8 +3191,7 @@ function drawSunBeams(sunState: SunState): void {
   ctx.translate(nativeWidthPx / 2, nativeHeightPx / 2);
   ctx.rotate(Math.atan2(sunState.dirY, sunState.dirX) + Math.PI / 2);
   const halfDiag = Math.sqrt(nativeWidthPx * nativeWidthPx + nativeHeightPx * nativeHeightPx) / 2 + 4;
-  const beams: [number, number][] = [[-65, 5], [-42, 8], [-18, 3], [12, 9], [38, 5], [62, 4]];
-  for (const [xOff, w] of beams) {
+  for (const [xOff, w] of SUNBEAM_DEFS) {
     ctx.fillRect(xOff - w / 2, -halfDiag, w, halfDiag * 2);
   }
   ctx.restore();
