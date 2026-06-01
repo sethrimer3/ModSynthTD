@@ -1,5 +1,22 @@
 type Structure = 'empty' | 'wall' | 'turret' | 'radar';
 type Tool = 'wall' | 'turret' | 'radar' | 'erase' | 'repair';
+type BuildCategory = 'mining' | 'turrets' | 'defense' | 'tech' | 'repair' | 'erase';
+
+interface BuildItemDef {
+  id: Tool;
+  label: string;
+  hotkey: string;
+  cost: number;
+  color: string;
+}
+
+interface BuildCategoryDef {
+  id: BuildCategory;
+  label: string;
+  color: string;
+  directTool?: Tool;
+  items: BuildItemDef[];
+}
 
 interface Enemy {
   xTile: number;
@@ -55,7 +72,7 @@ const coreTile = { x: Math.floor(gridWidthTile / 2), y: Math.floor(gridHeightTil
 const depositTile = { x: 3, y: 2 };
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 10;
+const currentBuildNumber = 11;
 const turretRangeTile = 4.5;
 const shotFlashDurationSec = 0.12;
 const breakerArrivalDistanceTile = 0.2;
@@ -181,7 +198,15 @@ canvasElement.className = 'gameCanvas';
 canvasElement.setAttribute('aria-label', 'Tiny Base Idle game board');
 
 const toolbarElement = document.createElement('div');
-toolbarElement.className = 'toolbar';
+toolbarElement.className = 'buildPalette';
+
+const paletteCategoriesElement = document.createElement('div');
+paletteCategoriesElement.className = 'paletteCategories';
+
+const paletteItemsElement = document.createElement('div');
+paletteItemsElement.className = 'paletteItems';
+
+toolbarElement.append(paletteCategoriesElement, paletteItemsElement);
 
 // Upgrade panel DOM
 const upgradePanelElement = document.createElement('div');
@@ -305,45 +330,45 @@ let hoveredXTile = -1;
 let hoveredYTile = -1;
 let isPointerHeld = false;
 
-// ── Tool setup ─────────────────────────────────────────────────────────────
-interface ToolConfig {
-  label: string;
-  key: string;
-  color: string;
-  cost: number;
-}
+// ── Build palette setup ────────────────────────────────────────────────────
+const BUILD_CATEGORIES: BuildCategoryDef[] = [
+  { id: 'mining',  label: 'Mining',  color: '#f0a600', items: [] },
+  {
+    id: 'turrets', label: 'Turrets', color: '#27e0ff',
+    items: [{ id: 'turret', label: 'Turret', hotkey: 'T', cost: 12, color: '#27e0ff' }],
+  },
+  {
+    id: 'defense', label: 'Defense', color: '#6a8faf',
+    items: [{ id: 'wall', label: 'Wall', hotkey: 'W', cost: 0, color: '#6a8faf' }],
+  },
+  {
+    id: 'tech', label: 'Tech', color: '#8d68ff',
+    items: [{ id: 'radar', label: 'Radar', hotkey: 'R', cost: 25, color: '#8d68ff' }],
+  },
+  { id: 'repair', label: 'Repair', color: '#44ff88', directTool: 'repair', items: [] },
+  { id: 'erase',  label: 'Erase',  color: '#ff7060', directTool: 'erase',  items: [] },
+];
 
-const toolConfigs: Record<Tool, ToolConfig> = {
-  wall:   { label: 'Wall',   key: 'W', color: '#6a8faf', cost: 0  },
-  turret: { label: 'Turret', key: 'T', color: '#27e0ff', cost: 12 },
-  radar:  { label: 'Radar',  key: 'R', color: '#8d68ff', cost: 25 },
-  erase:  { label: 'Erase',  key: 'E', color: '#ff7060', cost: 0  },
-  repair: { label: 'Repair', key: 'F', color: '#44ff88', cost: 0  },
+const TOOL_TO_CATEGORY: Record<Tool, BuildCategory> = {
+  wall: 'defense', turret: 'turrets', radar: 'tech', erase: 'erase', repair: 'repair',
 };
-const toolOrder: Tool[] = ['wall', 'turret', 'radar', 'erase', 'repair'];
-const toolButtons = new Map<Tool, HTMLButtonElement>();
-let selectedTool: Tool = 'wall';
 
-for (const tool of toolOrder) {
-  const cfg = toolConfigs[tool];
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'toolButton';
-  button.style.setProperty('--tool-color', cfg.color);
-  const labelSpan = document.createElement('span');
-  labelSpan.textContent = cfg.label;
-  const keySpan = document.createElement('span');
-  keySpan.className = 'toolKey';
-  keySpan.textContent = cfg.cost > 0 ? `[${cfg.key}] ${cfg.cost}${ORE_SYMBOL}` : `[${cfg.key}]`;
-  button.append(labelSpan, keySpan);
-  button.addEventListener('click', () => {
-    selectedTool = tool;
-    updateToolbarState();
-  });
-  toolbarElement.append(button);
-  toolButtons.set(tool, button);
+const categoryButtons = new Map<BuildCategory, HTMLButtonElement>();
+let selectedTool: Tool = 'wall';
+let selectedCategory: BuildCategory = 'defense';
+
+for (const catDef of BUILD_CATEGORIES) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'categoryButton';
+  btn.style.setProperty('--cat-color', catDef.color);
+  btn.textContent = catDef.label;
+  btn.addEventListener('click', () => { selectCategory(catDef.id); });
+  paletteCategoriesElement.append(btn);
+  categoryButtons.set(catDef.id, btn);
 }
-updateToolbarState();
+
+updatePaletteState();
 
 // ── Keyboard shortcuts ─────────────────────────────────────────────────────
 window.addEventListener('keydown', (event) => {
@@ -357,7 +382,8 @@ window.addEventListener('keydown', (event) => {
   const tool = keyMap[event.key.toLowerCase()];
   if (tool) {
     selectedTool = tool;
-    updateToolbarState();
+    selectedCategory = TOOL_TO_CATEGORY[tool];
+    updatePaletteState();
   }
 });
 
@@ -422,9 +448,52 @@ let distanceField = computeDistanceField();
 
 // ── Logic helpers ──────────────────────────────────────────────────────────
 
-function updateToolbarState(): void {
-  for (const [tool, button] of toolButtons) {
-    button.classList.toggle('active', tool === selectedTool);
+function selectCategory(catId: BuildCategory): void {
+  selectedCategory = catId;
+  const catDef = BUILD_CATEGORIES.find(c => c.id === catId)!;
+  if (catDef.directTool !== undefined) {
+    selectedTool = catDef.directTool;
+  } else if (catDef.items.length > 0) {
+    const currentInCat = catDef.items.find(item => item.id === selectedTool);
+    if (!currentInCat) {
+      selectedTool = catDef.items[0].id;
+    }
+  }
+  updatePaletteState();
+}
+
+function updatePaletteState(): void {
+  for (const [catId, btn] of categoryButtons) {
+    btn.classList.toggle('active', catId === selectedCategory);
+  }
+
+  while (paletteItemsElement.firstChild) {
+    paletteItemsElement.removeChild(paletteItemsElement.firstChild);
+  }
+
+  const catDef = BUILD_CATEGORIES.find(c => c.id === selectedCategory)!;
+  for (const itemDef of catDef.items) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'itemButton';
+    btn.style.setProperty('--item-color', itemDef.color);
+    btn.classList.toggle('active', itemDef.id === selectedTool);
+
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = itemDef.label;
+    const keySpan = document.createElement('span');
+    keySpan.className = 'itemKey';
+    keySpan.textContent = itemDef.cost > 0
+      ? `[${itemDef.hotkey}] ${itemDef.cost}${ORE_SYMBOL}`
+      : `[${itemDef.hotkey}]`;
+    btn.append(labelSpan, keySpan);
+
+    btn.addEventListener('click', () => {
+      selectedTool = itemDef.id;
+      updatePaletteState();
+    });
+
+    paletteItemsElement.append(btn);
   }
 }
 
@@ -526,19 +595,10 @@ function attemptRepair(xTile: number, yTile: number): void {
       radarLevel += 1;
       revealRadiusTile = Math.min(10, revealRadiusTile + 1);
     }
-    const nextDistanceField = computeDistanceField();
-    if (nextDistanceField[tileIndex(entranceTile.x, entranceTile.y)] === -1) {
-      structures[index] = 'empty';
-      if (ghost === 'radar') {
-        radarLevel -= 1;
-        revealRadiusTile = Math.max(MIN_REVEAL_RADIUS_TILE, revealRadiusTile - 1);
-      }
-      return;
-    }
     ore -= cost;
     structureHp.set(index, STRUCTURE_MAX_HP[ghost] ?? STRUCTURE_MAX_HP.wall!);
     blueprintGhosts.delete(index);
-    distanceField = nextDistanceField;
+    distanceField = computeDistanceField();
     return;
   }
 
@@ -615,21 +675,11 @@ function attemptPlaceStructure(xTile: number, yTile: number): void {
     revealRadiusTile = Math.min(10, revealRadiusTile + 1);
   }
 
-  const nextDistanceField = computeDistanceField();
-  if (nextDistanceField[tileIndex(entranceTile.x, entranceTile.y)] === -1) {
-    structures[index] = 'empty';
-    if (selectedTool === 'radar') {
-      radarLevel -= 1;
-      revealRadiusTile = Math.max(MIN_REVEAL_RADIUS_TILE, revealRadiusTile - 1);
-    }
-    return;
-  }
-
   ore -= cost;
   // selectedTool is never 'erase' or 'repair' here (both returned early above); fallback covers future Structure additions
   structureHp.set(index, STRUCTURE_MAX_HP[selectedTool] ?? STRUCTURE_MAX_HP.wall!);
   blueprintGhosts.delete(index);
-  distanceField = nextDistanceField;
+  distanceField = computeDistanceField();
 }
 
 function getCanvasTile(clientX: number, clientY: number): [number, number] {
@@ -703,6 +753,63 @@ function damageStructure(index: number, amount: number): void {
   } else {
     structureHp.set(index, next);
   }
+}
+
+// BFS from the enemy's position through walkable tiles to find the nearest damageable structure
+// that borders the walkable region. Among all such candidates, pick the one closest to the core.
+// Returns -1 if no candidate is found.
+function findAttackableBlockingBuilding(startXTile: number, startYTile: number): number {
+  const sx = Math.round(startXTile);
+  const sy = Math.round(startYTile);
+  if (!isInBounds(sx, sy)) { return -1; }
+
+  const visited = new Set<number>();
+  const queue: [number, number][] = [];
+  const startIdx = tileIndex(sx, sy);
+
+  if (!terrainIsDebris[startIdx] && structures[startIdx] === 'empty') {
+    queue.push([sx, sy]);
+    visited.add(startIdx);
+  }
+
+  const candidates: number[] = [];
+
+  for (let qi = 0; qi < queue.length; qi += 1) {
+    const [x, y] = queue[qi];
+    for (const [dx, dy] of ADJ_OFFSETS) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (!isInBounds(nx, ny)) { continue; }
+      const ni = tileIndex(nx, ny);
+      if (visited.has(ni)) { continue; }
+      visited.add(ni);
+      if (terrainIsDebris[ni]) { continue; }
+      if (structures[ni] !== 'empty') {
+        if (structureHp.has(ni)) {
+          candidates.push(ni);
+        }
+        // Do not BFS through buildings
+      } else {
+        queue.push([nx, ny]);
+      }
+    }
+  }
+
+  if (candidates.length === 0) { return -1; }
+
+  // Pick the candidate closest (Euclidean) to the core — the most strategically relevant blocker
+  let best = -1;
+  let bestDist = Infinity;
+  for (const idx of candidates) {
+    const cx = idx % gridWidthTile;
+    const cy = Math.floor(idx / gridWidthTile);
+    const d = Math.hypot(cx - coreTile.x, cy - coreTile.y);
+    if (d < bestDist) {
+      bestDist = d;
+      best = idx;
+    }
+  }
+  return best;
 }
 
 function spawnWave(): void {
@@ -863,7 +970,32 @@ function updateEnemies(dtSec: number): void {
 
     const currentIndex = tileIndex(xTile, yTile);
     const currentDistance = distanceField[currentIndex];
-    if (currentDistance <= 0) {
+    if (currentDistance === 0) {
+      continue;
+    }
+
+    if (currentDistance < 0) {
+      // No walkable path to core: find the nearest damageable blocking building and attack it
+      const blockIdx = findAttackableBlockingBuilding(enemy.xTile, enemy.yTile);
+      if (blockIdx >= 0) {
+        const bx = blockIdx % gridWidthTile;
+        const by = Math.floor(blockIdx / gridWidthTile);
+        const dxTile = bx - enemy.xTile;
+        const dyTile = by - enemy.yTile;
+        const dist = Math.hypot(dxTile, dyTile);
+        if (dist > 1.0) {
+          const step = (enemy.speedTilePerSec * dtSec) / dist;
+          enemy.xTile += dxTile * Math.min(1, step);
+          enemy.yTile += dyTile * Math.min(1, step);
+        }
+        enemy.wallAttackCooldownSec -= dtSec;
+        if (enemy.wallAttackCooldownSec <= 0 && dist <= 1.5) {
+          damageStructure(blockIdx, ENEMY_WALL_DAMAGE);
+          enemy.wallAttackCooldownSec = ENEMY_WALL_ATTACK_COOLDOWN_SEC;
+        } else if (enemy.wallAttackCooldownSec < 0) {
+          enemy.wallAttackCooldownSec = 0;
+        }
+      }
       continue;
     }
 
@@ -951,7 +1083,29 @@ function updateWorms(dtSec: number): void {
     }
 
     const currentDist = distanceField[tileIndex(headXTile, headYTile)];
-    if (currentDist > 0) {
+    if (currentDist < 0) {
+      // No walkable path to core: find the nearest damageable blocking building and attack it
+      const blockIdx = findAttackableBlockingBuilding(head.xTile, head.yTile);
+      if (blockIdx >= 0) {
+        const bx = blockIdx % gridWidthTile;
+        const by = Math.floor(blockIdx / gridWidthTile);
+        const dxTile = bx - head.xTile;
+        const dyTile = by - head.yTile;
+        const dist = Math.hypot(dxTile, dyTile);
+        if (dist > 1.0) {
+          const step = (worm.speedTilePerSec * dtSec) / dist;
+          head.xTile += dxTile * Math.min(1, step);
+          head.yTile += dyTile * Math.min(1, step);
+        }
+        worm.wallAttackCooldownSec -= dtSec;
+        if (worm.wallAttackCooldownSec <= 0 && dist <= 1.5) {
+          damageStructure(blockIdx, ENEMY_WALL_DAMAGE);
+          worm.wallAttackCooldownSec = ENEMY_WALL_ATTACK_COOLDOWN_SEC;
+        } else if (worm.wallAttackCooldownSec < 0) {
+          worm.wallAttackCooldownSec = 0;
+        }
+      }
+    } else if (currentDist > 0) {
       let bestXTile = headXTile;
       let bestYTile = headYTile;
       let bestDist = currentDist;
