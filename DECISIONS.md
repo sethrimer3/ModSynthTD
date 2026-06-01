@@ -128,10 +128,30 @@ Walls are always free to rebuild/repair (`STRUCTURE_REBUILD_COST.wall = 0`). Rep
 
 **Decision**: A segmented worm enemy was added. The worm is a `Worm` object containing a `segments: WormSegment[]` array. Segment 0 is the head. The head uses BFS pathfinding (same distance field as regular enemies). Each subsequent segment uses a chain-constraint: if distance to the preceding segment exceeds `WORM_SEGMENT_SPACING_TILE` (0.6 tiles), the segment is pulled toward the preceding one. Worms split at any dead segment; fragments with fewer than `WORM_MIN_SURVIVE_SEGMENTS` (3) segments are discarded.
 
-**Reason**: The worm fulfils the design doc requirement for a "simple procedural worm enemy" (§21.11). Chain-constraint body movement is a minimal and robust way to produce snake-like motion without inverse kinematics. Splitting rewards focused fire on single segments and creates emergent sub-threat management. Reusing the existing BFS distance field keeps pathfinding consistent across enemy types.
+After the breach event, a smaller worm also spawns from the second entrance every other wave starting at `SECOND_ENTRANCE_ACTIVATION_WAVE`, trailing off the top edge of the board.
+
+**Reason**: The worm fulfils the design doc requirement for a "simple procedural worm enemy" (§21.11). Chain-constraint body movement is a minimal and robust way to produce snake-like motion without inverse kinematics. Splitting rewards focused fire on single segments and creates emergent sub-threat management. Reusing the existing BFS distance field keeps pathfinding consistent across enemy types. The second-entrance worm adds meaningful post-breach pressure without requiring new enemy types.
 
 **Tradeoff**: Each worm segment is an individual targeting candidate for turrets, which increases the inner loop cost of `updateTurrets()`. At current worm sizes (6–14 segments) this is negligible, but very large swarms of worms could stress it.
 
-**File size note**: `game.ts` now exceeds the ~1500-line threshold noted in D-001 (~1680 lines after this feature). Module separation was deferred to keep the current implementation sprint focused. This should be addressed in a follow-up refactor.
+**File size note**: `game.ts` now exceeds the ~1500-line threshold noted in D-001 (~1700 lines after this feature). Module separation was deferred to keep the current implementation sprint focused. This should be addressed in a follow-up refactor.
 
 **Alternative considered**: Storing worm segment positions as world-space floats instead of tile-space floats. Rejected because tile-space coordinates are consistent with all other game objects and the grid-aligned visuals.
+
+---
+
+## D-014: Turret Charge Bar
+
+**Decision**: A 1-pixel-high charge bar is drawn at the top edge of each turret tile. The bar fills from empty to full over one fire cycle (`TURRET_FIRE_COOLDOWN_SEC = 0.35 s`). When fully charged, the bar renders in the turret's accent color (`#27e0ff`); while charging, it renders dim (`#0e6680`). During the initial startup delay (before the first shot), the bar shows as fully charged.
+
+**Reason**: Fulfils the design doc item "One tower shows stored ammo or internal resource state" (§21.11). Gives the player immediate visual feedback about turret readiness without adding UI text or a separate indicator element. The single pixel row is unobtrusive at the 12 px tile scale.
+
+**Tradeoff**: All turrets share one global fire cycle (`turretFireCooldownSec`), so all charge bars fill and empty in sync. This is a simplification; individual per-turret cooldowns were not implemented to avoid refactoring the turret firing loop.
+
+---
+
+## D-015: HP Display Scaled to Max Core HP
+
+**Decision**: The HUD now shows `HP current/max` (e.g. `HP 80/160`) and the color thresholds in both the HUD and core tile are computed as fractions of `maxCoreHp = BASE_CORE_HP + upgradeLevel.coreArmor * CORE_ARMOR_HP_PER_LEVEL` rather than a hardcoded 100.
+
+**Reason**: Previously the HP ratio used `/100`, which caused the green→yellow and yellow→red color thresholds to fire at wrong HP values when Core Armor was purchased. With max HP 160, `coreHp = 80` (50%) would incorrectly show as healthy green (`80 > 60`), when it should show as damaged yellow (50% < 60%). Showing `current/max` also helps the player understand the benefit of Core Armor upgrades immediately.

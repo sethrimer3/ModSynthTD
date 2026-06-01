@@ -55,7 +55,7 @@ const coreTile = { x: Math.floor(gridWidthTile / 2), y: Math.floor(gridHeightTil
 const depositTile = { x: 3, y: 2 };
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 6;
+const currentBuildNumber = 7;
 const turretRangeTile = 4.5;
 const shotFlashDurationSec = 0.12;
 const breakerArrivalDistanceTile = 0.2;
@@ -98,6 +98,7 @@ const WORM_SEGMENT_HP_PER_WAVE = 1.5;
 const WORM_SEGMENT_SPACING_TILE = 0.6;
 const WORM_MIN_SURVIVE_SEGMENTS = 3;
 const WORM_SPAWN_START_WAVE = 2;
+const TURRET_FIRE_COOLDOWN_SEC = 0.35;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function clamp(v: number, lo: number, hi: number): number {
@@ -763,6 +764,22 @@ function spawnWave(): void {
     worms.push({ segments: segs, speedTilePerSec: 0.75 + waveIndex * 0.04, wallAttackCooldownSec: 0 });
   }
 
+  // After breach: also spawn a worm from the second entrance every other wave
+  if (breachOpened && waveIndex >= SECOND_ENTRANCE_ACTIVATION_WAVE && (waveIndex - SECOND_ENTRANCE_ACTIVATION_WAVE) % 2 === 0) {
+    const segmentCount = Math.min(10, 4 + Math.floor((waveIndex - WORM_SPAWN_START_WAVE) / 3));
+    const segmentHp = Math.floor(WORM_SEGMENT_HP_BASE + waveIndex * WORM_SEGMENT_HP_PER_WAVE);
+    const segs: WormSegment[] = [];
+    for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
+      segs.push({
+        xTile: secondEntranceTile.x,
+        yTile: secondEntranceTile.y - segmentIndex * WORM_SEGMENT_SPACING_TILE,
+        hp: segmentHp,
+        maxHp: segmentHp,
+      });
+    }
+    worms.push({ segments: segs, speedTilePerSec: 0.75 + waveIndex * 0.04, wallAttackCooldownSec: 0 });
+  }
+
   showOverlay(`WAVE ${waveIndex}`, '#ffee44', 2);
 }
 
@@ -1018,7 +1035,7 @@ function cleanDeadWormSegments(): void {
 function updateTurrets(dtSec: number): void {
   turretFireCooldownSec -= dtSec;
   if (turretFireCooldownSec <= 0) {
-    turretFireCooldownSec = 0.35;
+    turretFireCooldownSec = TURRET_FIRE_COOLDOWN_SEC;
     const damage = TURRET_BASE_DAMAGE + upgradeLevel.turretPower * TURRET_POWER_DAMAGE_PER_LEVEL;
 
     for (let yTile = 0; yTile < gridHeightTile; yTile += 1) {
@@ -1227,6 +1244,22 @@ function drawTurretTile(xPx: number, yPx: number, idx: number): void {
   if (tipXOff >= 0 && tipXOff < tileSizePx && tipYOff >= 0 && tipYOff < tileSizePx) {
     fillPx(xPx + tipXOff, yPx + tipYOff, 1, 1, '#aaf8ff');
   }
+
+  // Charge bar: full bar at top indicates ready-to-fire; empties after each shot.
+  // During the initial pre-wave delay, turretFireCooldownSec is set to the startup
+  // delay constant (~3 s) which is > TURRET_FIRE_COOLDOWN_SEC (0.35 s), so we
+  // show full charge (turrets appear primed) rather than a misleadingly-empty bar.
+  const chargeRatio = turretFireCooldownSec > TURRET_FIRE_COOLDOWN_SEC
+    ? 1
+    : Math.max(0, 1 - turretFireCooldownSec / TURRET_FIRE_COOLDOWN_SEC);
+  const barMaxW = tileSizePx - 2;
+  const chargeW = Math.round(chargeRatio * barMaxW);
+  ctx.fillStyle = '#0a2030';
+  ctx.fillRect(xPx + 1, yPx + 1, barMaxW, 1);
+  if (chargeW > 0) {
+    ctx.fillStyle = chargeRatio >= 1 ? '#27e0ff' : '#0e6680';
+    ctx.fillRect(xPx + 1, yPx + 1, chargeW, 1);
+  }
 }
 
 function drawRadarTile(xPx: number, yPx: number): void {
@@ -1254,7 +1287,9 @@ function drawRadarTile(xPx: number, yPx: number): void {
 }
 
 function drawCoreTile(xPx: number, yPx: number): void {
-  const coreColor = coreHp > coreHpHealthyThreshold ? '#33ffbb' : coreHp > coreHpDamagedThreshold ? '#ffee44' : '#ff5533';
+  const maxCoreHpForColor = BASE_CORE_HP + upgradeLevel.coreArmor * CORE_ARMOR_HP_PER_LEVEL;
+  const hpFracCore = coreHp / maxCoreHpForColor;
+  const coreColor = hpFracCore > coreHpHealthyThreshold / 100 ? '#33ffbb' : hpFracCore > coreHpDamagedThreshold / 100 ? '#ffee44' : '#ff5533';
   fillPx(xPx, yPx, tileSizePx, tileSizePx, '#050f0a');
   ctx.fillStyle = coreColor;
   ctx.fillRect(xPx + 4, yPx + 4, 4, 4);
@@ -1592,8 +1627,9 @@ function render(): void {
   ctx.restore();
 
   // HUD spans
-  const hpRatio = Math.max(0, coreHp) / 100;
-  hpSpan.textContent = `HP ${Math.max(0, Math.ceil(coreHp))}`;
+  const maxCoreHp = BASE_CORE_HP + upgradeLevel.coreArmor * CORE_ARMOR_HP_PER_LEVEL;
+  const hpRatio = Math.max(0, coreHp) / maxCoreHp;
+  hpSpan.textContent = `HP ${Math.max(0, Math.ceil(coreHp))}/${maxCoreHp}`;
   hpSpan.style.color = hpRatio > coreHpHealthyThreshold / 100 ? '#33ffbb' : hpRatio > coreHpDamagedThreshold / 100 ? '#ffaa44' : '#ff4444';
 
   oreSpan.textContent = elapsedSec > ORE_RATE_DISPLAY_DELAY_SEC
@@ -1601,7 +1637,8 @@ function render(): void {
     : `Ore ${ore}`;
   oreSpan.style.color = '#f0a600';
 
-  waveSpan.textContent = `Wave ${waveIndex}`;
+  const activeThreats = enemies.length + worms.reduce((sum, w) => sum + w.segments.length, 0);
+  waveSpan.textContent = activeThreats > 0 ? `Wave ${waveIndex} · ${activeThreats}` : `Wave ${waveIndex}`;
   waveSpan.style.color = '#ff8844';
 
   radarSpan.textContent = `Radar ${radarLevel}`;

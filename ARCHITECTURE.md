@@ -46,6 +46,7 @@ Key constants:
 - `gridWidthTile` / `gridHeightTile` — board dimensions (20 × 12)
 - `coreTile`, `depositTile`, `deposit2Tile` — fixed positions
 - `turretRangeTile` — turret attack range in tiles
+- `TURRET_FIRE_COOLDOWN_SEC` — turret fire cycle duration (0.35 s)
 - `META_UPGRADE_CONFIGS` — upgrade label, cost, cap, and stat formula
 
 ### 3.2 Game State

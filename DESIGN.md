@@ -1285,7 +1285,7 @@ Recommended MVP additions:
 - [x] Destroyed structures leave blueprint ghosts.
 - [x] The player can use a repair brush to rebuild ghosts.
 - [x] One visible resource mote type moves through conveyors.
-- [ ] One tower shows stored ammo or internal resource state.
+- [x] One tower shows stored ammo or internal resource state.
 - [x] One simple procedural worm enemy: segmented worm with BFS head navigation, chain-constrained body, per-segment HP, and splitting on segment death.
 
 The most important early test is whether one small board feels good when the player places structures, watches motes move, survives a breach, repairs damaged sections, and sees how better layout would improve survival.
