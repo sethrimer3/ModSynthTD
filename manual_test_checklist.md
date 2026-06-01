@@ -222,11 +222,30 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 
 ---
 
-## 21. Status Bar Hints
+## 22. Conveyor Direction Preview Ghost *(new in build 15)*
 
-- [ ] With Turret tool selected, hovering a valid empty tile shows `Cost: 12⊕` (green if affordable, red if not)
-- [ ] With Radar tool selected, hovering a valid empty tile shows `Cost: 25⊕` (green if affordable, red if not)
-- [ ] With Turret/Radar tool, hovering a ghost tile shows `Rebuild: N⊕` with correct half-price
-- [ ] With Erase tool, hovering a placed structure shows `Erase: <type>` in the erase red color
-- [ ] With Wall tool, no cost hint is shown (walls are free)
-- [ ] Status bar clears when not hovering a relevant tile or when pointer leaves canvas
+- [ ] With Conveyor, Extractor, or Splitter tool selected, hovering any tile shows a direction arrow in the ghost overlay
+- [ ] Arrow matches the current placement direction (East/South/West/North)
+- [ ] Pressing Q rotates the direction; the ghost arrow updates immediately
+- [ ] Status bar shows `Dir [→] · Q: rotate` (direction symbol reflects current dir)
+- [ ] Status bar also shows cost when hovering a valid placement tile
+- [ ] Status bar shows direction hint even when the pointer is not over the canvas
+
+---
+
+## 23. Breaker Warning and Breach Flash *(new in build 15)*
+
+- [ ] When the Breaker is within ~6 tiles of the target debris tile, that tile pulses with a magenta glow
+- [ ] Glow pulses continuously until breach occurs
+- [ ] On breach, a full-screen magenta flash appears and quickly fades over ~0.65 s
+- [ ] BREACH! overlay appears at the same time (pink text, 4-second duration)
+- [ ] Warning glow and flash reset when the run resets (game over → restart)
+
+---
+
+## 24. Enemy Approach Warning at Second Entrance *(new in build 15)*
+
+- [ ] After breach opens, a pulsing red downward arrow appears at the top of the grid above the second entrance tile
+- [ ] Arrow pulses continuously while breach is open and the run is active
+- [ ] Arrow disappears when the run ends
+
