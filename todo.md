@@ -21,7 +21,7 @@ AI agents should maintain this file as part of normal implementation work.
 - [x] Make deposits output motes only when connected to an extractor or route.
 - [x] Add simple building input/output ports so routing direction matters.
 - [x] Route ore into the core, turrets, and processors through the same logistics system.
-- [ ] Add one finite strategic routing piece, preferably Bridge or Splitter.
+- [x] Add one finite strategic routing piece, preferably Bridge or Splitter.
 - [x] Add UI feedback for blocked, invalid, or disconnected routes (red indicator on extractor, "!" hints on unconnected deposits).
 
 ## Short-Term Combat and Defense
@@ -29,7 +29,7 @@ AI agents should maintain this file as part of normal implementation work.
 - [x] Convert the current basic turret into a resource-fed weapon instead of a free-firing cooldown turret.
 - [x] Show visible stored ammo or charge inside turrets (ammo bar replaces charge bar).
 - [x] Add ammo starvation feedback when a turret has no supplied resource (red pixel when ammo=0).
-- [ ] Add at least one distinct weapon beyond the basic turret, such as Laser or Cannon.
+- [x] Add at least one distinct weapon beyond the basic turret, such as Laser or Cannon.
 - [ ] Add enemy approach warnings for newly revealed directions.
 - [ ] Improve the Breaker breach event with stronger warning and visual telegraphing.
 - [ ] Add one non-worm enemy variant with a meaningfully different counterplay pattern.
@@ -37,8 +37,8 @@ AI agents should maintain this file as part of normal implementation work.
 ## Repair, Rebuild, and Destruction
 
 - [ ] Expand the repair brush with better hover cost previews and clearer rebuild state.
-- [ ] Add Rebuild All.
-- [ ] Add Rebuild Affordable.
+- [x] Add Rebuild All.
+- [x] Add Rebuild Affordable.
 - [ ] Add rebuild filters: walls, turrets, conveyors, and advanced logistics.
 - [x] Preserve blueprint ghost data for conveyors and extractors (same ghost system as other structures).
 - [ ] Add visual repair motes, drones, scaffolding, or rebuild animation.
@@ -47,7 +47,7 @@ AI agents should maintain this file as part of normal implementation work.
 ## Resources and Processing
 
 - [x] Add at least one processor — Crusher already present; coal routed via logistics into Crusher.
-- [ ] Add one refined resource with a distinct mote size or shape (gunpowder mote exists; visual differentiation from coal mote TBD).
+- [x] Add one refined resource with a distinct mote size or shape (gunpowder mote is now 1×3 vertical pixel vs coal/ore 2×2 square).
 - [x] Add one resource conversion chain: coal mote → Crusher → gunpowder → Gatling.
 - [ ] Add basic storage behavior for at least one building (full-ammo cap exists on turrets; dedicated storage building deferred).
 - [ ] Add destruction consequences for stored dangerous resources.
