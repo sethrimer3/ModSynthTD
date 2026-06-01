@@ -1,0 +1,76 @@
+:root {
+  color-scheme: dark;
+  font-family: 'Pixelify Sans', 'Trebuchet MS', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: radial-gradient(circle at top, #121a2c 0%, #05070d 60%);
+  color: #dff6ff;
+}
+
+body {
+  min-height: 100vh;
+}
+
+#app {
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0.75rem 2rem;
+}
+
+.gameRoot {
+  width: min(100%, 480px);
+  display: grid;
+  gap: 0.5rem;
+}
+
+.hud {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+
+.rightStats {
+  text-align: right;
+}
+
+.gameCanvas {
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  border: 2px solid #2a3d65;
+  border-radius: 10px;
+  background: #04050a;
+  box-shadow: 0 0 24px rgb(64 145 255 / 25%);
+  touch-action: none;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.toolButton {
+  border: 1px solid #355286;
+  border-radius: 8px;
+  color: #dff6ff;
+  background: #141f35;
+  min-height: 2.8rem;
+  font-weight: 700;
+}
+
+.toolButton.active {
+  background: #2f4c84;
+  box-shadow: 0 0 10px rgb(80 180 255 / 35%);
+}
