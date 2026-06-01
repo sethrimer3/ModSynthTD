@@ -1,5 +1,5 @@
-type Structure = 'empty' | 'wall' | 'turret' | 'radar';
-type Tool = 'wall' | 'turret' | 'radar' | 'erase' | 'repair';
+type Structure = 'empty' | 'wall' | 'turret' | 'radar' | 'crusher' | 'gatling';
+type Tool = 'wall' | 'turret' | 'radar' | 'erase' | 'repair' | 'crusher' | 'gatling';
 type BuildCategory = 'mining' | 'turrets' | 'defense' | 'tech' | 'repair' | 'erase';
 
 interface BuildItemDef {
@@ -40,6 +40,27 @@ interface ShotFlash {
   ageSec: number;
 }
 
+interface GunpowderMote {
+  progress: number;
+  fromXTile: number;
+  fromYTile: number;
+}
+
+interface MuzzleFlash {
+  xPx: number;
+  yPx: number;
+  ageSec: number;
+}
+
+interface ShellCasing {
+  xPx: number;
+  yPx: number;
+  vxPx: number;
+  vyPx: number;
+  ageSec: number;
+  maxAgeSec: number;
+}
+
 interface WormSegment {
   xTile: number;
   yTile: number;
@@ -69,10 +90,11 @@ const gridHeightTile = 20;
 const nativeWidthPx = gridWidthTile * tileSizePx;
 const nativeHeightPx = gridHeightTile * tileSizePx;
 const coreTile = { x: Math.floor(gridWidthTile / 2), y: Math.floor(gridHeightTile / 2) };
-const depositTile = { x: 3, y: 2 };
+const depositTile = { x: 5, y: 10 };          // moved closer to base (was {3,2})
+const coalDepositTile = { x: 15, y: 10 };      // coal deposit on the right side of base
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 11;
+const currentBuildNumber = 12;
 const turretRangeTile = 4.5;
 const shotFlashDurationSec = 0.12;
 const breakerArrivalDistanceTile = 0.2;
@@ -88,9 +110,26 @@ const ORE_BONUS_PER_LEVEL = 30;
 const CORE_ARMOR_HP_PER_LEVEL = 20;
 const BASE_CORE_HP = 100;
 
-const STRUCTURE_MAX_HP: Partial<Record<Structure, number>> = { wall: 50, turret: 30, radar: 25 };
-const STRUCTURE_ORE_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 12, radar: 25 };
-const STRUCTURE_REBUILD_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 6, radar: 12 };
+// Gatling turret constants
+const GATLING_FIRE_COOLDOWN_SEC = 0.12;
+const GATLING_BASE_DAMAGE = 7;
+const GATLING_MAX_AMMO = 20;
+const GATLING_SHOTS_PER_POWDER = 5;
+
+// Crusher constants
+const CRUSHER_CONVERSION_SEC = 2.5;
+
+// Coal / gunpowder mote constants
+const COAL_MOTE_SPAWN_SEC = 0.9;
+const COAL_MOTE_SPEED = 0.35;
+const GUNPOWDER_MOTE_SPEED = 0.35;
+
+// Visual effect constants
+const MUZZLE_FLASH_DURATION_SEC = 0.07;
+
+const STRUCTURE_MAX_HP: Partial<Record<Structure, number>> = { wall: 50, turret: 30, radar: 25, crusher: 35, gatling: 25 };
+const STRUCTURE_ORE_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 12, radar: 25, crusher: 18, gatling: 18 };
+const STRUCTURE_REBUILD_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 6, radar: 12, crusher: 9, gatling: 9 };
 const ENEMY_WALL_DAMAGE = 8;
 const ENEMY_WALL_ATTACK_COOLDOWN_SEC = 1.5;
 const SECOND_ENTRANCE_ACTIVATION_WAVE = 7;
@@ -181,6 +220,13 @@ radarSpan.className = 'statChip';
 hudRow2.append(waveSpan, document.createTextNode(' · '), radarSpan);
 
 hudLeftElement.append(hudRow1, hudRow2);
+
+const hudRow5 = document.createElement('div');
+hudRow5.className = 'hudRow';
+const coalGpSpan = document.createElement('span');
+coalGpSpan.className = 'statChip';
+hudRow5.append(coalGpSpan);
+hudLeftElement.append(hudRow5);
 
 const hudRow3 = document.createElement('div');
 hudRow3.className = 'hudRow';
@@ -321,6 +367,8 @@ const turretAngleRad = new Map<number, number>();
 
 let metaCurrency = Number(localStorage.getItem('tiny-base-idle-meta') ?? '0');
 let ore = 0;
+let coal = 0;
+let gunpowder = 0;
 let coreHp = 100;
 let radarLevel = 1;
 let revealRadiusTile = 5;
@@ -340,12 +388,20 @@ let upgradeLevel = loadUpgrades();
 let enemies: Enemy[] = [];
 let motes: Mote[] = [];
 let motes2: Mote[] = [];
+let coalMotes: Mote[] = [];
+let coalMoteSpawnCooldownSec = COAL_MOTE_SPAWN_SEC;
+let gunpowderMotes: GunpowderMote[] = [];
 let shotFlashes: ShotFlash[] = [];
+let muzzleFlashes: MuzzleFlash[] = [];
+let shellCasings: ShellCasing[] = [];
 let mote2SpawnCooldownSec = 0.8;
 let worms: Worm[] = [];
 
 const structureHp = new Map<number, number>();
 const blueprintGhosts = new Map<number, Structure>();
+const gatlingAmmo = new Map<number, number>();
+const gatlingFireCooldowns = new Map<number, number>();
+const crusherConversionTimers = new Map<number, number>();
 let breachOpened = false;
 
 let overlayText = '';
@@ -359,10 +415,16 @@ let isMetaMenuOpen = false;
 
 // ── Build palette setup ────────────────────────────────────────────────────
 const BUILD_CATEGORIES: BuildCategoryDef[] = [
-  { id: 'mining',  label: 'Mining',  color: '#f0a600', items: [] },
+  {
+    id: 'mining',  label: 'Mining',  color: '#f0a600',
+    items: [{ id: 'crusher', label: 'Crusher', hotkey: 'C', cost: 18, color: '#b87000' }],
+  },
   {
     id: 'turrets', label: 'Turrets', color: '#27e0ff',
-    items: [{ id: 'turret', label: 'Turret', hotkey: 'T', cost: 12, color: '#27e0ff' }],
+    items: [
+      { id: 'turret',  label: 'Turret',  hotkey: 'T', cost: 12, color: '#27e0ff' },
+      { id: 'gatling', label: 'Gatling', hotkey: 'G', cost: 18, color: '#ffcc44' },
+    ],
   },
   {
     id: 'defense', label: 'Defense', color: '#6a8faf',
@@ -378,6 +440,7 @@ const BUILD_CATEGORIES: BuildCategoryDef[] = [
 
 const TOOL_TO_CATEGORY: Record<Tool, BuildCategory> = {
   wall: 'defense', turret: 'turrets', radar: 'tech', erase: 'erase', repair: 'repair',
+  crusher: 'mining', gatling: 'turrets',
 };
 
 const categoryButtons = new Map<BuildCategory, HTMLButtonElement>();
@@ -429,11 +492,13 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   const keyMap: Record<string, Tool> = {
-    'w': 'wall',   '1': 'wall',
-    't': 'turret', '2': 'turret',
-    'r': 'radar',  '3': 'radar',
-    'e': 'erase',  '4': 'erase',
-    'f': 'repair', '5': 'repair',
+    'w': 'wall',    '1': 'wall',
+    't': 'turret',  '2': 'turret',
+    'r': 'radar',   '3': 'radar',
+    'e': 'erase',   '4': 'erase',
+    'f': 'repair',  '5': 'repair',
+    'g': 'gatling', '6': 'gatling',
+    'c': 'crusher', '7': 'crusher',
   };
   const tool = keyMap[event.key.toLowerCase()];
   if (tool) {
@@ -632,6 +697,7 @@ function attemptRepair(xTile: number, yTile: number): void {
   if (xTile === coreTile.x && yTile === coreTile.y) { return; }
   if (xTile === depositTile.x && yTile === depositTile.y) { return; }
   if (xTile === deposit2Tile.x && yTile === deposit2Tile.y) { return; }
+  if (xTile === coalDepositTile.x && yTile === coalDepositTile.y) { return; }
 
   const index = tileIndex(xTile, yTile);
   if (terrainIsDebris[index]) { return; }
@@ -694,6 +760,9 @@ function attemptPlaceStructure(xTile: number, yTile: number): void {
     return;
   }
   if (xTile === deposit2Tile.x && yTile === deposit2Tile.y) {
+    return;
+  }
+  if (xTile === coalDepositTile.x && yTile === coalDepositTile.y) {
     return;
   }
 
@@ -921,15 +990,46 @@ function moveWormHeadAndAttackBlockingBuilding(
   }
 }
 
+// Returns a random walkable tile on the edge of the current spawn area (grows with radar).
+// Enemies spawn on the perimeter of the visible square so they approach from all sides.
+function getRandomSpawnTile(): [number, number] {
+  const half = Math.min(Math.floor(revealRadiusTile) - 1, Math.floor(gridWidthTile / 2) - 1);
+  const minX = Math.max(0, coreTile.x - half);
+  const maxX = Math.min(gridWidthTile - 1, coreTile.x + half);
+  const minY = Math.max(0, coreTile.y - half);
+  const maxY = Math.min(gridHeightTile - 1, coreTile.y + half);
+  const width = maxX - minX + 1;
+  const height = maxY - minY + 1;
+  const perim = Math.max(1, 2 * (width + height - 2));
+
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const r = Math.floor(Math.random() * perim);
+    let x: number;
+    let y: number;
+    if (r < width) {
+      x = minX + r; y = minY;
+    } else if (r < width * 2) {
+      x = minX + (r - width); y = maxY;
+    } else if (r < width * 2 + height - 2) {
+      x = minX; y = minY + 1 + (r - width * 2);
+    } else {
+      x = maxX; y = minY + 1 + (r - width * 2 - (height - 2));
+    }
+    if (isWalkableForEnemy(x, y)) { return [x, y]; }
+  }
+  return [entranceTile.x, entranceTile.y];
+}
+
 function spawnWave(): void {
   waveIndex += 1;
   const enemyCount = 3 + Math.floor(waveIndex * 0.5);
 
   for (let i = 0; i < enemyCount; i += 1) {
     const maxHp = 18 + waveIndex * 3;
+    const [sx, sy] = getRandomSpawnTile();
     enemies.push({
-      xTile: entranceTile.x,
-      yTile: entranceTile.y,
+      xTile: sx,
+      yTile: sy,
       hp: maxHp,
       maxHp,
       speedTilePerSec: 1.2 + waveIndex * 0.05,
@@ -940,9 +1040,10 @@ function spawnWave(): void {
 
   if (!breakerTriggered && waveIndex >= 5) {
     breakerTriggered = true;
+    const [bsx, bsy] = getRandomSpawnTile();
     enemies.push({
-      xTile: entranceTile.x,
-      yTile: entranceTile.y,
+      xTile: bsx,
+      yTile: bsy,
       hp: 45,
       maxHp: 45,
       speedTilePerSec: 0.85,
@@ -955,9 +1056,10 @@ function spawnWave(): void {
     const topCount = Math.min(Math.floor(enemyCount * SECOND_ENTRANCE_SPAWN_RATIO) + 1, enemyCount);
     for (let i = 0; i < topCount; i += 1) {
       const maxHp = 20 + waveIndex * 3;
+      const [sx, sy] = getRandomSpawnTile();
       enemies.push({
-        xTile: secondEntranceTile.x,
-        yTile: secondEntranceTile.y,
+        xTile: sx,
+        yTile: sy,
         hp: maxHp,
         maxHp,
         speedTilePerSec: 1.1 + waveIndex * 0.05,
@@ -972,10 +1074,11 @@ function spawnWave(): void {
     const segmentCount = Math.min(14, 6 + Math.floor((waveIndex - WORM_SPAWN_START_WAVE) / 2));
     const segmentHp = Math.floor(WORM_SEGMENT_HP_BASE + waveIndex * WORM_SEGMENT_HP_PER_WAVE);
     const segs: WormSegment[] = [];
+    const [wx, wy] = getRandomSpawnTile();
     for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
       segs.push({
-        xTile: entranceTile.x - segmentIndex * WORM_SEGMENT_SPACING_TILE,
-        yTile: entranceTile.y,
+        xTile: wx - segmentIndex * WORM_SEGMENT_SPACING_TILE,
+        yTile: wy,
         hp: segmentHp,
         maxHp: segmentHp,
       });
@@ -983,15 +1086,16 @@ function spawnWave(): void {
     worms.push({ segments: segs, speedTilePerSec: 0.75 + waveIndex * 0.04, wallAttackCooldownSec: 0 });
   }
 
-  // After breach: also spawn a worm from the second entrance every other wave
+  // After breach: also spawn a worm from a random edge every other wave
   if (breachOpened && waveIndex >= SECOND_ENTRANCE_ACTIVATION_WAVE && (waveIndex - SECOND_ENTRANCE_ACTIVATION_WAVE) % 2 === 0) {
     const segmentCount = Math.min(10, 4 + Math.floor((waveIndex - WORM_SPAWN_START_WAVE) / 3));
     const segmentHp = Math.floor(WORM_SEGMENT_HP_BASE + waveIndex * WORM_SEGMENT_HP_PER_WAVE);
     const segs: WormSegment[] = [];
+    const [wx2, wy2] = getRandomSpawnTile();
     for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
       segs.push({
-        xTile: secondEntranceTile.x,
-        yTile: secondEntranceTile.y - segmentIndex * WORM_SEGMENT_SPACING_TILE,
+        xTile: wx2,
+        yTile: wy2 - segmentIndex * WORM_SEGMENT_SPACING_TILE,
         hp: segmentHp,
         maxHp: segmentHp,
       });
@@ -1007,6 +1111,8 @@ function resetRun(): void {
   localStorage.setItem('tiny-base-idle-meta', String(metaCurrency));
 
   ore = upgradeLevel.oreBonus * ORE_BONUS_PER_LEVEL;
+  coal = 0;
+  gunpowder = 0;
   coreHp = BASE_CORE_HP + upgradeLevel.coreArmor * CORE_ARMOR_HP_PER_LEVEL;
   radarLevel = 1;
   revealRadiusTile = 5;
@@ -1020,11 +1126,19 @@ function resetRun(): void {
   enemies = [];
   motes = [];
   motes2 = [];
+  coalMotes = [];
+  coalMoteSpawnCooldownSec = COAL_MOTE_SPAWN_SEC;
+  gunpowderMotes = [];
   mote2SpawnCooldownSec = 0.8;
   worms = [];
   shotFlashes = [];
+  muzzleFlashes = [];
+  shellCasings = [];
   structureHp.clear();
   blueprintGhosts.clear();
+  gatlingAmmo.clear();
+  gatlingFireCooldowns.clear();
+  crusherConversionTimers.clear();
   breakerTriggered = false;
   breachOpened = false;
   structures.fill('empty');
@@ -1391,6 +1505,190 @@ function updateMotes(dtSec: number): void {
   } else if (motes2.length > 0) {
     motes2 = [];
   }
+
+  // Coal deposit – always active (within initial reveal radius)
+  coalMoteSpawnCooldownSec -= dtSec;
+  if (coalMoteSpawnCooldownSec <= 0) {
+    coalMoteSpawnCooldownSec = COAL_MOTE_SPAWN_SEC;
+    coalMotes.push({ progress: 0 });
+  }
+  for (let i = coalMotes.length - 1; i >= 0; i -= 1) {
+    coalMotes[i].progress += dtSec * COAL_MOTE_SPEED;
+    if (coalMotes[i].progress >= 1) {
+      coalMotes.splice(i, 1);
+      coal += 1;
+    }
+  }
+}
+
+// Returns true when a canvas pixel coordinate lands inside debris, a structure, or out of bounds.
+// Used for shell-casing bounce detection.
+function isSolidPixel(xPx: number, yPx: number): boolean {
+  if (xPx < 0 || yPx < 0 || xPx >= nativeWidthPx || yPx >= nativeHeightPx) { return true; }
+  const xTile = Math.floor(xPx / tileSizePx);
+  const yTile = Math.floor(yPx / tileSizePx);
+  const idx = tileIndex(xTile, yTile);
+  return terrainIsDebris[idx] || structures[idx] !== 'empty';
+}
+
+// Crusher: convert coal → gunpowder at a timed rate. Gunpowder motes travel from the
+// crusher tile to the core, delivering one gunpowder on arrival.
+function updateCrushers(dtSec: number): void {
+  for (let yTile = 0; yTile < gridHeightTile; yTile += 1) {
+    for (let xTile = 0; xTile < gridWidthTile; xTile += 1) {
+      const idx = tileIndex(xTile, yTile);
+      if (structures[idx] !== 'crusher') { continue; }
+      let timer = crusherConversionTimers.get(idx) ?? 0;
+      timer += dtSec;
+      if (timer >= CRUSHER_CONVERSION_SEC && coal >= 1) {
+        timer -= CRUSHER_CONVERSION_SEC;
+        coal -= 1;
+        gunpowderMotes.push({ progress: 0, fromXTile: xTile, fromYTile: yTile });
+      }
+      crusherConversionTimers.set(idx, timer);
+    }
+  }
+
+  for (let i = gunpowderMotes.length - 1; i >= 0; i -= 1) {
+    gunpowderMotes[i].progress += dtSec * GUNPOWDER_MOTE_SPEED;
+    if (gunpowderMotes[i].progress >= 1) {
+      gunpowderMotes.splice(i, 1);
+      gunpowder += 1;
+    }
+  }
+}
+
+// Gatling turret: per-tile independent fire cycle. Loads shots from global gunpowder supply.
+// On each shot: spawns a muzzle flash and a shell casing particle.
+function updateGatlingTurrets(dtSec: number): void {
+  const half = tileSizePx / 2;
+
+  for (let yTile = 0; yTile < gridHeightTile; yTile += 1) {
+    for (let xTile = 0; xTile < gridWidthTile; xTile += 1) {
+      const idx = tileIndex(xTile, yTile);
+      if (structures[idx] !== 'gatling') { continue; }
+
+      // Auto-load from gunpowder supply when ammo is low
+      let ammo = gatlingAmmo.get(idx) ?? 0;
+      if (ammo < GATLING_MAX_AMMO && gunpowder >= 1) {
+        gunpowder -= 1;
+        ammo = Math.min(ammo + GATLING_SHOTS_PER_POWDER, GATLING_MAX_AMMO);
+        gatlingAmmo.set(idx, ammo);
+      }
+
+      if (ammo <= 0) { continue; }
+
+      let cooldown = gatlingFireCooldowns.get(idx) ?? 0;
+      cooldown -= dtSec;
+      if (cooldown > 0) { gatlingFireCooldowns.set(idx, cooldown); continue; }
+
+      // Find nearest target within range
+      const damage = GATLING_BASE_DAMAGE;
+      let targetEnemy: Enemy | undefined;
+      let targetWorm: Worm | undefined;
+      let targetWormSegIdx = -1;
+      let bestDist = Number.POSITIVE_INFINITY;
+
+      for (const enemy of enemies) {
+        const dist = Math.hypot(enemy.xTile - xTile, enemy.yTile - yTile);
+        if (dist < turretRangeTile && dist < bestDist) {
+          bestDist = dist;
+          targetEnemy = enemy;
+          targetWorm = undefined;
+        }
+      }
+      for (const worm of worms) {
+        for (let si = 0; si < worm.segments.length; si += 1) {
+          const seg = worm.segments[si];
+          const dist = Math.hypot(seg.xTile - xTile, seg.yTile - yTile);
+          if (dist < turretRangeTile && dist < bestDist) {
+            bestDist = dist;
+            targetWorm = worm;
+            targetWormSegIdx = si;
+            targetEnemy = undefined;
+          }
+        }
+      }
+
+      if (!targetEnemy && targetWorm === undefined) { continue; }
+
+      // Fire
+      cooldown = GATLING_FIRE_COOLDOWN_SEC;
+      gatlingFireCooldowns.set(idx, cooldown);
+      ammo -= 1;
+      gatlingAmmo.set(idx, ammo);
+
+      let tx: number;
+      let ty: number;
+      if (targetEnemy) {
+        targetEnemy.hp -= damage;
+        tx = targetEnemy.xTile;
+        ty = targetEnemy.yTile;
+      } else {
+        const seg = targetWorm!.segments[targetWormSegIdx];
+        seg.hp -= damage;
+        tx = seg.xTile;
+        ty = seg.yTile;
+      }
+
+      const angle = Math.atan2(ty - yTile, tx - xTile);
+      turretAngleRad.set(idx, angle);
+
+      const fromX = xTile * tileSizePx + half;
+      const fromY = yTile * tileSizePx + half;
+      shotFlashes.push({
+        fromXPx: fromX,
+        fromYPx: fromY,
+        toXPx: Math.round(tx * tileSizePx + half),
+        toYPx: Math.round(ty * tileSizePx + half),
+        ageSec: 0,
+      });
+
+      // Muzzle flash at barrel tip
+      muzzleFlashes.push({ xPx: fromX + Math.cos(angle) * 6, yPx: fromY + Math.sin(angle) * 6, ageSec: 0 });
+
+      // Shell casing ejected at ~90° from firing direction with randomness
+      const ejectAngle = angle + Math.PI / 2 + (Math.random() - 0.5) * 0.6;
+      const ejectSpeed = 22 + Math.random() * 22;
+      shellCasings.push({
+        xPx: fromX,
+        yPx: fromY,
+        vxPx: Math.cos(ejectAngle) * ejectSpeed,
+        vyPx: Math.sin(ejectAngle) * ejectSpeed,
+        ageSec: 0,
+        maxAgeSec: 0.28 + Math.random() * 0.2,
+      });
+    }
+  }
+
+  // Remove gatling-killed enemies and award ore
+  for (let i = enemies.length - 1; i >= 0; i -= 1) {
+    if (enemies[i].hp <= 0) {
+      enemies.splice(i, 1);
+      ore += 2;
+      totalOreEarned += 2;
+    }
+  }
+  cleanDeadWormSegments();
+
+  // Advance muzzle flashes
+  for (let i = muzzleFlashes.length - 1; i >= 0; i -= 1) {
+    muzzleFlashes[i].ageSec += dtSec;
+    if (muzzleFlashes[i].ageSec > MUZZLE_FLASH_DURATION_SEC) { muzzleFlashes.splice(i, 1); }
+  }
+
+  // Update shell casings: move, bounce off solids, apply gravity, age out
+  for (let i = shellCasings.length - 1; i >= 0; i -= 1) {
+    const c = shellCasings[i];
+    c.ageSec += dtSec;
+    if (c.ageSec >= c.maxAgeSec) { shellCasings.splice(i, 1); continue; }
+    const newX = c.xPx + c.vxPx * dtSec;
+    const newY = c.yPx + c.vyPx * dtSec;
+    if (isSolidPixel(newX, c.yPx)) { c.vxPx *= -0.55; } else { c.xPx = newX; }
+    if (isSolidPixel(c.xPx, newY)) { c.vyPx *= -0.55; } else { c.yPx = newY; }
+    c.vyPx += 18 * dtSec;
+    c.vxPx *= 0.96;
+  }
 }
 
 function update(dtSec: number): void {
@@ -1418,6 +1716,8 @@ function update(dtSec: number): void {
   updateEnemies(dtSec);
   updateWorms(dtSec);
   updateTurrets(dtSec);
+  updateGatlingTurrets(dtSec);
+  updateCrushers(dtSec);
   updateMotes(dtSec);
 }
 
@@ -1563,6 +1863,65 @@ function drawDeposit2Tile(xPx: number, yPx: number): void {
   fillPx(xPx + 4, yPx + 4, 1, 1, '#ff9944');
 }
 
+function drawCoalDepositTile(xPx: number, yPx: number): void {
+  fillPx(xPx, yPx, tileSizePx, tileSizePx, '#0d0d0e');
+  fillPx(xPx + 2, yPx + 3, 3, 3, '#3a3a44');
+  fillPx(xPx + 6, yPx + 2, 3, 3, '#3a3a44');
+  fillPx(xPx + 4, yPx + 7, 3, 3, '#3a3a44');
+  fillPx(xPx + 2, yPx + 3, 1, 1, '#7a7a88');
+  fillPx(xPx + 6, yPx + 2, 1, 1, '#7a7a88');
+  fillPx(xPx + 4, yPx + 7, 1, 1, '#7a7a88');
+}
+
+function drawCrusherTile(xPx: number, yPx: number): void {
+  fillPx(xPx, yPx, tileSizePx, tileSizePx, '#1a1410');
+  // body
+  fillPx(xPx + 1, yPx + 2, 10, 8, '#5a4830');
+  // top plate
+  fillPx(xPx + 2, yPx + 2, 8, 2, '#7a6040');
+  // crusher slots (dark openings)
+  fillPx(xPx + 2, yPx + 4, 3, 3, '#1a1410');
+  fillPx(xPx + 7, yPx + 4, 3, 3, '#1a1410');
+  // highlights
+  fillPx(xPx + 2, yPx + 2, 1, 1, '#cca060');
+  fillPx(xPx + 9, yPx + 2, 1, 1, '#cca060');
+}
+
+function drawGatlingTile(xPx: number, yPx: number, idx: number): void {
+  const half = tileSizePx / 2;
+  const barMaxW = tileSizePx - 2;
+
+  // ammo bar (top 1px, gold)
+  const ammo = gatlingAmmo.get(idx) ?? 0;
+  fillPx(xPx + 1, yPx, barMaxW, 1, '#333');
+  const ammoW = Math.round(barMaxW * (ammo / GATLING_MAX_AMMO));
+  if (ammoW > 0) { fillPx(xPx + 1, yPx, ammoW, 1, '#ffcc44'); }
+
+  // fire cooldown bar (second row, amber)
+  const cd = gatlingFireCooldowns.get(idx) ?? 0;
+  fillPx(xPx + 1, yPx + 1, barMaxW, 1, '#222');
+  const cdW = Math.round(barMaxW * Math.max(0, cd / GATLING_FIRE_COOLDOWN_SEC));
+  if (cdW > 0) { fillPx(xPx + 1, yPx + 1, cdW, 1, '#cc7700'); }
+
+  // base plate
+  fillPx(xPx + 2, yPx + 2, 8, 8, '#403020');
+  fillPx(xPx + 4, yPx + 4, 4, 4, '#604830');
+  fillPx(xPx + 4, yPx + 4, 1, 1, '#ffcc44');
+
+  // barrel pointing in turretAngleRad direction
+  const angle = turretAngleRad.get(idx) ?? 0;
+  const cx = xPx + half;
+  const cy = yPx + half;
+  ctx.save();
+  ctx.strokeStyle = '#ffcc44';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(angle) * 5, cy + Math.sin(angle) * 5);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawEnemyHpBar(xPx: number, yPx: number, hp: number, maxHp: number): void {
   const barW = tileSizePx - 2;
   const barXPx = xPx + 1;
@@ -1612,6 +1971,20 @@ function drawBlueprintGhost(xPx: number, yPx: number, ghostType: Structure): voi
     ctx.strokeRect(xPx + 0.5, yPx + 0.5, tileSizePx - 1, tileSizePx - 1);
     ctx.fillStyle = 'rgba(141,104,255,0.3)';
     ctx.fillRect(xPx + 5, yPx + 5, 2, 2);
+  } else if (ghostType === 'crusher') {
+    ctx.fillStyle = 'rgba(200,160,80,0.12)';
+    ctx.fillRect(xPx + 1, yPx + 1, tileSizePx - 2, tileSizePx - 2);
+    ctx.strokeStyle = 'rgba(200,160,80,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(xPx + 0.5, yPx + 0.5, tileSizePx - 1, tileSizePx - 1);
+  } else if (ghostType === 'gatling') {
+    ctx.fillStyle = 'rgba(255,204,68,0.12)';
+    ctx.fillRect(xPx + 1, yPx + 1, tileSizePx - 2, tileSizePx - 2);
+    ctx.strokeStyle = 'rgba(255,204,68,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(xPx + 0.5, yPx + 0.5, tileSizePx - 1, tileSizePx - 1);
+    ctx.fillStyle = 'rgba(255,204,68,0.3)';
+    ctx.fillRect(xPx + 4, yPx + 4, 4, 4);
   }
 }
 
@@ -1709,6 +2082,10 @@ function render(): void {
         drawTurretTile(xPx, yPx, index);
       } else if (structure === 'radar') {
         drawRadarTile(xPx, yPx);
+      } else if (structure === 'crusher') {
+        drawCrusherTile(xPx, yPx);
+      } else if (structure === 'gatling') {
+        drawGatlingTile(xPx, yPx, index);
       }
       if (structure !== 'empty') {
         const hp = structureHp.get(index);
@@ -1733,6 +2110,35 @@ function render(): void {
       const ryPx = Math.round((depositTile.y + dyTile * t) * tileSizePx + tileSizePx / 2);
       ctx.fillRect(rxPx, ryPx, 1, 1);
     }
+  }
+
+  // Coal deposit route + coal motes
+  if (isTileVisible(coalDepositTile.x, coalDepositTile.y)) {
+    drawCoalDepositTile(coalDepositTile.x * tileSizePx, coalDepositTile.y * tileSizePx);
+    const cdxTile = coreTile.x - coalDepositTile.x;
+    const cdyTile = coreTile.y - coalDepositTile.y;
+    ctx.fillStyle = '#1a1820';
+    for (let t = 0.08; t < 0.93; t += 0.1) {
+      const rxPx = Math.round((coalDepositTile.x + cdxTile * t) * tileSizePx + tileSizePx / 2);
+      const ryPx = Math.round((coalDepositTile.y + cdyTile * t) * tileSizePx + tileSizePx / 2);
+      ctx.fillRect(rxPx, ryPx, 1, 1);
+    }
+    ctx.fillStyle = '#555566';
+    for (const mote of coalMotes) {
+      const xPx = Math.round((coalDepositTile.x + cdxTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+      const yPx = Math.round((coalDepositTile.y + cdyTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+      ctx.fillRect(xPx, yPx, 2, 2);
+    }
+  }
+
+  // Gunpowder motes from crushers to core
+  ctx.fillStyle = '#c8a850';
+  for (const mote of gunpowderMotes) {
+    const dxTile = coreTile.x - mote.fromXTile;
+    const dyTile = coreTile.y - mote.fromYTile;
+    const xPx = Math.round((mote.fromXTile + dxTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+    const yPx = Math.round((mote.fromYTile + dyTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
+    ctx.fillRect(xPx, yPx, 2, 2);
   }
 
   // Radar reveal-radius ring
@@ -1769,6 +2175,19 @@ function render(): void {
     const cx = hoveredXTile * tileSizePx + tileSizePx / 2;
     const cy = hoveredYTile * tileSizePx + tileSizePx / 2;
     ctx.strokeStyle = 'rgba(39,224,255,0.28)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, turretRangeTile * tileSizePx, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Gatling range preview ring
+  if (selectedTool === 'gatling' && hoveredXTile >= 0 && isInBounds(hoveredXTile, hoveredYTile) && isTileVisible(hoveredXTile, hoveredYTile)) {
+    const cx = hoveredXTile * tileSizePx + tileSizePx / 2;
+    const cy = hoveredYTile * tileSizePx + tileSizePx / 2;
+    ctx.strokeStyle = 'rgba(255,204,68,0.28)';
     ctx.lineWidth = 1;
     ctx.setLineDash([2, 3]);
     ctx.beginPath();
@@ -1817,6 +2236,20 @@ function render(): void {
     ctx.moveTo(flash.fromXPx, flash.fromYPx);
     ctx.lineTo(flash.toXPx, flash.toYPx);
     ctx.stroke();
+  }
+
+  // Muzzle flashes (bright white-yellow burst at barrel tip)
+  for (const flash of muzzleFlashes) {
+    const alpha = Math.max(0, 1 - flash.ageSec / MUZZLE_FLASH_DURATION_SEC);
+    ctx.fillStyle = `rgba(255,240,120,${alpha})`;
+    ctx.fillRect(Math.round(flash.xPx) - 1, Math.round(flash.yPx) - 1, 3, 3);
+  }
+
+  // Shell casings (2×1 yellow rectangles that fade as they age)
+  for (const c of shellCasings) {
+    const alpha = Math.max(0, 1 - c.ageSec / c.maxAgeSec);
+    ctx.fillStyle = `rgba(220,190,50,${alpha})`;
+    ctx.fillRect(Math.round(c.xPx), Math.round(c.yPx), 2, 1);
   }
 
   // Enemies and their HP bars
@@ -1922,6 +2355,9 @@ function render(): void {
   nextWaveSpan.textContent = isRunOver ? 'restarting…' : `Next ${waveTimerSec.toFixed(1)}s`;
   nextWaveSpan.style.color = waveTimerSec < 2 && !isRunOver ? '#ff5522' : '#ffcc44';
 
+  coalGpSpan.textContent = `Coal ${coal} · GP ${gunpowder}`;
+  coalGpSpan.style.color = '#c8a850';
+
   updateUpgradePanelState();
 
   // Status bar: context-sensitive hints for the selected tool
@@ -1955,12 +2391,13 @@ function render(): void {
         if (hovStructure !== 'empty') {
           statusText = `Erase: ${hovStructure}`;
         }
-      } else if (selectedTool === 'turret' || selectedTool === 'radar') {
+      } else if (selectedTool === 'turret' || selectedTool === 'radar' || selectedTool === 'crusher' || selectedTool === 'gatling') {
         const isValidTile = !terrainIsDebris[hovIndex]
           && hovStructure === 'empty'
           && !(hoveredXTile === coreTile.x && hoveredYTile === coreTile.y)
           && !(hoveredXTile === depositTile.x && hoveredYTile === depositTile.y)
           && !(hoveredXTile === deposit2Tile.x && hoveredYTile === deposit2Tile.y)
+          && !(hoveredXTile === coalDepositTile.x && hoveredYTile === coalDepositTile.y)
           && isTileVisible(hoveredXTile, hoveredYTile);
         if (isValidTile) {
           const isRebuild = ghost === selectedTool;
