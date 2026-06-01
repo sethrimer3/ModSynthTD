@@ -207,6 +207,7 @@ const SCUTTLER_ATTACK_DAMAGE = 6;
 
 // Armored Worm constants – high-HP variant that appears on later waves
 const ARMORED_WORM_SPAWN_START_WAVE = 6;
+const ARMORED_WORM_SPAWN_INTERVAL = 2; // spawn every N waves
 const ARMORED_WORM_HP_MULTIPLIER = 2.0;
 const ARMORED_WORM_SPEED_BASE = 0.55; // slower than regular worm
 const WORM_SEGMENT_HIT_FLASH_SEC = 0.14; // how long a hit flash lasts on a segment
@@ -1243,7 +1244,7 @@ function spawnWave(): void {
   }
 
   // Spawn an Armored Worm on later waves — high-HP, slower, grey-green
-  if (waveIndex >= ARMORED_WORM_SPAWN_START_WAVE && waveIndex % 2 === 0) {
+  if (waveIndex >= ARMORED_WORM_SPAWN_START_WAVE && waveIndex % ARMORED_WORM_SPAWN_INTERVAL === 0) {
     const segmentCount = Math.min(10, 4 + Math.floor((waveIndex - ARMORED_WORM_SPAWN_START_WAVE) / 2));
     const segmentHpBase = Math.floor((WORM_SEGMENT_HP_BASE + waveIndex * WORM_SEGMENT_HP_PER_WAVE) * ARMORED_WORM_HP_MULTIPLIER);
     const armorSegs: WormSegment[] = [];
@@ -3106,16 +3107,16 @@ function render(): void {
       ctx.strokeStyle = 'rgba(255,100,80,0.55)';
     } else if (selectedTool === 'repair') {
       // Tint green if affordable, amber if not
-      const hIdx = tileIndex(hoveredXTile, hoveredYTile);
-      const hovStructure = structures[hIdx];
-      const hovHp = structureHp.get(hIdx);
+      const hoveredTileIndex = tileIndex(hoveredXTile, hoveredYTile);
+      const hovStructure = structures[hoveredTileIndex];
+      const hovHp = structureHp.get(hoveredTileIndex);
       const hovMaxHp = hovStructure !== undefined ? (STRUCTURE_MAX_HP[hovStructure] ?? undefined) : undefined;
       let canAffordRepair = true;
       if (hovStructure !== undefined && hovStructure !== 'empty' && hovHp !== undefined && hovMaxHp !== undefined) {
         const missingHp = hovMaxHp - hovHp;
-        const rebuildCostVal = (STRUCTURE_REBUILD_COST as Partial<Record<string, number>>)[hovStructure] ?? 0;
-        const repairCostVal = Math.ceil(missingHp * rebuildCostVal / hovMaxHp);
-        canAffordRepair = ore >= repairCostVal;
+        const rebuildCost = (STRUCTURE_REBUILD_COST as Partial<Record<string, number>>)[hovStructure] ?? 0;
+        const repairCost = Math.ceil(missingHp * rebuildCost / hovMaxHp);
+        canAffordRepair = ore >= repairCost;
       }
       if (canAffordRepair) {
         ctx.fillStyle = 'rgba(68,255,136,0.22)';
@@ -3267,10 +3268,21 @@ function render(): void {
   if (radarLevel >= 2 && activeThreats > 0) {
     const cx = coreTile.x;
     const cy = coreTile.y;
-    const north = enemies.some(e => e.yTile < cy - 2) || worms.some(w => w.segments.length > 0 && w.segments[0].yTile < cy - 2);
-    const south = enemies.some(e => e.yTile > cy + 2) || worms.some(w => w.segments.length > 0 && w.segments[0].yTile > cy + 2);
-    const west = enemies.some(e => e.xTile < cx - 2) || worms.some(w => w.segments.length > 0 && w.segments[0].xTile < cx - 2);
-    const east = enemies.some(e => e.xTile > cx + 2) || worms.some(w => w.segments.length > 0 && w.segments[0].xTile > cx + 2);
+    let north = false; let south = false; let west = false; let east = false;
+    for (const e of enemies) {
+      if (e.yTile < cy - 2) { north = true; }
+      if (e.yTile > cy + 2) { south = true; }
+      if (e.xTile < cx - 2) { west = true; }
+      if (e.xTile > cx + 2) { east = true; }
+    }
+    for (const w of worms) {
+      if (w.segments.length === 0) { continue; }
+      const h = w.segments[0];
+      if (h.yTile < cy - 2) { north = true; }
+      if (h.yTile > cy + 2) { south = true; }
+      if (h.xTile < cx - 2) { west = true; }
+      if (h.xTile > cx + 2) { east = true; }
+    }
     const arrowParts: string[] = [];
     if (north) { arrowParts.push('↑'); }
     if (south) { arrowParts.push('↓'); }
