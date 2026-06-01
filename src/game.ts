@@ -581,12 +581,12 @@ window.addEventListener('keydown', (event) => {
     conveyorPlacementDir = (conveyorPlacementDir + 1) % 4;
     showOverlay(`DIR ${DIR_SYMBOLS[conveyorPlacementDir]}`, '#22ddbb', 0.6);
   }
-  // A – rebuild all ghosts; Z – rebuild affordable ghosts
+  // A – rebuild affordable (cheapest first); Z – rebuild all
   if (event.key.toLowerCase() === 'a' && selectedTool === 'repair') {
-    rebuildAllGhosts();
+    rebuildAffordableGhosts();
   }
   if (event.key.toLowerCase() === 'z' && selectedTool === 'repair') {
-    rebuildAffordableGhosts();
+    rebuildAllGhosts();
   }
 });
 
@@ -2103,7 +2103,7 @@ function deliverMote(mote: RoutedMote): void {
     const primaryDir = conveyorDirection.get(idx) ?? 0;
     const secondaryDir = (primaryDir + 1) % 4;
     const usePrimary = !(splitterToggle.get(idx) ?? false);
-    splitterToggle.set(idx, usePrimary); // toggle for next mote
+    splitterToggle.set(idx, !usePrimary); // toggle: store the opposite so next mote uses the other output
 
     const firstDir = usePrimary ? primaryDir : secondaryDir;
     const fallbackDir = usePrimary ? secondaryDir : primaryDir;
@@ -2767,7 +2767,7 @@ function render(): void {
   for (const mote of gunpowderMotes) {
     const dxTile = coreTile.x - mote.fromXTile;
     const dyTile = coreTile.y - mote.fromYTile;
-    const mxPx = Math.round((mote.fromXTile + dxTile * mote.progress) * tileSizePx + tileSizePx / 2);
+    const mxPx = Math.round((mote.fromXTile + dxTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
     const myPx = Math.round((mote.fromYTile + dyTile * mote.progress) * tileSizePx + tileSizePx / 2 - 1);
     ctx.fillRect(mxPx, myPx, 1, 3);
   }
@@ -2892,8 +2892,6 @@ function render(): void {
   // Shot flashes
   for (const flash of shotFlashes) {
     const alpha = Math.max(0, 1 - flash.ageSec / shotFlashDurationSec);
-    const baseColor = flash.flashColor ?? '39,224,255';
-    // If flashColor is a hex like '#ff7733', extract rgb components
     if (flash.flashColor) {
       const r = parseInt(flash.flashColor.slice(1, 3), 16);
       const g = parseInt(flash.flashColor.slice(3, 5), 16);
@@ -2901,7 +2899,7 @@ function render(): void {
       ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
       ctx.lineWidth = 2;
     } else {
-      ctx.strokeStyle = `rgba(${baseColor},${alpha})`;
+      ctx.strokeStyle = `rgba(39,224,255,${alpha})`;
       ctx.lineWidth = 1;
     }
     ctx.beginPath();
