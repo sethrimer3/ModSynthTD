@@ -953,3 +953,337 @@ Nine specialized slots for meta strategy.
 ```
 
 The first prototype should make one small board feel good. If placing a few structures, watching motes move, and surviving a debris breach is fun, the larger game has a strong foundation.
+
+## 21. New Design Notes: Logistics Scarcity, Procedural Enemies, Repair, and Visible Mote Flow
+
+### 21.1 Infinite Basic Logistics, Finite Strategic Logistics
+
+Basic conveyor belts should be infinite or effectively infinite. They are the player's basic building language, so the player should not feel blocked from making simple resource routes. If the player has ore and a turret, the player should usually be able to connect them with basic conveyor without worrying about a hard conveyor count.
+
+Advanced logistics pieces should be finite and tied to the meta game. Bridges, routers, splitters, filters, tunnels, valves, smart gates, and other special routing pieces solve powerful spatial problems, so their scarcity creates meaningful layout decisions.
+
+The intended rule is:
+
+- Basic conveyors are abundant.
+- Important routing tools are limited.
+- Limited routing tools are unlocked and expanded through meta upgrades.
+- Limited routing tools should usually be movable, refundable, or recoverable so experimentation is not punished.
+- If a finite piece is destroyed, the player should not permanently lose the meta slot. The physical structure can be rebuilt from a blueprint ghost at a cost.
+
+This turns routing into a strategic layer. A player might think, "Where do I spend my one bridge?" or "This planet only has two routers, so I need a simpler layout."
+
+Possible finite logistics pieces:
+
+- Bridge: lets one route pass over another.
+- Tunnel: routes beneath debris, terrain, or other routes.
+- Splitter: sends one input to multiple outputs.
+- Merger: combines compatible inputs.
+- Valve: controls flow direction or priority.
+- Filter: only allows certain resources through.
+- Router: sends resources based on type, destination, threat state, or priority rule.
+- Smart gate: late-game conditional routing.
+- Phase conduit: expensive late-game crossing or bypass tool.
+- Planet relay: rare tool for cross-base or meta-level resource transfer.
+
+Example early logistics loadout:
+
+Infinite conveyor
+1 bridge
+1 splitter
+0 routers
+0 filters
+0 tunnels
+
+Example later logistics loadout:
+
+Infinite conveyor
+4 bridges
+3 splitters
+2 routers
+2 filters
+1 tunnel
+1 emergency relay
+
+Different planets can have different logistics constraints. A tight crystal planet might give more bridges. A wet planet might emphasize valves and pumps. A void planet might allow phase conduits but restrict normal walls or normal routing.
+
+### 21.2 Procedural Enemy Philosophy
+
+Enemies should be procedurally animated and rendered when practical, rather than relying only on sprite sheets. The goal is for enemies to feel physically present, readable, and reactive to damage.
+
+This should follow the spirit of the Equatoria Idle fish system, where fish were built from linked circles and rendered cleanly and naturally. Tiny Base Idle can use similar procedural body systems for worms, fish, centipedes, vine creatures, crystal serpents, burrowers, and bosses.
+
+Procedural enemies can be built from:
+
+- Linked circles.
+- Segment chains.
+- Constraint-based spines.
+- Procedural fins, legs, antennae, armor plates, crystals, sacs, and glow organs.
+- Smooth body skins rendered over hit segments.
+- Damage cracks, missing pieces, burning sections, frozen joints, or exposed cores.
+
+The simulation body and the visual body do not need to be identical. A worm can be simulated as linked circular hit segments, while rendered with a smooth continuous body over those circles.
+
+### 21.3 Worm Enemy System
+
+A core early procedural enemy type should be the Worm.
+
+A worm is made from linked circular segments. Each segment has its own HP, position, radius, and optional role.
+
+Segment data could include:
+
+- Position.
+- Velocity.
+- Radius.
+- HP and max HP.
+- Armor or resistance tags.
+- Segment role, such as head, body, armored body, explosive sac, weak point, or tail.
+- Previous and next segment references.
+
+Basic worm structure:
+
+H-O-O-O-O-O-O-O-T
+
+When a middle segment is destroyed, the worm can split into two separate worms. Any resulting worm with at least 5 linked circles survives as an independent enemy. Any fragment smaller than 5 linked circles dies permanently.
+
+Example:
+
+Before:
+H-O-O-O-X-O-O-O-O-T
+
+After destroyed segment X:
+H-O-O-O     O-O-O-O-T
+fragment    surviving worm if 5 or more segments
+
+This creates interesting combat consequences:
+
+- Lasers and saws can cut worms apart.
+- Area damage can clean up small fragments.
+- Snipers can target heads, weak points, or high-value segments.
+- Shock weapons can chain through adjacent segments.
+- Freezing can slow the whole constraint chain.
+- High single-target damage may split one enemy into multiple threats.
+- Some weapons might intentionally cut worms into manageable pieces.
+- Some worm variants might become more dangerous when split.
+
+Possible worm variants:
+
+- Basic worm: 8 to 12 segments, low armor, seeks the core.
+- Armored worm: armor plates every few segments, weak points between plates.
+- Regenerator worm: slowly regrows missing tail segments unless cut below survival size.
+- Brood worm: both halves remain dangerous after splitting.
+- Crystal worm: drops crystal motes when segments are destroyed.
+- Burrow worm: tunnels under walls and emerges near resource lines.
+- Acid worm: corrodes structures and increases rebuild cost.
+- Siege worm: prioritizes repair infrastructure, routers, bridges, and weak walls.
+- Splitter boss: intentionally fragments into many smaller worms under heavy damage.
+
+The linked-segment system should be reusable. The first implementation can be a simple worm, but the underlying body system should eventually support other procedural creatures.
+
+### 21.4 Segment-Level Combat Interactions
+
+Different towers should interact with segmented enemies in distinct ways.
+
+Examples:
+
+- Basic turret: shoots the nearest segment.
+- Sniper: targets the head, highest-HP segment, or weak point.
+- Laser: cuts through multiple segments in a line.
+- Saw trap: excels at severing worms.
+- Acid sprayer: applies damage over time across multiple segments.
+- Crusher: deals high damage to one segment, good for splitting.
+- Freezer: slows body constraints and movement.
+- Shock tower: chains between adjacent segments.
+- Harpoon: pins a segment in place, stretching or slowing the worm.
+- Flame turret: burns along connected segments.
+
+This makes enemy anatomy part of gameplay, not only visual style.
+
+### 21.5 Repair, Rebuild, and Blueprint Ghosts
+
+Because enemies can damage and destroy specific sections of the base, the game needs an easy system for rebuilding destroyed sections. Destruction should create tension and redesign opportunities, not tedious reconstruction.
+
+When a structure is destroyed by enemies or hazards, it should leave behind a faint blueprint ghost. This ghost remembers the original structure so the player can rebuild it without manually recreating the layout.
+
+A blueprint ghost should remember:
+
+- Original structure type.
+- Rotation.
+- Settings.
+- Connections.
+- Upgrade level.
+- Resource routing links.
+- Whether it was destroyed by enemies, hazards, or manual deletion.
+
+Manually deleted structures should not leave rebuild ghosts unless the player explicitly chooses to preserve them.
+
+Repair and rebuilding should have three layers:
+
+1. Manual repair brush.
+2. Rebuild All button.
+3. Automated rebuild structures.
+
+#### 21.5.1 Repair Brush
+
+The repair brush is the player's immediate recovery tool. It should feel like spot-cleaning after a breach.
+
+The player selects a repair brush, then paints over damaged or destroyed structures. Each tile shows a cost preview and repairs or rebuilds instantly or quickly.
+
+Possible rules:
+
+- Paint over damaged structures to repair them.
+- Paint over blueprint ghosts to rebuild them.
+- Show cost preview while hovering or dragging.
+- Support brush sizes such as 1 tile, 3 tile, and 5 tile.
+- Allow filters such as repair only, rebuild only, walls only, conveyors only, or critical structures only.
+- Prevent rebuilding if an enemy occupies the tile.
+- Repair should cost resources, but the interaction should be fast and low-friction.
+
+#### 21.5.2 Rebuild All Button
+
+The Rebuild All button is the strategic cleanup option after a wave or while paused.
+
+It scans destroyed blueprint ghosts and shows the total cost before confirming.
+
+Example:
+
+Rebuild All: 238 metal, 41 energy, 12 crystal
+
+Useful options:
+
+- Rebuild all.
+- Rebuild affordable.
+- Rebuild walls only.
+- Rebuild conveyors only.
+- Rebuild turrets only.
+- Rebuild advanced logistics only.
+- Exclude high-risk storage buildings.
+
+This prevents the game from becoming tedious after every breach. The player should not have to manually recreate a known layout unless they want to redesign it.
+
+#### 21.5.3 Auto-Rebuilder Towers and Repair Automation
+
+Repair towers, rebuild spires, maintenance drone bays, or assembler beacons can automatically repair and rebuild nearby structures.
+
+Possible rules:
+
+- They have a radius.
+- They consume repair resources.
+- They prioritize critical systems.
+- They send tiny repair drones or glowing builder motes.
+- They repair damaged buildings first, then rebuild destroyed ghosts.
+- They can be upgraded through meta progression.
+- They can be disabled by EMP, destroyed by siege enemies, or starved by resource shortages.
+- They should not be so powerful that enemy breaches stop mattering.
+
+Repair automation should be visible and satisfying. Broken walls can rebuild from scaffolding. Turrets can reassemble barrels. Conveyors can relight segment by segment. Repair motes or drones can visibly travel from the repair structure to the damaged section.
+
+### 21.6 Rebuild Cost Balance
+
+Rebuilding should reduce tedium without erasing consequences.
+
+Good starting rules:
+
+- Damaged structure repair: 25 to 50 percent of missing HP cost.
+- Destroyed basic structure rebuild: 50 to 75 percent of original cost.
+- Destroyed advanced structure rebuild: 75 to 100 percent of original cost.
+- Rare finite pieces are not permanently lost. The physical object can be rebuilt, but the player still owns the meta slot.
+
+If rebuilding is too cheap, breaches do not matter. If rebuilding is too tedious, breaches become annoying.
+
+### 21.7 Visible Resource Flow
+
+The player should be able to see resources moving through the base whenever possible. Conveyors, pipes, conduits, towers, processors, and weapons should expose at least some of their internal resource state visually.
+
+Design goals:
+
+- Conveyors show solid motes moving tile by tile.
+- Pipes show liquid motes, pressure pulses, or flow bands.
+- Energy conduits show sparks traveling in the direction of supply.
+- Turrets show loaded ammo motes, charged energy, or visible internal storage.
+- Refineries show transformation by changing mote size, color, density, or glow.
+- Weapons visually consume the motes they fire or convert.
+
+This makes the base legible. The player should often be able to diagnose starvation, overproduction, bottlenecks, and danger by watching the motion itself.
+
+### 21.8 Refined Mote Scale
+
+Higher-value resources can become larger or more structured rather than only changing color. A raw resource may be a 1 by 1 mote, while refined outputs may become 2 by 2 clusters, 3 by 3 crystals, linked sparks, dense capsules, or shaped shards.
+
+Possible progression:
+
+Raw ore mote        = 1 native pixel
+Refined metal mote  = 2 by 2 cluster
+Charged shell mote  = 3 by 3 glowing ammo unit
+Rare crystal mote   = faceted pixel cluster with sparkle edges
+
+This makes resource refinement visually satisfying and immediately readable.
+
+### 21.9 Stored Motes and Destruction Risk
+
+Buildings can store resources internally. This creates a useful risk-reward layer.
+
+Examples:
+
+- A cannon stores metal shell motes.
+- A laser stores charged energy motes.
+- A flamethrower stores heat or fuel motes.
+- A repair tower stores repair motes.
+- A battery stores energy sparks.
+- A silo stores solid motes.
+
+If a building is destroyed while storing dangerous motes, those motes may spill, detonate, discharge, burn, freeze, poison, or scatter. This makes placement matter.
+
+Possible rules:
+
+- Basic ore spills harmlessly and may be recollected.
+- Charged ammo can explode or create shrapnel.
+- Energy storage can arc to nearby structures and enemies.
+- Acid leaks and damages both enemies and structures.
+- Coolant spills can extinguish heat or freeze water.
+- Rare motes may be partially lost if the container is destroyed.
+
+This should be readable and fair. Dangerous storage should have visible warning states, such as bright internal motes, pressure pulses, heat shimmer, or unstable glow.
+
+### 21.10 Meta Upgrade Hooks
+
+These systems create useful meta upgrades.
+
+Possible upgrades:
+
+- Unlock bridge.
+- Increase bridge count.
+- Unlock router.
+- Increase router count.
+- Unlock splitter.
+- Unlock filter.
+- Unlock tunnel.
+- Unlock repair brush.
+- Increase repair brush size.
+- Unlock Rebuild All.
+- Unlock Rebuild Affordable.
+- Unlock auto-rebuilder tower.
+- Increase repair tower radius.
+- Improve repair efficiency.
+- Preserve more blueprint ghost data.
+- Improve dangerous storage safety.
+- Reduce explosion risk from stored ammo.
+- Unlock procedural enemy scanner or weak-point targeting.
+
+The goal is for meta progression to unlock new decisions, not just larger numbers.
+
+### 21.11 MVP Implications
+
+The first prototype should not include all of this, but it should lay the foundation.
+
+Recommended MVP additions:
+
+- Basic conveyor is infinite.
+- At least one finite strategic piece exists, such as a bridge or splitter.
+- One enemy can damage or destroy structures.
+- Destroyed structures leave blueprint ghosts.
+- The player can use a repair brush to rebuild ghosts.
+- One visible resource mote type moves through conveyors.
+- One tower shows stored ammo or internal resource state.
+- One simple procedural worm enemy can be prototyped later as a reusable linked-segment system.
+
+The most important early test is whether one small board feels good when the player places structures, watches motes move, survives a breach, repairs damaged sections, and sees how better layout would improve survival.
