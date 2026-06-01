@@ -1822,10 +1822,6 @@ function findConveyorRoute(extX: number, extY: number): { pathXTile: number[]; p
       return { pathXTile: pathX, pathYTile: pathY };
     }
 
-    if (cx === coreTile.x && cy === coreTile.y) {
-      return { pathXTile: pathX, pathYTile: pathY };
-    }
-
     if (structures[idx] !== 'conveyor') { return null; }
 
     visited.add(idx);
@@ -1903,11 +1899,17 @@ function deliverMote(mote: RoutedMote): void {
   const s = structures[idx];
   if (s === 'turret' && mote.resourceType === 'ore') {
     const cur = turretAmmo.get(idx) ?? 0;
+    // Silently cap at max ammo; the extractor simply stops spawning while route is valid,
+    // but over-delivery just wastes the mote — no separate feedback needed for MVP.
     turretAmmo.set(idx, Math.min(cur + 1, TURRET_AMMO_MAX));
   } else if (s === 'crusher' && mote.resourceType === 'coal') {
+    // Coal arrives in the global coal pool; updateCrushers() drains it into gunpowder.
+    // Routing coal to a crusher tile is identical to routing it to the core for now —
+    // both feed the same pool — but destination choice matters when per-building
+    // storage is added (future: crusher has its own coal buffer).
     coal += 1;
   } else if (s === 'crusher' && mote.resourceType === 'ore') {
-    // ore into crusher — send it on to core as raw ore (fallback)
+    // Ore into crusher has no meaningful conversion yet; credit it as raw ore (fallback).
     ore += 1;
     totalOreEarned += 1;
   }
