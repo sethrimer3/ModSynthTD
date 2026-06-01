@@ -54,7 +54,7 @@ const STRUCTURE_HP_BAR_WARN_THRESHOLD = 0.5;
 const HP_BAR_COLOR_HEALTHY = '#ffcc44';
 const HP_BAR_COLOR_CRITICAL = '#ff4422';
 const ORE_SYMBOL = '⊕';
-// Orthogonal neighbour offsets used in wall-damage and adjacency checks
+// Orthogonal neighbor offsets used in wall-damage and adjacency checks
 const ADJ_OFFSETS: readonly [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 // ── DOM ────────────────────────────────────────────────────────────────────
@@ -359,6 +359,7 @@ function attemptPlaceStructure(xTile: number, yTile: number): void {
   }
 
   ore -= cost;
+  // selectedTool is never 'erase' here (returned early above); fallback covers future Structure additions
   structureHp.set(index, STRUCTURE_MAX_HP[selectedTool] ?? STRUCTURE_MAX_HP.wall!);
   blueprintGhosts.delete(index);
   distanceField = nextDistanceField;
@@ -425,6 +426,8 @@ function damageStructure(index: number, amount: number): void {
     structures[index] = 'empty';
     structureHp.delete(index);
     if (ghostType === 'radar') {
+      // radarLevel is always ≥ 2 when a radar exists (placing one increments it), so
+      // decrementing here correctly restores the previous level; MIN_RADAR_LEVEL is a safety clamp.
       radarLevel = Math.max(MIN_RADAR_LEVEL, radarLevel - 1);
       revealRadiusTile = Math.max(MIN_REVEAL_RADIUS_TILE, revealRadiusTile - 1);
     }
