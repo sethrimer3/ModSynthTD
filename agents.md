@@ -1,6 +1,6 @@
-# AI Agent Guidelines for shipGame Repository
+# AI Agent Guidelines for TinyBaseIdle Repository
 
-This repository is being adapted from a space-ship prototype into the game described in `DESIGN.md`, working title **Neon Mote Defense**. The current codebase, README, architecture notes, and test checklist may still contain legacy ship-game assumptions. When legacy behavior conflicts with the new design direction, treat `DESIGN.md` as the product source of truth and update supporting docs as the implementation changes.
+This repository is being adapted from a space-ship prototype into the game described in `design.md`, working title **Neon Mote Defense**. The current codebase, README, architecture notes, and test checklist may still contain legacy ship-game assumptions. When legacy behavior conflicts with the new design direction, treat `design.md` as the product blueprint and update supporting docs as the implementation changes.
 
 The goals for AI agents are **clarity**, **performance**, **stable gameplay behavior**, and **faithfulness to the design pillars**.
 
@@ -8,7 +8,7 @@ The goals for AI agents are **clarity**, **performance**, **stable gameplay beha
 
 ## 1. Product Direction
 
-Before making gameplay or UX changes, read `DESIGN.md`.
+Before making gameplay or UX changes, read `design.md` and `todo.md`.
 
 The target game is a micro-scale idle tower defense and factory strategy game:
 
@@ -27,7 +27,9 @@ Do not drift the game toward a generic shooter, generic tower defense, or generi
 
 ## 2. Prototype Priorities
 
-Prioritize the MVP described in `DESIGN.md`:
+Prioritize the near-term work tracked in `todo.md`, while using `design.md` to understand the intended direction.
+
+Core early priorities:
 
 1. One base slot.
 2. Top-down grid board.
@@ -42,7 +44,22 @@ Avoid implementing late-game systems before the local base loop feels good. The 
 
 ---
 
-## 3. Simple to Learn, Hard to Master
+## 3. Task Tracking and Deferred Work
+
+`todo.md` is the implementation task tracker. `design.md` is the broader blueprint and should not be treated as the primary checklist.
+
+AI agents must keep `todo.md` current:
+
+- When a `todo.md` item is fully implemented and validated, mark it `[x]` in the same change set.
+- If an item is only partially implemented, leave it unchecked and add a concise follow-up item for what remains.
+- If work is deferred, skipped, descoped, blocked, or discovered but not implemented, add an unchecked item to `todo.md` under the most relevant section.
+- If a task reveals additional implementation work, add it to `todo.md` before finishing.
+- Do not hide deferred work only in chat responses, commit messages, PR descriptions, or code comments.
+- Keep `todo.md` concrete and implementation-oriented. Keep broad vision and design rationale in `design.md`.
+
+---
+
+## 4. Simple to Learn, Hard to Master
 
 Every feature should preserve beginner readability. Complexity should come from interacting systems, not opaque UI.
 
@@ -65,7 +82,7 @@ Bad complexity sources:
 
 ---
 
-## 4. Visual and Scale Guidelines
+## 5. Visual and Scale Guidelines
 
 The intended look is neon, readable, and retro.
 
@@ -82,13 +99,13 @@ Design scale target:
 
 - Build structures belong on a tile grid.
 - Motes/particles live at a finer pixel/sub-tile scale.
-- A useful target from `DESIGN.md` is 1 mote at 1 native pixel and 1 build tile around 12 by 12 native pixels, though existing code may use other values during transition.
+- A useful target from `design.md` is 1 mote at 1 native pixel and 1 build tile around 12 by 12 native pixels, though existing code may use other values during transition.
 
 Do not let visual polish reduce gameplay readability.
 
 ---
 
-## 5. Determinism and Consistency
+## 6. Determinism and Consistency
 
 Gameplay should feel stable and explainable even if it is not a deterministic multiplayer simulation.
 
@@ -100,7 +117,7 @@ Gameplay should feel stable and explainable even if it is not a deterministic mu
 
 ---
 
-## 6. Tech Stack Scope
+## 7. Tech Stack Scope
 
 - Core code is **TypeScript**.
 - Keep strict typing. Avoid implicit `any`.
@@ -112,7 +129,7 @@ Gameplay should feel stable and explainable even if it is not a deterministic mu
 
 ---
 
-## 7. Performance Expectations
+## 8. Performance Expectations
 
 This game is expected to render many enemies, particles, motes, projectiles, and grid structures. Aim for smooth 60 FPS where practical.
 
@@ -130,7 +147,7 @@ Quality settings should degrade expensive visuals before compromising basic read
 
 ---
 
-## 8. Simulation Boundaries
+## 9. Simulation Boundaries
 
 The design wants Powder Game-like life, not an uncontrolled full powder simulator unless the user explicitly redirects the project.
 
@@ -151,7 +168,7 @@ When adding particle mechanics:
 
 ---
 
-## 9. Input and Game Loop Responsibilities
+## 10. Input and Game Loop Responsibilities
 
 - Input handling should capture user intent and emit actions. Avoid mutating game simulation state directly inside low-level input handlers.
 - The main game loop should orchestrate update order.
@@ -165,7 +182,7 @@ When in doubt, data flows should be:
 
 ---
 
-## 10. Naming Guidelines
+## 11. Naming Guidelines
 
 ### General
 
@@ -210,7 +227,7 @@ Examples:
 
 ---
 
-## 11. Gameplay Invariants
+## 12. Gameplay Invariants
 
 Preserve these unless the user explicitly changes the design:
 
@@ -226,16 +243,19 @@ Preserve these unless the user explicitly changes the design:
 
 ---
 
-## 12. Documentation Requirements
+## 13. Documentation Requirements
 
 Maintain:
 
-1. `DESIGN.md` - main product blueprint and design source of truth.
-2. `DECISIONS.md` - important implementation and design decisions.
-3. `ARCHITECTURE.md` - current system overview and data flow.
-4. `manual_test_checklist.md` - manual playtest checklist.
+1. `design.md` - main product blueprint and design source of truth.
+2. `todo.md` - condensed implementation checklist and deferred-work tracker.
+3. `DECISIONS.md` - important implementation and design decisions.
+4. `ARCHITECTURE.md` - current system overview and data flow.
+5. `manual_test_checklist.md` - manual playtest checklist.
 
-When changing gameplay direction, update `DESIGN.md` or add a note if the implementation intentionally diverges from it.
+When changing gameplay direction, update `design.md` or add a note if the implementation intentionally diverges from it.
+
+When completing, deferring, or discovering implementation work, update `todo.md`.
 
 When changing systems, update `ARCHITECTURE.md`.
 
@@ -247,7 +267,7 @@ Legacy docs may still describe the old ship game. Update them incrementally as s
 
 ---
 
-## 13. Build Number and Validation
+## 14. Build Number and Validation
 
 The current code displays a build number at the bottom-left of the game screen.
 
@@ -259,15 +279,16 @@ The current code displays a build number at the bottom-left of the game screen.
 
 ---
 
-## 14. Workflow for AI Agents
+## 15. Workflow for AI Agents
 
 ### Before changes
 
-1. Read `DESIGN.md`.
-2. Read the relevant source modules.
-3. Check `ARCHITECTURE.md`, `DECISIONS.md`, and `manual_test_checklist.md` for affected systems.
-4. Identify whether the task belongs to design docs, architecture docs, code, tests, or all of them.
-5. Note any legacy ship-game assumptions that may conflict with the new direction.
+1. Read `design.md`.
+2. Read `todo.md`.
+3. Read the relevant source modules.
+4. Check `ARCHITECTURE.md`, `DECISIONS.md`, and `manual_test_checklist.md` for affected systems.
+5. Identify whether the task belongs to design docs, task tracking, architecture docs, code, tests, or all of them.
+6. Note any legacy ship-game assumptions that may conflict with the new direction.
 
 ### While changing
 
@@ -280,15 +301,17 @@ The current code displays a build number at the bottom-left of the game screen.
 
 ### After changes
 
-1. Update docs if design, architecture, or testing expectations changed.
-2. Validate the build when code changed.
-3. Verify the build number rule.
-4. Add or update manual test items for player-visible behavior.
-5. State any uncertainty or incomplete validation in the final response.
+1. Update docs if design, architecture, task tracking, or testing expectations changed.
+2. Mark completed `todo.md` items `[x]` when they are fully implemented and validated.
+3. Add unfinished, deferred, descoped, blocked, or newly discovered work to `todo.md`.
+4. Validate the build when code changed.
+5. Verify the build number rule.
+6. Add or update manual test items for player-visible behavior.
+7. State any uncertainty or incomplete validation in the final response.
 
 ---
 
-## 15. AI Response Expectations
+## 16. AI Response Expectations
 
 When reporting work back to the user:
 
@@ -305,10 +328,11 @@ When reporting work back to the user:
 
 Prioritize:
 
-1. Faithfulness to `DESIGN.md`.
-2. Simple-to-learn player experience.
-3. Clear grid-based structures.
-4. Satisfying mote/powder visuals.
-5. Stable and explainable gameplay.
-6. Strong performance.
-7. Documentation that reflects the current direction.
+1. Faithfulness to `design.md`.
+2. Current implementation priorities in `todo.md`.
+3. Simple-to-learn player experience.
+4. Clear grid-based structures.
+5. Satisfying mote/powder visuals.
+6. Stable and explainable gameplay.
+7. Strong performance.
+8. Documentation that reflects the current direction.
