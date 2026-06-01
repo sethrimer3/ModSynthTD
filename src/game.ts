@@ -71,7 +71,7 @@ const STRUCTURE_HP_BAR_WARN_THRESHOLD = 0.5;
 const HP_BAR_COLOR_HEALTHY = '#ffcc44';
 const HP_BAR_COLOR_CRITICAL = '#ff4422';
 const ORE_SYMBOL = '⊕';
-const ORE_RATE_SAMPLE_WINDOW_SEC = 10; // rolling window for ore/sec display
+const ORE_RATE_DISPLAY_DELAY_SEC = 4; // seconds before showing ore/s rate in HUD
 // Orthogonal neighbor offsets used in wall-damage and adjacency checks
 const ADJ_OFFSETS: readonly [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const META_UPGRADE_KEYS: MetaUpgradeKey[] = ['coreArmor', 'turretPower', 'oreBonus'];
@@ -264,8 +264,6 @@ let gameOverDelaySec = 0;
 let lastMetaEarned = 0;
 let breakerTriggered = false;
 
-// Ore rate tracking: ring buffer of (time, ore) sample pairs for rolling window
-let oreRateSamples: { timeSec: number; ore: number }[] = [];
 let totalOreEarned = 0;
 
 let upgradeLevel = loadUpgrades();
@@ -760,7 +758,6 @@ function resetRun(): void {
   structures.fill('empty');
   turretAngleRad.clear();
   totalOreEarned = 0;
-  oreRateSamples = [];
   buildStarterTerrain();
   distanceField = computeDistanceField();
   showOverlay('', '', 0);
@@ -1379,7 +1376,7 @@ function render(): void {
   hpSpan.textContent = `HP ${Math.max(0, Math.ceil(coreHp))}`;
   hpSpan.style.color = hpRatio > coreHpHealthyThreshold / 100 ? '#33ffbb' : hpRatio > coreHpDamagedThreshold / 100 ? '#ffaa44' : '#ff4444';
 
-  oreSpan.textContent = elapsedSec > 4
+  oreSpan.textContent = elapsedSec > ORE_RATE_DISPLAY_DELAY_SEC
     ? `Ore ${ore} · ${(totalOreEarned / elapsedSec).toFixed(1)}/s`
     : `Ore ${ore}`;
   oreSpan.style.color = '#f0a600';
