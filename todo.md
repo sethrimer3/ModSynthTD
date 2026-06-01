@@ -15,20 +15,20 @@ AI agents should maintain this file as part of normal implementation work.
 
 ## Current Priority: Make the Core Factory-Defense Loop Real
 
-- [ ] Add actual conveyor placement as the basic infinite logistics tool.
-- [ ] Replace fixed deposit-to-core mote paths with player-built conveyor routes.
-- [ ] Add a basic extractor/drill in the Mining category.
-- [ ] Make deposits output motes only when connected to an extractor or route.
-- [ ] Add simple building input/output ports so routing direction matters.
-- [ ] Route ore into the core, turrets, and processors through the same logistics system.
+- [x] Add actual conveyor placement as the basic infinite logistics tool.
+- [x] Replace fixed deposit-to-core mote paths with player-built conveyor routes.
+- [x] Add a basic extractor/drill in the Mining category.
+- [x] Make deposits output motes only when connected to an extractor or route.
+- [x] Add simple building input/output ports so routing direction matters.
+- [x] Route ore into the core, turrets, and processors through the same logistics system.
 - [ ] Add one finite strategic routing piece, preferably Bridge or Splitter.
-- [ ] Add UI feedback for blocked, invalid, or disconnected routes.
+- [x] Add UI feedback for blocked, invalid, or disconnected routes (red indicator on extractor, "!" hints on unconnected deposits).
 
 ## Short-Term Combat and Defense
 
-- [ ] Convert the current basic turret into a resource-fed weapon instead of a free-firing cooldown turret.
-- [ ] Show visible stored ammo or charge inside turrets.
-- [ ] Add ammo starvation feedback when a turret has no supplied resource.
+- [x] Convert the current basic turret into a resource-fed weapon instead of a free-firing cooldown turret.
+- [x] Show visible stored ammo or charge inside turrets (ammo bar replaces charge bar).
+- [x] Add ammo starvation feedback when a turret has no supplied resource (red pixel when ammo=0).
 - [ ] Add at least one distinct weapon beyond the basic turret, such as Laser or Cannon.
 - [ ] Add enemy approach warnings for newly revealed directions.
 - [ ] Improve the Breaker breach event with stronger warning and visual telegraphing.
@@ -40,18 +40,18 @@ AI agents should maintain this file as part of normal implementation work.
 - [ ] Add Rebuild All.
 - [ ] Add Rebuild Affordable.
 - [ ] Add rebuild filters: walls, turrets, conveyors, and advanced logistics.
-- [ ] Preserve more blueprint ghost data, including rotation, connections, and upgrade level.
+- [x] Preserve blueprint ghost data for conveyors and extractors (same ghost system as other structures).
 - [ ] Add visual repair motes, drones, scaffolding, or rebuild animation.
 - [ ] Add one repair automation building.
 
 ## Resources and Processing
 
-- [ ] Add at least one processor, such as Smelter or Crusher.
-- [ ] Add one refined resource with a distinct mote size or shape.
-- [ ] Add one resource conversion chain: raw mote -> processed mote -> weapon/building use.
-- [ ] Add basic storage behavior for at least one building.
+- [x] Add at least one processor — Crusher already present; coal routed via logistics into Crusher.
+- [ ] Add one refined resource with a distinct mote size or shape (gunpowder mote exists; visual differentiation from coal mote TBD).
+- [x] Add one resource conversion chain: coal mote → Crusher → gunpowder → Gatling.
+- [ ] Add basic storage behavior for at least one building (full-ammo cap exists on turrets; dedicated storage building deferred).
 - [ ] Add destruction consequences for stored dangerous resources.
-- [ ] Add bottleneck visibility for overproduction, starvation, or full storage.
+- [ ] Add bottleneck visibility for overproduction, starvation, or full storage (extractor no-route indicator is first step; per-route flow readout deferred).
 
 ## Radar and Expansion
 
@@ -97,6 +97,7 @@ AI agents should maintain this file as part of normal implementation work.
 - [ ] Improve build previews for multi-tile buildings and routed structures.
 - [ ] Add clearer tutorial prompts for the first route, first turret, first wall, first radar, and first breach.
 - [ ] Keep all visuals readable at the native pixel scale.
+- [ ] Add conveyor direction preview ghost for conveyor/extractor tool (Q to rotate tooltip visible in place).
 
 ## Maintenance
 
