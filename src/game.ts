@@ -8,6 +8,7 @@ interface Enemy {
   maxHp: number;
   speedTilePerSec: number;
   isBreaker: boolean;
+  wallAttackCooldownSec: number;
 }
 
 interface Mote {
@@ -32,12 +33,24 @@ const coreTile = { x: Math.floor(gridWidthTile / 2), y: Math.floor(gridHeightTil
 const depositTile = { x: 3, y: 2 };
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 2;
+const currentBuildNumber = 3;
 const turretRangeTile = 4.5;
 const shotFlashDurationSec = 0.12;
 const breakerArrivalDistanceTile = 0.2;
 const coreHpHealthyThreshold = 60;
 const coreHpDamagedThreshold = 30;
+const secondEntranceTile = { x: coreTile.x, y: 0 };
+
+const STRUCTURE_MAX_HP: Partial<Record<Structure, number>> = { wall: 50, turret: 30, radar: 25 };
+const STRUCTURE_ORE_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 12, radar: 25 };
+const STRUCTURE_REBUILD_COST: Partial<Record<Structure, number>> = { wall: 0, turret: 6, radar: 12 };
+const ENEMY_WALL_DAMAGE = 8;
+const ENEMY_WALL_ATTACK_COOLDOWN_SEC = 1.5;
+const SECOND_ENTRANCE_ACTIVATION_WAVE = 7;
+const SECOND_ENTRANCE_SPAWN_RATIO = 0.4;
+const MIN_RADAR_LEVEL = 1;
+const MIN_REVEAL_RADIUS_TILE = 5;
+const STRUCTURE_HP_BAR_WARN_THRESHOLD = 0.5;
 
 // ── DOM ────────────────────────────────────────────────────────────────────
 const appElement = document.getElementById('app');
@@ -133,6 +146,10 @@ let enemies: Enemy[] = [];
 let motes: Mote[] = [];
 let shotFlashes: ShotFlash[] = [];
 
+const structureHp = new Map<number, number>();
+const blueprintGhosts = new Map<number, Structure>();
+let breachOpened = false;
+
 let overlayText = '';
 let overlayColor = '#ffee44';
 let overlayTimerSec = 0;
@@ -146,13 +163,14 @@ interface ToolConfig {
   label: string;
   key: string;
   color: string;
+  cost: number;
 }
 
 const toolConfigs: Record<Tool, ToolConfig> = {
-  wall:   { label: 'Wall',   key: 'W', color: '#6a8faf' },
-  turret: { label: 'Turret', key: 'T', color: '#27e0ff' },
-  radar:  { label: 'Radar',  key: 'R', color: '#8d68ff' },
-  erase:  { label: 'Erase',  key: 'E', color: '#ff7060' },
+  wall:   { label: 'Wall',   key: 'W', color: '#6a8faf', cost: 0  },
+  turret: { label: 'Turret', key: 'T', color: '#27e0ff', cost: 12 },
+  radar:  { label: 'Radar',  key: 'R', color: '#8d68ff', cost: 25 },
+  erase:  { label: 'Erase',  key: 'E', color: '#ff7060', cost: 0  },
 };
 const toolOrder: Tool[] = ['wall', 'turret', 'radar', 'erase'];
 const toolButtons = new Map<Tool, HTMLButtonElement>();
@@ -168,7 +186,7 @@ for (const tool of toolOrder) {
   labelSpan.textContent = cfg.label;
   const keySpan = document.createElement('span');
   keySpan.className = 'toolKey';
-  keySpan.textContent = `[${cfg.key}]`;
+  keySpan.textContent = cfg.cost > 0 ? `[${cfg.key}] ${cfg.cost}⊕` : `[${cfg.key}]`;
   button.append(labelSpan, keySpan);
   button.addEventListener('click', () => {
     selectedTool = tool;
@@ -299,13 +317,23 @@ function attemptPlaceStructure(xTile: number, yTile: number): void {
   if (selectedTool === 'erase') {
     if (structures[index] !== 'empty') {
       structures[index] = 'empty';
+      structureHp.delete(index);
       turretAngleRad.delete(index);
       distanceField = computeDistanceField();
     }
+    blueprintGhosts.delete(index);
     return;
   }
 
   if (structures[index] !== 'empty') {
+    return;
+  }
+
+  const isRebuild = blueprintGhosts.get(index) === selectedTool;
+  const costTable = isRebuild ? STRUCTURE_REBUILD_COST : STRUCTURE_ORE_COST;
+  const cost = costTable[selectedTool] ?? 0;
+  if (ore < cost) {
+    showOverlay('NEED ORE', '#ff8844', 1.5);
     return;
   }
 
@@ -320,11 +348,14 @@ function attemptPlaceStructure(xTile: number, yTile: number): void {
     structures[index] = 'empty';
     if (selectedTool === 'radar') {
       radarLevel -= 1;
-      revealRadiusTile = Math.max(5, revealRadiusTile - 1);
+      revealRadiusTile = Math.max(MIN_REVEAL_RADIUS_TILE, revealRadiusTile - 1);
     }
     return;
   }
 
+  ore -= cost;
+  structureHp.set(index, STRUCTURE_MAX_HP[selectedTool] ?? STRUCTURE_MAX_HP.wall ?? 50);
+  blueprintGhosts.delete(index);
   distanceField = nextDistanceField;
 }
 
@@ -375,6 +406,30 @@ function showOverlay(text: string, color: string, durationSec: number): void {
   overlayTimerSec = durationSec;
 }
 
+function damageStructure(index: number, amount: number): void {
+  const current = structureHp.get(index);
+  if (current === undefined) {
+    return;
+  }
+  const next = current - amount;
+  if (next <= 0) {
+    const ghostType = structures[index];
+    if (ghostType !== 'empty') {
+      blueprintGhosts.set(index, ghostType);
+    }
+    structures[index] = 'empty';
+    structureHp.delete(index);
+    if (ghostType === 'radar') {
+      radarLevel = Math.max(MIN_RADAR_LEVEL, radarLevel - 1);
+      revealRadiusTile = Math.max(MIN_REVEAL_RADIUS_TILE, revealRadiusTile - 1);
+    }
+    turretAngleRad.delete(index);
+    distanceField = computeDistanceField();
+  } else {
+    structureHp.set(index, next);
+  }
+}
+
 function spawnWave(): void {
   waveIndex += 1;
   const enemyCount = 3 + Math.floor(waveIndex * 0.5);
@@ -387,7 +442,8 @@ function spawnWave(): void {
       hp: maxHp,
       maxHp,
       speedTilePerSec: 1.2 + waveIndex * 0.05,
-      isBreaker: false
+      isBreaker: false,
+      wallAttackCooldownSec: 0,
     });
   }
 
@@ -399,8 +455,25 @@ function spawnWave(): void {
       hp: 45,
       maxHp: 45,
       speedTilePerSec: 0.85,
-      isBreaker: true
+      isBreaker: true,
+      wallAttackCooldownSec: 0,
     });
+  }
+
+  if (breachOpened && waveIndex >= SECOND_ENTRANCE_ACTIVATION_WAVE) {
+    const topCount = Math.min(Math.floor(enemyCount * SECOND_ENTRANCE_SPAWN_RATIO) + 1, enemyCount);
+    for (let i = 0; i < topCount; i += 1) {
+      const maxHp = 20 + waveIndex * 3;
+      enemies.push({
+        xTile: secondEntranceTile.x,
+        yTile: secondEntranceTile.y,
+        hp: maxHp,
+        maxHp,
+        speedTilePerSec: 1.1 + waveIndex * 0.05,
+        isBreaker: false,
+        wallAttackCooldownSec: 0,
+      });
+    }
   }
 
   showOverlay(`WAVE ${waveIndex}`, '#ffee44', 2);
@@ -424,7 +497,10 @@ function resetRun(): void {
   enemies = [];
   motes = [];
   shotFlashes = [];
+  structureHp.clear();
+  blueprintGhosts.clear();
   breakerTriggered = false;
+  breachOpened = false;
   structures.fill('empty');
   turretAngleRad.clear();
   buildStarterTerrain();
@@ -443,6 +519,7 @@ function updateEnemies(dtSec: number): void {
       if (breakerDistance < breakerArrivalDistanceTile) {
         terrainIsDebris[tileIndex(breakerTargetTile.x, breakerTargetTile.y)] = false;
         distanceField = computeDistanceField();
+        breachOpened = true;
         enemies.splice(enemyIndex, 1);
         showOverlay('BREACH!', '#ff42d2', 3);
         continue;
@@ -506,6 +583,27 @@ function updateEnemies(dtSec: number): void {
       const moveStep = (enemy.speedTilePerSec * dtSec) / distance;
       enemy.xTile += dxTile * Math.min(1, moveStep);
       enemy.yTile += dyTile * Math.min(1, moveStep);
+    }
+
+    // Chip damage to adjacent structures
+    enemy.wallAttackCooldownSec -= dtSec;
+    if (enemy.wallAttackCooldownSec <= 0) {
+      const ex = Math.round(enemy.xTile);
+      const ey = Math.round(enemy.yTile);
+      const adjTiles: [number, number][] = [
+        [ex + 1, ey], [ex - 1, ey], [ex, ey + 1], [ex, ey - 1]
+      ];
+      for (const [ax, ay] of adjTiles) {
+        if (!isInBounds(ax, ay)) {
+          continue;
+        }
+        const aIdx = tileIndex(ax, ay);
+        if (structureHp.has(aIdx)) {
+          damageStructure(aIdx, ENEMY_WALL_DAMAGE);
+          enemy.wallAttackCooldownSec = ENEMY_WALL_ATTACK_COOLDOWN_SEC;
+          break;
+        }
+      }
     }
   }
 }
@@ -728,6 +826,45 @@ function drawEnemyHpBar(xPx: number, yPx: number, hp: number, maxHp: number): vo
   }
 }
 
+function drawStructureHpBar(xPx: number, yPx: number, hp: number, maxHp: number): void {
+  const ratio = hp / maxHp;
+  if (ratio >= 1) {
+    return;
+  }
+  const barW = tileSizePx - 2;
+  ctx.fillStyle = '#1a0505';
+  ctx.fillRect(xPx + 1, yPx + tileSizePx - 2, barW, 1);
+  const fillW = Math.max(1, Math.round(barW * ratio));
+  ctx.fillStyle = ratio > STRUCTURE_HP_BAR_WARN_THRESHOLD ? '#ffcc44' : '#ff4422';
+  ctx.fillRect(xPx + 1, yPx + tileSizePx - 2, fillW, 1);
+}
+
+function drawBlueprintGhost(xPx: number, yPx: number, ghostType: Structure): void {
+  if (ghostType === 'wall') {
+    ctx.fillStyle = 'rgba(106,143,175,0.18)';
+    ctx.fillRect(xPx + 1, yPx + 1, tileSizePx - 2, tileSizePx - 2);
+    ctx.strokeStyle = 'rgba(106,143,175,0.45)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(xPx + 0.5, yPx + 0.5, tileSizePx - 1, tileSizePx - 1);
+  } else if (ghostType === 'turret') {
+    ctx.fillStyle = 'rgba(39,224,255,0.12)';
+    ctx.fillRect(xPx + 1, yPx + 1, tileSizePx - 2, tileSizePx - 2);
+    ctx.strokeStyle = 'rgba(39,224,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(xPx + 0.5, yPx + 0.5, tileSizePx - 1, tileSizePx - 1);
+    ctx.fillStyle = 'rgba(39,224,255,0.3)';
+    ctx.fillRect(xPx + 4, yPx + 4, 4, 4);
+  } else if (ghostType === 'radar') {
+    ctx.fillStyle = 'rgba(141,104,255,0.12)';
+    ctx.fillRect(xPx + 1, yPx + 1, tileSizePx - 2, tileSizePx - 2);
+    ctx.strokeStyle = 'rgba(141,104,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(xPx + 0.5, yPx + 0.5, tileSizePx - 1, tileSizePx - 1);
+    ctx.fillStyle = 'rgba(141,104,255,0.3)';
+    ctx.fillRect(xPx + 5, yPx + 5, 2, 2);
+  }
+}
+
 // ── Render ─────────────────────────────────────────────────────────────────
 function render(): void {
   ctx.fillStyle = '#07090f';
@@ -751,13 +888,30 @@ function render(): void {
 
       drawGroundTile(xPx, yPx);
 
+      const ghost = blueprintGhosts.get(index);
+      if (ghost !== undefined) {
+        drawBlueprintGhost(xPx, yPx, ghost);
+      }
+
       const structure = structures[index];
       if (structure === 'wall') {
         drawWallTile(xPx, yPx);
+        const hp = structureHp.get(index);
+        if (hp !== undefined) {
+          drawStructureHpBar(xPx, yPx, hp, STRUCTURE_MAX_HP.wall ?? 50);
+        }
       } else if (structure === 'turret') {
         drawTurretTile(xPx, yPx, index);
+        const hp = structureHp.get(index);
+        if (hp !== undefined) {
+          drawStructureHpBar(xPx, yPx, hp, STRUCTURE_MAX_HP.turret ?? 30);
+        }
       } else if (structure === 'radar') {
         drawRadarTile(xPx, yPx);
+        const hp = structureHp.get(index);
+        if (hp !== undefined) {
+          drawStructureHpBar(xPx, yPx, hp, STRUCTURE_MAX_HP.radar ?? 25);
+        }
       }
     }
   }
@@ -824,9 +978,19 @@ function render(): void {
   if (!isPointerHeld && hoveredXTile >= 0 && isInBounds(hoveredXTile, hoveredYTile)) {
     const xPx = hoveredXTile * tileSizePx;
     const yPx = hoveredYTile * tileSizePx;
-    ctx.fillStyle = selectedTool === 'erase' ? 'rgba(255,100,80,0.28)' : 'rgba(100,180,255,0.18)';
+    const hoverIndex = tileIndex(hoveredXTile, hoveredYTile);
+    const isRebuildHover = blueprintGhosts.get(hoverIndex) === selectedTool;
+    if (isRebuildHover) {
+      ctx.fillStyle = 'rgba(100,255,160,0.22)';
+      ctx.strokeStyle = 'rgba(100,255,160,0.6)';
+    } else if (selectedTool === 'erase') {
+      ctx.fillStyle = 'rgba(255,100,80,0.28)';
+      ctx.strokeStyle = 'rgba(255,100,80,0.55)';
+    } else {
+      ctx.fillStyle = 'rgba(100,180,255,0.18)';
+      ctx.strokeStyle = 'rgba(100,200,255,0.45)';
+    }
     ctx.fillRect(xPx, yPx, tileSizePx, tileSizePx);
-    ctx.strokeStyle = selectedTool === 'erase' ? 'rgba(255,100,80,0.55)' : 'rgba(100,200,255,0.45)';
     ctx.lineWidth = 1;
     ctx.strokeRect(xPx + 0.5, yPx + 0.5, tileSizePx - 1, tileSizePx - 1);
   }
