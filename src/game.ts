@@ -22,6 +22,7 @@ const coreTile = { x: Math.floor(gridWidthTile / 2), y: Math.floor(gridHeightTil
 const depositTile = { x: 3, y: 2 };
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTarget = { x: coreTile.x, y: 3 };
+const currentBuildNumber = 1;
 
 const appElement = document.getElementById('app');
 if (!appElement) {
@@ -51,10 +52,11 @@ hudElement.append(topStatsElement, rightStatsElement);
 rootElement.append(hudElement, canvasElement, toolbarElement);
 appElement.append(rootElement);
 
-const ctx = canvasElement.getContext('2d');
-if (!ctx) {
+const ctxValue = canvasElement.getContext('2d');
+if (!ctxValue) {
   throw new Error('Could not create canvas context');
 }
+const ctx: CanvasRenderingContext2D = ctxValue;
 ctx.imageSmoothingEnabled = false;
 
 const terrainIsDebris: boolean[] = new Array(gridWidthTile * gridHeightTile).fill(false);
@@ -84,7 +86,7 @@ let radarLevel = 1;
 let revealRadiusTile = 5;
 let elapsedSec = 0;
 let waveIndex = 0;
-let enemySpawnCooldownSec = 3;
+let turretFireCooldownSec = 3;
 let moteSpawnCooldownSec = 0.8;
 let waveTimerSec = 8;
 let isRunOver = false;
@@ -279,7 +281,7 @@ function resetRun(): void {
   elapsedSec = 0;
   waveIndex = 0;
   waveTimerSec = 6;
-  enemySpawnCooldownSec = 3;
+  turretFireCooldownSec = 3;
   moteSpawnCooldownSec = 0.8;
   isRunOver = false;
   enemies = [];
@@ -368,9 +370,9 @@ function updateEnemies(dtSec: number): void {
 }
 
 function updateTurrets(dtSec: number): void {
-  enemySpawnCooldownSec -= dtSec;
-  if (enemySpawnCooldownSec <= 0) {
-    enemySpawnCooldownSec = 0.35;
+  turretFireCooldownSec -= dtSec;
+  if (turretFireCooldownSec <= 0) {
+    turretFireCooldownSec = 0.35;
 
     for (let yTile = 0; yTile < gridHeightTile; yTile += 1) {
       for (let xTile = 0; xTile < gridWidthTile; xTile += 1) {
@@ -503,7 +505,7 @@ function render(): void {
   }
 
   topStatsElement.textContent = `HP ${Math.max(0, Math.ceil(coreHp))} | Ore ${ore} | Wave ${waveIndex} | Radar ${radarLevel}`;
-  rightStatsElement.textContent = `Meta ${metaCurrency} | Next wave ${waveTimerSec.toFixed(1)}s | Tool ${selectedTool}`;
+  rightStatsElement.textContent = `Meta ${metaCurrency} | Next wave ${waveTimerSec.toFixed(1)}s | Tool ${selectedTool} | Build ${currentBuildNumber}`;
 }
 
 export function startGame(): void {
