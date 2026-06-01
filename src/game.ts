@@ -516,6 +516,17 @@ let overlayText = '';
 let overlayColor = '#ffee44';
 let overlayTimerSec = 0;
 
+// ── Per-run statistics for run summary ────────────────────────────────────────
+let totalEnemiesKilled = 0;
+let totalStructuresBuilt = 0;
+
+// ── Tutorial hint flags (reset each run) ──────────────────────────────────────
+let shownMiningHint = false;
+let shownRouteHint = false;
+let shownWallHint = false;
+let shownTurretHint = false;
+let shownRadarHint = false;
+
 let hoveredXTile = -1;
 let hoveredYTile = -1;
 let isPointerHeld = false;
@@ -946,9 +957,23 @@ function attemptPlaceStructure(xTile: number, yTile: number): void {
   }
 
   structures[index] = selectedTool;
+  totalStructuresBuilt += 1;
   if (selectedTool === 'radar') {
     radarLevel += 1;
     revealRadiusTile = Math.min(10, revealRadiusTile + 1);
+    // Show stage-specific message so players understand what each radar level adds
+    const newRadius = revealRadiusTile;
+    let radarMsg: string;
+    if (newRadius === DEPOSIT2_MIN_REVEAL_RADIUS_TILE) {
+      radarMsg = `RADAR LV${radarLevel} · NEW DEPOSIT REVEALED`;
+    } else if (newRadius === DEPOSIT3_MIN_REVEAL_RADIUS_TILE) {
+      radarMsg = `RADAR LV${radarLevel} · NEW DEPOSIT REVEALED`;
+    } else if (newRadius >= 10) {
+      radarMsg = `RADAR LV${radarLevel} · MAX RANGE`;
+    } else {
+      radarMsg = `RADAR LV${radarLevel} · RANGE ${newRadius}`;
+    }
+    showOverlay(radarMsg, '#8d68ff', 2.5);
   }
   if (selectedTool === 'conveyor' || selectedTool === 'extractor' || selectedTool === 'splitter') {
     conveyorDirection.set(index, conveyorPlacementDir);
@@ -1391,6 +1416,13 @@ function resetRun(): void {
   structures.fill('empty');
   turretAngleRad.clear();
   totalOreEarned = 0;
+  totalEnemiesKilled = 0;
+  totalStructuresBuilt = 0;
+  shownMiningHint = false;
+  shownRouteHint = false;
+  shownWallHint = false;
+  shownTurretHint = false;
+  shownRadarHint = false;
   buildStarterTerrain();
   distanceField = computeDistanceField();
   showOverlay('', '', 0);
@@ -1463,7 +1495,7 @@ function updateEnemies(dtSec: number): void {
       if (coreHp <= 0 && !isRunOver) {
         isRunOver = true;
         lastMetaEarned = Math.max(1, Math.floor(ore / 8 + waveIndex * 2 + elapsedSec / 12));
-        gameOverDelaySec = 3;
+        gameOverDelaySec = 5;
         showOverlay('GAME OVER', '#ff5533', 999);
       }
       continue;
@@ -1553,7 +1585,7 @@ function updateWorms(dtSec: number): void {
       if (coreHp <= 0 && !isRunOver) {
         isRunOver = true;
         lastMetaEarned = Math.max(1, Math.floor(ore / 8 + waveIndex * 2 + elapsedSec / 12));
-        gameOverDelaySec = 3;
+        gameOverDelaySec = 5;
         showOverlay('GAME OVER', '#ff5533', 999);
       }
       continue;
@@ -1650,6 +1682,7 @@ function cleanDeadWormSegments(): void {
       if (seg.hp <= 0) {
         ore += 1;
         totalOreEarned += 1;
+        totalEnemiesKilled += 1;
         if (fragment.length >= WORM_MIN_SURVIVE_SEGMENTS) {
           nextWorms.push({ segments: fragment, speedTilePerSec: worm.speedTilePerSec, wallAttackCooldownSec: 0, isArmored: worm.isArmored });
         }
@@ -1751,6 +1784,7 @@ function updateTurrets(dtSec: number): void {
       enemies.splice(i, 1);
       ore += 2;
       totalOreEarned += 2;
+      totalEnemiesKilled += 1;
     }
   }
 
@@ -1941,6 +1975,7 @@ function updateGatlingTurrets(dtSec: number): void {
       enemies.splice(i, 1);
       ore += 2;
       totalOreEarned += 2;
+      totalEnemiesKilled += 1;
     }
   }
   cleanDeadWormSegments();
@@ -2130,6 +2165,7 @@ function updateCannonTurrets(dtSec: number): void {
       enemies.splice(i, 1);
       ore += 2;
       totalOreEarned += 2;
+      totalEnemiesKilled += 1;
     }
   }
   cleanDeadWormSegments();
@@ -2420,6 +2456,65 @@ function updateRoutedMotes(dtSec: number): void {
   }
 }
 
+function updateTutorialHints(): void {
+  // Don't interrupt a visible overlay
+  if (overlayTimerSec > 0.5) { return; }
+
+  if (!shownMiningHint && elapsedSec > 15 && totalStructuresBuilt === 0) {
+    shownMiningHint = true;
+    showOverlay('PLACE EXTRACTOR [X] NEXT TO DEPOSIT', '#99ffcc', 4.5);
+    return;
+  }
+
+  if (!shownRouteHint && elapsedSec > 10) {
+    let hasUnrouted = false;
+    for (const [, routed] of extractorHasRoute) {
+      if (!routed) { hasUnrouted = true; break; }
+    }
+    if (hasUnrouted) {
+      shownRouteHint = true;
+      showOverlay('ROUTE CONVEYORS [V] TO THE CORE', '#99ffcc', 4.5);
+      return;
+    }
+  }
+
+  if (!shownWallHint && waveIndex >= 1) {
+    let hasWall = false;
+    for (let i = 0; i < structures.length; i += 1) {
+      if (structures[i] === 'wall') { hasWall = true; break; }
+    }
+    if (!hasWall) {
+      shownWallHint = true;
+      showOverlay('BUILD WALLS [W] TO SLOW ENEMIES', '#99ffcc', 4.5);
+      return;
+    }
+  }
+
+  if (!shownTurretHint && waveIndex >= 2) {
+    let hasCombat = false;
+    for (let i = 0; i < structures.length; i += 1) {
+      const s = structures[i];
+      if (s === 'turret' || s === 'gatling' || s === 'cannon') { hasCombat = true; break; }
+    }
+    if (!hasCombat) {
+      shownTurretHint = true;
+      showOverlay('BUILD TURRET [T] TO DEFEND CORE', '#99ffcc', 4.5);
+      return;
+    }
+  }
+
+  if (!shownRadarHint && waveIndex >= 3) {
+    let hasRadar = false;
+    for (let i = 0; i < structures.length; i += 1) {
+      if (structures[i] === 'radar') { hasRadar = true; break; }
+    }
+    if (!hasRadar) {
+      shownRadarHint = true;
+      showOverlay('BUILD RADAR [R] TO EXPAND AREA', '#99ffcc', 4.5);
+    }
+  }
+}
+
 function update(dtSec: number): void {
   if (isRunOver) {
     if (gameOverDelaySec > 0) {
@@ -2456,6 +2551,7 @@ function update(dtSec: number): void {
   updateMotes(dtSec);
   updateExtractors(dtSec);
   updateRoutedMotes(dtSec);
+  updateTutorialHints();
 
   // Advance repair sparkles
   for (let i = repairSparkles.length - 1; i >= 0; i -= 1) {
@@ -3373,16 +3469,29 @@ function render(): void {
     const cx = nativeWidthPx / 2;
     ctx.save();
     if (overlayText === 'GAME OVER') {
-      ctx.fillStyle = 'rgba(0,0,0,0.72)';
-      ctx.fillRect(0, nativeHeightPx / 2 - 22, nativeWidthPx, 44);
-      ctx.font = 'bold 14px monospace';
+      const panelH = 84;
+      const panelY = nativeHeightPx / 2 - panelH / 2;
+      ctx.fillStyle = 'rgba(0,0,0,0.78)';
+      ctx.fillRect(0, panelY, nativeWidthPx, panelH);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+
+      const lineY = (offset: number) => panelY + panelH / 2 + offset;
+
+      ctx.font = 'bold 13px monospace';
       ctx.fillStyle = overlayColor;
-      ctx.fillText('GAME OVER', cx, nativeHeightPx / 2 - 8);
+      ctx.fillText('GAME OVER', cx, lineY(-27));
+
       ctx.font = '7px monospace';
       ctx.fillStyle = '#aaccee';
-      ctx.fillText(`Wave ${waveIndex} · ${Math.floor(elapsedSec)}s · +${lastMetaEarned}${META_SYMBOL} meta  ·  restarting…`, cx, nativeHeightPx / 2 + 7);
+      ctx.fillText(`Wave ${waveIndex} · ${Math.floor(elapsedSec)}s · +${lastMetaEarned}${META_SYMBOL} meta`, cx, lineY(-12));
+      ctx.fillText(`Killed: ${totalEnemiesKilled} · Built: ${totalStructuresBuilt} structures`, cx, lineY(0));
+      ctx.fillText(`Ore mined: ${totalOreEarned}`, cx, lineY(12));
+
+      ctx.font = '6px monospace';
+      ctx.fillStyle = '#667799';
+      const remaining = Math.max(0, gameOverDelaySec);
+      ctx.fillText(`restarting in ${remaining.toFixed(1)}s…`, cx, lineY(26));
     } else {
       const fadeAlpha = Math.min(1, overlayTimerSec) * 0.9;
       ctx.fillStyle = `rgba(0,0,0,${fadeAlpha * 0.5})`;
@@ -3474,7 +3583,7 @@ function render(): void {
   metaButtonElement.style.color = '#c0e8ff';
   metaMenuCurrencyElement.textContent = `${metaCurrency}${META_SYMBOL}`;
 
-  nextWaveSpan.textContent = isRunOver ? 'restarting…' : `Next ${waveTimerSec.toFixed(1)}s`;
+  nextWaveSpan.textContent = isRunOver ? `restarting ${Math.max(0, gameOverDelaySec).toFixed(1)}s` : `Next ${waveTimerSec.toFixed(1)}s`;
   nextWaveSpan.style.color = waveTimerSec < 2 && !isRunOver ? '#ff5522' : '#ffcc44';
 
   coalGpSpan.textContent = `Coal ${coal} · GP ${gunpowder}`;

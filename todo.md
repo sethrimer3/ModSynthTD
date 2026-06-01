@@ -55,7 +55,7 @@ AI agents should maintain this file as part of normal implementation work.
 
 ## Radar and Expansion
 
-- [ ] Make radar expand visible and buildable area through clearer stages.
+- [x] Make radar expand visible and buildable area through clearer stages.
 - [x] Add radar-based enemy direction warnings.
 - [x] Add radar-based resource discovery beyond the current second deposit.
 - [ ] Add radar-based debris weakness or breach warning information.
@@ -77,7 +77,7 @@ AI agents should maintain this file as part of normal implementation work.
 - [ ] Add module assignment limits for strategic logistics pieces.
 - [ ] Add finite harvest windows for base runs.
 - [ ] Add offline simulation summary: earned resources, failure time, bottleneck cause.
-- [ ] Add run summary details beyond basic meta gain.
+- [x] Add run summary details beyond basic meta gain.
 
 ## Future World Systems
 
@@ -95,7 +95,7 @@ AI agents should maintain this file as part of normal implementation work.
 - [x] Add turret uptime and ammo starvation readouts.
 - [ ] Add optional advanced overlays: heat, bottlenecks, purity, threat forecast.
 - [ ] Improve build previews for multi-tile buildings and routed structures.
-- [ ] Add clearer tutorial prompts for the first route, first turret, first wall, first radar, and first breach.
+- [x] Add clearer tutorial prompts for the first route, first turret, first wall, first radar, and first breach.
 - [ ] Keep all visuals readable at the native pixel scale.
 - [x] Add conveyor direction preview ghost for conveyor/extractor tool (Q to rotate tooltip visible in place).
 
