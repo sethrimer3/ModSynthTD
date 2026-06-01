@@ -144,3 +144,88 @@ body {
 .toolButton.active .toolKey {
   color: #99bbdd;
 }
+
+/* ── Upgrade panel ────────────────────────────────────────────────────────── */
+
+.upgradesPanel {
+  padding: 0.25rem 0 0.5rem;
+}
+
+.upgradesPanelLabel {
+  font-size: 0.58rem;
+  letter-spacing: 0.09em;
+  color: #5577aa;
+  text-align: center;
+  margin-bottom: 0.3rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.upgradeButtonsContainer {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.upgradeButton {
+  border: 1px solid #223048;
+  border-radius: 8px;
+  color: #445566;
+  background: #0a1120;
+  min-height: 3.4rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: inherit;
+  line-height: 1.25;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.08rem;
+  padding: 0.3rem 0.2rem;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  transition: background 0.08s, border-color 0.08s;
+}
+
+.upgradeButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.upgradeButton.affordable {
+  border-color: #6090c0;
+  color: #aaccee;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(130, 190, 255, 0.18);
+}
+
+.upgradeButton.affordable:active {
+  background: #142030;
+}
+
+.upgradeButton.unaffordable {
+  border-color: #223048;
+  color: #3a5070;
+}
+
+.upgradeButton.maxed {
+  border-color: #2a4060;
+  color: #3a5060;
+  cursor: not-allowed;
+}
+
+.upgLabel {
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.upgLevel {
+  font-size: 0.56rem;
+  opacity: 0.85;
+}
+
+.upgDesc {
+  font-size: 0.53rem;
+  opacity: 0.75;
+}
