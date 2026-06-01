@@ -134,20 +134,66 @@ body {
   cursor: crosshair;
 }
 
-.toolbar {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+.buildPalette {
+  display: flex;
   gap: 0.45rem;
+  align-items: flex-start;
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-.toolButton {
+.paletteCategories {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  width: 4.5rem;
+}
+
+.categoryButton {
   border: 1px solid #355286;
-  border-radius: 8px;
+  border-radius: 6px;
   color: #dff6ff;
   background: #141f35;
-  min-height: 3rem;
-  font-size: 0.75rem;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  font-size: 0.62rem;
+  font-weight: 700;
+  font-family: inherit;
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.1rem;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  transition: background 0.08s;
+}
+
+.categoryButton:active {
+  background: #1f3050;
+}
+
+.categoryButton.active {
+  background: #2f4c84;
+  border-color: var(--cat-color, #5580c0);
+  box-shadow: 0 0 8px rgba(80, 180, 255, 0.3);
+}
+
+.paletteItems {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+  align-content: start;
+}
+
+.itemButton {
+  border: 1px solid #355286;
+  border-radius: 6px;
+  color: #dff6ff;
+  background: #141f35;
+  aspect-ratio: 1 / 1;
+  font-size: 0.65rem;
   font-weight: 700;
   font-family: inherit;
   line-height: 1.2;
@@ -156,29 +202,29 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.1rem;
-  padding: 0.35rem 0.2rem;
+  padding: 0.2rem;
   -webkit-tap-highlight-color: transparent;
   cursor: pointer;
   transition: background 0.08s;
 }
 
-.toolButton:active {
+.itemButton:active {
   background: #1f3050;
 }
 
-.toolButton.active {
+.itemButton.active {
   background: #2f4c84;
-  border-color: var(--tool-color, #5580c0);
+  border-color: var(--item-color, #5580c0);
   box-shadow: 0 0 10px rgba(80, 180, 255, 0.35);
 }
 
-.toolKey {
+.itemKey {
   font-size: 0.6rem;
   color: #5577aa;
   font-weight: 400;
 }
 
-.toolButton.active .toolKey {
+.itemButton.active .itemKey {
   color: #99bbdd;
 }
 
