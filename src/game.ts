@@ -23,6 +23,19 @@ interface ShotFlash {
   ageSec: number;
 }
 
+interface WormSegment {
+  xTile: number;
+  yTile: number;
+  hp: number;
+  maxHp: number;
+}
+
+interface Worm {
+  segments: WormSegment[];
+  speedTilePerSec: number;
+  wallAttackCooldownSec: number;
+}
+
 type MetaUpgradeKey = 'coreArmor' | 'turretPower' | 'oreBonus';
 
 interface MetaUpgradeConfig {
@@ -42,7 +55,7 @@ const coreTile = { x: Math.floor(gridWidthTile / 2), y: Math.floor(gridHeightTil
 const depositTile = { x: 3, y: 2 };
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 5;
+const currentBuildNumber = 7;
 const turretRangeTile = 4.5;
 const shotFlashDurationSec = 0.12;
 const breakerArrivalDistanceTile = 0.2;
@@ -80,6 +93,12 @@ const META_UPGRADE_CONFIGS: Record<MetaUpgradeKey, MetaUpgradeConfig> = {
   turretPower: { label: 'Turret Power', costPerLevel: 8,  maxLevel: 3, stat: (l) => `+${l * TURRET_POWER_DAMAGE_PER_LEVEL} dmg` },
   oreBonus:    { label: 'Ore Start',    costPerLevel: 6,  maxLevel: 3, stat: (l) => `+${l * ORE_BONUS_PER_LEVEL} start ore`     },
 };
+const WORM_SEGMENT_HP_BASE = 10;
+const WORM_SEGMENT_HP_PER_WAVE = 1.5;
+const WORM_SEGMENT_SPACING_TILE = 0.6;
+const WORM_MIN_SURVIVE_SEGMENTS = 3;
+const WORM_SPAWN_START_WAVE = 2;
+const TURRET_FIRE_COOLDOWN_SEC = 0.35;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function clamp(v: number, lo: number, hi: number): number {
@@ -272,6 +291,7 @@ let motes: Mote[] = [];
 let motes2: Mote[] = [];
 let shotFlashes: ShotFlash[] = [];
 let mote2SpawnCooldownSec = 0.8;
+let worms: Worm[] = [];
 
 const structureHp = new Map<number, number>();
 const blueprintGhosts = new Map<number, Structure>();
@@ -728,6 +748,38 @@ function spawnWave(): void {
     }
   }
 
+  // Spawn one worm per wave starting at WORM_SPAWN_START_WAVE
+  if (waveIndex >= WORM_SPAWN_START_WAVE) {
+    const segmentCount = Math.min(14, 6 + Math.floor((waveIndex - WORM_SPAWN_START_WAVE) / 2));
+    const segmentHp = Math.floor(WORM_SEGMENT_HP_BASE + waveIndex * WORM_SEGMENT_HP_PER_WAVE);
+    const segs: WormSegment[] = [];
+    for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
+      segs.push({
+        xTile: entranceTile.x - segmentIndex * WORM_SEGMENT_SPACING_TILE,
+        yTile: entranceTile.y,
+        hp: segmentHp,
+        maxHp: segmentHp,
+      });
+    }
+    worms.push({ segments: segs, speedTilePerSec: 0.75 + waveIndex * 0.04, wallAttackCooldownSec: 0 });
+  }
+
+  // After breach: also spawn a worm from the second entrance every other wave
+  if (breachOpened && waveIndex >= SECOND_ENTRANCE_ACTIVATION_WAVE && (waveIndex - SECOND_ENTRANCE_ACTIVATION_WAVE) % 2 === 0) {
+    const segmentCount = Math.min(10, 4 + Math.floor((waveIndex - WORM_SPAWN_START_WAVE) / 3));
+    const segmentHp = Math.floor(WORM_SEGMENT_HP_BASE + waveIndex * WORM_SEGMENT_HP_PER_WAVE);
+    const segs: WormSegment[] = [];
+    for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
+      segs.push({
+        xTile: secondEntranceTile.x,
+        yTile: secondEntranceTile.y - segmentIndex * WORM_SEGMENT_SPACING_TILE,
+        hp: segmentHp,
+        maxHp: segmentHp,
+      });
+    }
+    worms.push({ segments: segs, speedTilePerSec: 0.75 + waveIndex * 0.04, wallAttackCooldownSec: 0 });
+  }
+
   showOverlay(`WAVE ${waveIndex}`, '#ffee44', 2);
 }
 
@@ -750,6 +802,7 @@ function resetRun(): void {
   motes = [];
   motes2 = [];
   mote2SpawnCooldownSec = 0.8;
+  worms = [];
   shotFlashes = [];
   structureHp.clear();
   blueprintGhosts.clear();
@@ -863,10 +916,127 @@ function updateEnemies(dtSec: number): void {
   }
 }
 
+function updateWorms(dtSec: number): void {
+  for (let wi = worms.length - 1; wi >= 0; wi -= 1) {
+    const worm = worms[wi];
+    if (worm.segments.length === 0) {
+      worms.splice(wi, 1);
+      continue;
+    }
+
+    const head = worm.segments[0];
+
+    // Head reached the core
+    if (Math.abs(head.xTile - coreTile.x) < 0.5 && Math.abs(head.yTile - coreTile.y) < 0.5) {
+      coreHp -= 6;
+      worms.splice(wi, 1);
+      if (coreHp <= 0 && !isRunOver) {
+        isRunOver = true;
+        lastMetaEarned = Math.max(1, Math.floor(ore / 8 + waveIndex * 2 + elapsedSec / 12));
+        gameOverDelaySec = 3;
+        showOverlay('GAME OVER', '#ff5533', 999);
+      }
+      continue;
+    }
+
+    // Move head via BFS distance field
+    const headXTile = Math.round(head.xTile);
+    const headYTile = Math.round(head.yTile);
+    if (!isInBounds(headXTile, headYTile)) {
+      worms.splice(wi, 1);
+      continue;
+    }
+
+    const currentDist = distanceField[tileIndex(headXTile, headYTile)];
+    if (currentDist > 0) {
+      let bestXTile = headXTile;
+      let bestYTile = headYTile;
+      let bestDist = currentDist;
+      for (const [dx, dy] of ADJ_OFFSETS) {
+        const nx = headXTile + dx;
+        const ny = headYTile + dy;
+        if (!isInBounds(nx, ny)) { continue; }
+        const d = distanceField[tileIndex(nx, ny)];
+        if (d >= 0 && d < bestDist) { bestDist = d; bestXTile = nx; bestYTile = ny; }
+      }
+      const dxTile = bestXTile - head.xTile;
+      const dyTile = bestYTile - head.yTile;
+      const dist = Math.hypot(dxTile, dyTile);
+      if (dist > 0.001) {
+        const step = (worm.speedTilePerSec * dtSec) / dist;
+        head.xTile += dxTile * Math.min(1, step);
+        head.yTile += dyTile * Math.min(1, step);
+      }
+    }
+
+    // Each body segment follows the one in front, maintaining max spacing
+    for (let segmentIndex = 1; segmentIndex < worm.segments.length; segmentIndex += 1) {
+      const prev = worm.segments[segmentIndex - 1];
+      const seg = worm.segments[segmentIndex];
+      const dxTile = prev.xTile - seg.xTile;
+      const dyTile = prev.yTile - seg.yTile;
+      const dist = Math.hypot(dxTile, dyTile);
+      if (dist > WORM_SEGMENT_SPACING_TILE) {
+        const pull = (dist - WORM_SEGMENT_SPACING_TILE) / dist;
+        seg.xTile += dxTile * pull;
+        seg.yTile += dyTile * pull;
+      }
+    }
+
+    // Head attacks adjacent structures
+    worm.wallAttackCooldownSec -= dtSec;
+    if (worm.wallAttackCooldownSec <= 0) {
+      const ex = Math.round(head.xTile);
+      const ey = Math.round(head.yTile);
+      for (const [dx, dy] of ADJ_OFFSETS) {
+        const ax = ex + dx;
+        const ay = ey + dy;
+        if (!isInBounds(ax, ay)) { continue; }
+        const aIdx = tileIndex(ax, ay);
+        if (structureHp.has(aIdx)) {
+          damageStructure(aIdx, ENEMY_WALL_DAMAGE);
+          worm.wallAttackCooldownSec = ENEMY_WALL_ATTACK_COOLDOWN_SEC;
+          break;
+        }
+      }
+      if (worm.wallAttackCooldownSec <= 0) { worm.wallAttackCooldownSec = 0; }
+    }
+  }
+}
+
+function cleanDeadWormSegments(): void {
+  const nextWorms: Worm[] = [];
+  for (const worm of worms) {
+    if (!worm.segments.some(s => s.hp <= 0)) {
+      nextWorms.push(worm);
+      continue;
+    }
+    // Split the worm at each dead segment; award ore for each kill
+    let fragment: WormSegment[] = [];
+    for (const seg of worm.segments) {
+      if (seg.hp <= 0) {
+        ore += 1;
+        totalOreEarned += 1;
+        if (fragment.length >= WORM_MIN_SURVIVE_SEGMENTS) {
+          nextWorms.push({ segments: fragment, speedTilePerSec: worm.speedTilePerSec, wallAttackCooldownSec: 0 });
+        }
+        fragment = [];
+      } else {
+        fragment.push(seg);
+      }
+    }
+    if (fragment.length >= WORM_MIN_SURVIVE_SEGMENTS) {
+      nextWorms.push({ segments: fragment, speedTilePerSec: worm.speedTilePerSec, wallAttackCooldownSec: worm.wallAttackCooldownSec });
+    }
+  }
+  worms = nextWorms;
+}
+
 function updateTurrets(dtSec: number): void {
   turretFireCooldownSec -= dtSec;
   if (turretFireCooldownSec <= 0) {
-    turretFireCooldownSec = 0.35;
+    turretFireCooldownSec = TURRET_FIRE_COOLDOWN_SEC;
+    const damage = TURRET_BASE_DAMAGE + upgradeLevel.turretPower * TURRET_POWER_DAMAGE_PER_LEVEL;
 
     for (let yTile = 0; yTile < gridHeightTile; yTile += 1) {
       for (let xTile = 0; xTile < gridWidthTile; xTile += 1) {
@@ -876,7 +1046,10 @@ function updateTurrets(dtSec: number): void {
         }
 
         let targetEnemy: Enemy | undefined;
+        let targetWorm: Worm | undefined;
+        let targetWormSegIdx = -1;
         let bestDistance = Number.POSITIVE_INFINITY;
+
         for (const enemy of enemies) {
           const dxTile = enemy.xTile - xTile;
           const dyTile = enemy.yTile - yTile;
@@ -884,23 +1057,49 @@ function updateTurrets(dtSec: number): void {
           if (dist < turretRangeTile && dist < bestDistance) {
             bestDistance = dist;
             targetEnemy = enemy;
+            targetWorm = undefined;
           }
         }
 
-        if (!targetEnemy) {
+        for (const worm of worms) {
+          for (let si = 0; si < worm.segments.length; si += 1) {
+            const seg = worm.segments[si];
+            const dist = Math.hypot(seg.xTile - xTile, seg.yTile - yTile);
+            if (dist < turretRangeTile && dist < bestDistance) {
+              bestDistance = dist;
+              targetWorm = worm;
+              targetWormSegIdx = si;
+              targetEnemy = undefined;
+            }
+          }
+        }
+
+        if (!targetEnemy && targetWorm === undefined) {
           continue;
         }
 
-        targetEnemy.hp -= TURRET_BASE_DAMAGE + upgradeLevel.turretPower * TURRET_POWER_DAMAGE_PER_LEVEL;
-        turretAngleRad.set(idx, Math.atan2(targetEnemy.yTile - yTile, targetEnemy.xTile - xTile));
+        let targetXTile: number;
+        let targetYTile: number;
+        if (targetEnemy) {
+          targetEnemy.hp -= damage;
+          targetXTile = targetEnemy.xTile;
+          targetYTile = targetEnemy.yTile;
+        } else {
+          const targetSegment = targetWorm!.segments[targetWormSegIdx];
+          targetSegment.hp -= damage;
+          targetXTile = targetSegment.xTile;
+          targetYTile = targetSegment.yTile;
+        }
+
+        turretAngleRad.set(idx, Math.atan2(targetYTile - yTile, targetXTile - xTile));
 
         const half = tileSizePx / 2;
         shotFlashes.push({
           fromXPx: xTile * tileSizePx + half,
           fromYPx: yTile * tileSizePx + half,
-          toXPx: Math.round(targetEnemy.xTile * tileSizePx + half),
-          toYPx: Math.round(targetEnemy.yTile * tileSizePx + half),
-          ageSec: 0
+          toXPx: Math.round(targetXTile * tileSizePx + half),
+          toYPx: Math.round(targetYTile * tileSizePx + half),
+          ageSec: 0,
         });
       }
     }
@@ -913,6 +1112,8 @@ function updateTurrets(dtSec: number): void {
       totalOreEarned += 2;
     }
   }
+
+  cleanDeadWormSegments();
 
   for (let i = shotFlashes.length - 1; i >= 0; i -= 1) {
     shotFlashes[i].ageSec += dtSec;
@@ -981,6 +1182,7 @@ function update(dtSec: number): void {
   }
 
   updateEnemies(dtSec);
+  updateWorms(dtSec);
   updateTurrets(dtSec);
   updateMotes(dtSec);
 }
@@ -1042,6 +1244,22 @@ function drawTurretTile(xPx: number, yPx: number, idx: number): void {
   if (tipXOff >= 0 && tipXOff < tileSizePx && tipYOff >= 0 && tipYOff < tileSizePx) {
     fillPx(xPx + tipXOff, yPx + tipYOff, 1, 1, '#aaf8ff');
   }
+
+  // Charge bar: full bar at top indicates ready-to-fire; empties after each shot.
+  // During the initial pre-wave delay, turretFireCooldownSec is set to the startup
+  // delay constant (~3 s) which is > TURRET_FIRE_COOLDOWN_SEC (0.35 s), so we
+  // show full charge (turrets appear primed) rather than a misleadingly-empty bar.
+  const chargeRatio = turretFireCooldownSec > TURRET_FIRE_COOLDOWN_SEC
+    ? 1
+    : Math.max(0, 1 - turretFireCooldownSec / TURRET_FIRE_COOLDOWN_SEC);
+  const barMaxW = tileSizePx - 2;
+  const chargeW = Math.round(chargeRatio * barMaxW);
+  ctx.fillStyle = '#0a2030';
+  ctx.fillRect(xPx + 1, yPx + 1, barMaxW, 1);
+  if (chargeW > 0) {
+    ctx.fillStyle = chargeRatio >= 1 ? '#27e0ff' : '#0e6680';
+    ctx.fillRect(xPx + 1, yPx + 1, chargeW, 1);
+  }
 }
 
 function drawRadarTile(xPx: number, yPx: number): void {
@@ -1069,7 +1287,9 @@ function drawRadarTile(xPx: number, yPx: number): void {
 }
 
 function drawCoreTile(xPx: number, yPx: number): void {
-  const coreColor = coreHp > coreHpHealthyThreshold ? '#33ffbb' : coreHp > coreHpDamagedThreshold ? '#ffee44' : '#ff5533';
+  const maxCoreHpForColor = BASE_CORE_HP + upgradeLevel.coreArmor * CORE_ARMOR_HP_PER_LEVEL;
+  const hpFracCore = coreHp / maxCoreHpForColor;
+  const coreColor = hpFracCore > coreHpHealthyThreshold / 100 ? '#33ffbb' : hpFracCore > coreHpDamagedThreshold / 100 ? '#ffee44' : '#ff5533';
   fillPx(xPx, yPx, tileSizePx, tileSizePx, '#050f0a');
   ctx.fillStyle = coreColor;
   ctx.fillRect(xPx + 4, yPx + 4, 4, 4);
@@ -1150,6 +1370,36 @@ function drawBlueprintGhost(xPx: number, yPx: number, ghostType: Structure): voi
     ctx.strokeRect(xPx + 0.5, yPx + 0.5, tileSizePx - 1, tileSizePx - 1);
     ctx.fillStyle = 'rgba(141,104,255,0.3)';
     ctx.fillRect(xPx + 5, yPx + 5, 2, 2);
+  }
+}
+
+function drawWorm(worm: Worm): void {
+  const segs = worm.segments;
+  if (segs.length === 0) { return; }
+  const half = tileSizePx / 2;
+
+  // Draw spine connecting segments
+  ctx.strokeStyle = '#6b3311';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(segs[0].xTile * tileSizePx + half, segs[0].yTile * tileSizePx + half);
+  for (let i = 1; i < segs.length; i += 1) {
+    ctx.lineTo(segs[i].xTile * tileSizePx + half, segs[i].yTile * tileSizePx + half);
+  }
+  ctx.stroke();
+
+  // Draw segments tail-to-head so head renders on top
+  for (let i = segs.length - 1; i >= 0; i -= 1) {
+    const seg = segs[i];
+    const cx = seg.xTile * tileSizePx + half;
+    const cy = seg.yTile * tileSizePx + half;
+    const hpRatio = seg.hp / seg.maxHp;
+    ctx.fillStyle = i === 0
+      ? '#ff9944'
+      : hpRatio > 0.5 ? '#cc5522' : '#dd3300';
+    ctx.beginPath();
+    ctx.arc(cx, cy, i === 0 ? 3 : 2, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
@@ -1309,6 +1559,11 @@ function render(): void {
     }
   }
 
+  // Worm enemies
+  for (const worm of worms) {
+    drawWorm(worm);
+  }
+
   // Hover ghost tile
   if (!isPointerHeld && hoveredXTile >= 0 && isInBounds(hoveredXTile, hoveredYTile)) {
     const xPx = hoveredXTile * tileSizePx;
@@ -1372,8 +1627,9 @@ function render(): void {
   ctx.restore();
 
   // HUD spans
-  const hpRatio = Math.max(0, coreHp) / 100;
-  hpSpan.textContent = `HP ${Math.max(0, Math.ceil(coreHp))}`;
+  const maxCoreHp = BASE_CORE_HP + upgradeLevel.coreArmor * CORE_ARMOR_HP_PER_LEVEL;
+  const hpRatio = Math.max(0, coreHp) / maxCoreHp;
+  hpSpan.textContent = `HP ${Math.max(0, Math.ceil(coreHp))}/${maxCoreHp}`;
   hpSpan.style.color = hpRatio > coreHpHealthyThreshold / 100 ? '#33ffbb' : hpRatio > coreHpDamagedThreshold / 100 ? '#ffaa44' : '#ff4444';
 
   oreSpan.textContent = elapsedSec > ORE_RATE_DISPLAY_DELAY_SEC
@@ -1381,7 +1637,8 @@ function render(): void {
     : `Ore ${ore}`;
   oreSpan.style.color = '#f0a600';
 
-  waveSpan.textContent = `Wave ${waveIndex}`;
+  const activeThreats = enemies.length + worms.reduce((sum, w) => sum + w.segments.length, 0);
+  waveSpan.textContent = activeThreats > 0 ? `Wave ${waveIndex} · ${activeThreats}` : `Wave ${waveIndex}`;
   waveSpan.style.color = '#ff8844';
 
   radarSpan.textContent = `Radar ${radarLevel}`;

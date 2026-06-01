@@ -7,7 +7,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 ## 1. First Load / Cold Start
 
 - [ ] Game canvas renders at correct aspect ratio
-- [ ] HUD shows `HP 100`, `Ore 0`, `Wave 0`, `Radar 1`, `Meta <n>`, `Next 8.0s`
+- [ ] HUD shows `HP 100/100`, `Ore 0`, `Wave 0`, `Radar 1`, `Meta <n>`, `Next 8.0s`
 - [ ] Deposit tile is visible (upper-left area)
 - [ ] Core tile is visible (center)
 - [ ] Debris ring surrounds core with one opening at the left entrance
@@ -123,7 +123,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] GAME OVER overlay appears in red with wave count, elapsed time, meta earned
 - [ ] Game auto-restarts after ~3 seconds
 - [ ] Meta currency is added to persistent total on game over
-- [ ] After restart: HP 100 (+ Core Armor), ore reset (+ Ore Start), wave 0, structures cleared
+- [ ] After restart: HP 100/100 (or 120/120 etc. with Core Armor), ore reset (+ Ore Start), wave 0, structures cleared
 - [ ] Debris ring rebuilt, second entrance closed, Breaker not yet triggered
 
 ---
@@ -136,7 +136,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Buttons show "MAX" when at level 3
 - [ ] Affordable buttons have a blue border; unaffordable buttons are dim
 - [ ] Clicking an affordable upgrade deducts meta and increments the level
-- [ ] Buying Core Armor immediately increases HP by +20 and raises max HP
+- [ ] Buying Core Armor immediately increases HP by +20, raises max HP, and HUD shows new current/max (e.g. `HP 120/120`)
 - [ ] Buying Ore Start immediately adds +30 ore
 - [ ] Turret Power bonus is visible in enemy kill speed (harder to observe precisely)
 - [ ] "NEED META ◆" overlay appears when clicking an unaffordable upgrade mid-run
@@ -158,3 +158,47 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Toolbar buttons are comfortably tappable on mobile
 - [ ] Upgrade panel buttons are comfortably tappable on mobile
 - [ ] No horizontal overflow
+
+---
+
+## 16. Worm Enemy
+
+- [ ] First worm spawns at wave 2 from the main entrance
+- [ ] Worm head follows BFS path toward the core
+- [ ] Body segments trail the head with smooth chain-constraint movement
+- [ ] Turrets can target and shoot worm segments (beam flash visible)
+- [ ] Killing a middle segment splits the worm into two fragments
+- [ ] Fragment with ≥ 3 segments continues moving; fragment with < 3 is removed
+- [ ] Each killed segment awards 1 ore
+- [ ] Worm head reaching the core deals 6 damage and removes the worm
+- [ ] Core drops to 0 HP from worm → game over flow triggers normally
+- [ ] `worms = []` on run reset: no worms visible after game-over restart
+- [ ] Worm spine (brown line) and segment circles render correctly (amber head, dark-orange body)
+- [ ] Segment color shifts to red when HP < 50%
+
+---
+
+## 17. Turret Charge Bar
+
+- [ ] Each placed turret shows a 1-pixel charge bar at its top edge
+- [ ] Bar shows full (bright cyan) when turret is ready to fire
+- [ ] Bar empties (dim) immediately after a shot, then refills over ~0.35 s
+- [ ] Bar shows full during the initial 3-second pre-wave delay
+
+---
+
+## 18. HUD Improvements
+
+- [ ] HP display shows `HP current/max` (e.g. `HP 100/100` at start, `HP 120/120` with Core Armor Lv 1)
+- [ ] HP color threshold is proportional to max HP (at HP=80 with max=160, color should be yellow, not green)
+- [ ] Wave counter shows enemy/worm count when threats are active (e.g. `Wave 3 · 5`)
+- [ ] Enemy count disappears between waves when no threats are on the board
+
+---
+
+## 19. Post-Breach Worm (Second Entrance)
+
+- [ ] After breach, a worm spawns from the second (top) entrance on the first eligible wave (wave 7) and every other wave thereafter
+- [ ] Worm head enters from the top and paths to the core via BFS
+- [ ] Second-entrance worm is smaller (≤ 10 segments) than the main-entrance worm
+- [ ] If breach has not occurred, no worm spawns from the second entrance

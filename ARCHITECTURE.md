@@ -46,6 +46,7 @@ Key constants:
 - `gridWidthTile` / `gridHeightTile` — board dimensions (20 × 12)
 - `coreTile`, `depositTile`, `deposit2Tile` — fixed positions
 - `turretRangeTile` — turret attack range in tiles
+- `TURRET_FIRE_COOLDOWN_SEC` — turret fire cycle duration (0.35 s)
 - `META_UPGRADE_CONFIGS` — upgrade label, cost, cap, and stat formula
 
 ### 3.2 Game State
@@ -65,7 +66,7 @@ Top-level mutable state is declared as `let` at module level:
 | `enemies` | Enemy[] | Active enemy list |
 | `motes` | Mote[] | Ore motes from deposit 1 |
 | `motes2` | Mote[] | Ore motes from deposit 2 |
-| `shotFlashes` | ShotFlash[] | Turret beam visuals |
+| `worms` | Worm[] | Active worm enemy list |
 | `structures` | Structure[] | Flat tile-index array of placed structures |
 | `terrainIsDebris` | boolean[] | Flat tile-index array of debris tiles |
 | `structureHp` | Map<number, number> | HP per placed structure (by tile index) |
@@ -95,6 +96,7 @@ The Breaker enemy bypasses the distance field and moves directly toward `breaker
 requestAnimationFrame
   └─ update(dtSec)
        ├─ updateEnemies(dtSec)
+       ├─ updateWorms(dtSec)
        ├─ updateTurrets(dtSec)
        └─ updateMotes(dtSec)
   └─ render()
@@ -102,6 +104,7 @@ requestAnimationFrame
        ├─ draw grid lines (during hover)
        ├─ draw deposits and motes
        ├─ draw enemies and shot flashes
+       ├─ draw worm enemies
        ├─ draw hover ghost and turret range preview
        ├─ draw overlays (WAVE, BREACH, GAME OVER)
        └─ update HUD spans and upgrade panel
@@ -155,11 +158,12 @@ Draw order per frame:
 12. Deposit 1 motes
 13. Shot flashes
 14. Enemies with HP bars
-15. Hover ghost tile (green tint for repair tool, red for erase)
-16. Overlays (WAVE, BREACH, GAME OVER)
-17. Build number watermark
-18. HUD span updates (ore shows rate `/s` after 4 s elapsed) + upgrade panel state update
-19. Status bar update (repair cost hint when repair tool selected)
+15. Worm enemies (spine lines + segment circles)
+16. Hover ghost tile (green tint for repair tool, red for erase)
+17. Overlays (WAVE, BREACH, GAME OVER)
+18. Build number watermark
+19. HUD span updates (ore shows rate `/s` after 4 s elapsed) + upgrade panel state update
+20. Status bar update (repair cost hint when repair tool selected)
 
 ---
 
