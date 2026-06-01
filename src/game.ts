@@ -759,23 +759,23 @@ function damageStructure(index: number, amount: number): void {
 // that borders the walkable region. Among all such candidates, pick the one closest to the core.
 // Returns -1 if no candidate is found.
 function findAttackableBlockingBuilding(startXTile: number, startYTile: number): number {
-  const sx = Math.round(startXTile);
-  const sy = Math.round(startYTile);
-  if (!isInBounds(sx, sy)) { return -1; }
+  const startXTileRounded = Math.round(startXTile);
+  const startYTileRounded = Math.round(startYTile);
+  if (!isInBounds(startXTileRounded, startYTileRounded)) { return -1; }
 
   const visited = new Set<number>();
   const queue: [number, number][] = [];
-  const startIdx = tileIndex(sx, sy);
+  const startIdx = tileIndex(startXTileRounded, startYTileRounded);
 
   if (!terrainIsDebris[startIdx] && structures[startIdx] === 'empty') {
-    queue.push([sx, sy]);
+    queue.push([startXTileRounded, startYTileRounded]);
     visited.add(startIdx);
   }
 
   const candidates: number[] = [];
 
-  for (let qi = 0; qi < queue.length; qi += 1) {
-    const [x, y] = queue[qi];
+  for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
+    const [x, y] = queue[queueIndex];
     for (const [dx, dy] of ADJ_OFFSETS) {
       const nx = x + dx;
       const ny = y + dy;
@@ -798,18 +798,69 @@ function findAttackableBlockingBuilding(startXTile: number, startYTile: number):
   if (candidates.length === 0) { return -1; }
 
   // Pick the candidate closest (Euclidean) to the core — the most strategically relevant blocker
-  let best = -1;
-  let bestDist = Infinity;
+  let bestBlockingIndex = -1;
+  let bestDistanceToCore = Infinity;
   for (const idx of candidates) {
     const cx = idx % gridWidthTile;
     const cy = Math.floor(idx / gridWidthTile);
     const d = Math.hypot(cx - coreTile.x, cy - coreTile.y);
-    if (d < bestDist) {
-      bestDist = d;
-      best = idx;
+    if (d < bestDistanceToCore) {
+      bestDistanceToCore = d;
+      bestBlockingIndex = idx;
     }
   }
-  return best;
+  return bestBlockingIndex;
+}
+
+// Move an enemy toward a blocking building and attack it when in range.
+function moveAndAttackBlockingBuilding(
+  entity: { xTile: number; yTile: number; speedTilePerSec: number; wallAttackCooldownSec: number },
+  blockIdx: number,
+  dtSec: number
+): void {
+  const bx = blockIdx % gridWidthTile;
+  const by = Math.floor(blockIdx / gridWidthTile);
+  const dxTile = bx - entity.xTile;
+  const dyTile = by - entity.yTile;
+  const dist = Math.hypot(dxTile, dyTile);
+  if (dist > 1.0) {
+    const step = (entity.speedTilePerSec * dtSec) / dist;
+    entity.xTile += dxTile * Math.min(1, step);
+    entity.yTile += dyTile * Math.min(1, step);
+  }
+  entity.wallAttackCooldownSec -= dtSec;
+  if (entity.wallAttackCooldownSec <= 0 && dist <= 1.5) {
+    damageStructure(blockIdx, ENEMY_WALL_DAMAGE);
+    entity.wallAttackCooldownSec = ENEMY_WALL_ATTACK_COOLDOWN_SEC;
+  } else if (entity.wallAttackCooldownSec < 0) {
+    entity.wallAttackCooldownSec = 0;
+  }
+}
+
+// Move a worm head toward a blocking building; attack is tracked on the worm (not the segment).
+function moveWormHeadAndAttackBlockingBuilding(
+  head: WormSegment,
+  worm: Worm,
+  blockIdx: number,
+  dtSec: number
+): void {
+  const bx = blockIdx % gridWidthTile;
+  const by = Math.floor(blockIdx / gridWidthTile);
+  const dxTile = bx - head.xTile;
+  const dyTile = by - head.yTile;
+  const dist = Math.hypot(dxTile, dyTile);
+  if (dist > 1.0) {
+    const step = (worm.speedTilePerSec * dtSec) / dist;
+    head.xTile += dxTile * Math.min(1, step);
+    head.yTile += dyTile * Math.min(1, step);
+  }
+  worm.wallAttackCooldownSec -= dtSec;
+  if (worm.wallAttackCooldownSec <= 0 && dist <= 1.5) {
+    damageStructure(blockIdx, ENEMY_WALL_DAMAGE);
+    worm.wallAttackCooldownSec = ENEMY_WALL_ATTACK_COOLDOWN_SEC;
+  } else if (worm.wallAttackCooldownSec < 0) {
+    worm.wallAttackCooldownSec = 0;
+  }
 }
 
 function spawnWave(): void {
@@ -978,23 +1029,7 @@ function updateEnemies(dtSec: number): void {
       // No walkable path to core: find the nearest damageable blocking building and attack it
       const blockIdx = findAttackableBlockingBuilding(enemy.xTile, enemy.yTile);
       if (blockIdx >= 0) {
-        const bx = blockIdx % gridWidthTile;
-        const by = Math.floor(blockIdx / gridWidthTile);
-        const dxTile = bx - enemy.xTile;
-        const dyTile = by - enemy.yTile;
-        const dist = Math.hypot(dxTile, dyTile);
-        if (dist > 1.0) {
-          const step = (enemy.speedTilePerSec * dtSec) / dist;
-          enemy.xTile += dxTile * Math.min(1, step);
-          enemy.yTile += dyTile * Math.min(1, step);
-        }
-        enemy.wallAttackCooldownSec -= dtSec;
-        if (enemy.wallAttackCooldownSec <= 0 && dist <= 1.5) {
-          damageStructure(blockIdx, ENEMY_WALL_DAMAGE);
-          enemy.wallAttackCooldownSec = ENEMY_WALL_ATTACK_COOLDOWN_SEC;
-        } else if (enemy.wallAttackCooldownSec < 0) {
-          enemy.wallAttackCooldownSec = 0;
-        }
+        moveAndAttackBlockingBuilding(enemy, blockIdx, dtSec);
       }
       continue;
     }
@@ -1087,23 +1122,7 @@ function updateWorms(dtSec: number): void {
       // No walkable path to core: find the nearest damageable blocking building and attack it
       const blockIdx = findAttackableBlockingBuilding(head.xTile, head.yTile);
       if (blockIdx >= 0) {
-        const bx = blockIdx % gridWidthTile;
-        const by = Math.floor(blockIdx / gridWidthTile);
-        const dxTile = bx - head.xTile;
-        const dyTile = by - head.yTile;
-        const dist = Math.hypot(dxTile, dyTile);
-        if (dist > 1.0) {
-          const step = (worm.speedTilePerSec * dtSec) / dist;
-          head.xTile += dxTile * Math.min(1, step);
-          head.yTile += dyTile * Math.min(1, step);
-        }
-        worm.wallAttackCooldownSec -= dtSec;
-        if (worm.wallAttackCooldownSec <= 0 && dist <= 1.5) {
-          damageStructure(blockIdx, ENEMY_WALL_DAMAGE);
-          worm.wallAttackCooldownSec = ENEMY_WALL_ATTACK_COOLDOWN_SEC;
-        } else if (worm.wallAttackCooldownSec < 0) {
-          worm.wallAttackCooldownSec = 0;
-        }
+        moveWormHeadAndAttackBlockingBuilding(head, worm, blockIdx, dtSec);
       }
     } else if (currentDist > 0) {
       let bestXTile = headXTile;
