@@ -70,7 +70,9 @@ interface RepairSparkle {
   vyPx: number;
   ageSec: number;
   maxAgeSec: number;
-  color: string;
+  r: number;
+  g: number;
+  b: number;
 }
 
 interface ShellCasing {
@@ -189,6 +191,7 @@ const SHELL_CASING_MIN_LIFETIME_SEC = 0.28;
 const SHELL_CASING_LIFETIME_VARIANCE_SEC = 0.2;
 const SHELL_CASING_BOUNCE_RESTITUTION = -0.55;
 const SHELL_CASING_GRAVITY_PX_PER_SEC2 = 18;
+const REPAIR_SPARKLE_GRAVITY_PX_PER_SEC2 = 30;
 const SHELL_CASING_FRICTION = 0.96;
 
 const STRUCTURE_MAX_HP: Partial<Record<Structure, number>> = { wall: 50, turret: 30, radar: 25, crusher: 35, gatling: 25, conveyor: 10, extractor: 20, splitter: 15, cannon: 35, repairer: 25 };
@@ -1964,6 +1967,9 @@ function updateGatlingTurrets(dtSec: number): void {
 
 // ── Cannon turret – slow, high-damage, ore-fed ────────────────────────────────
 function spawnRepairSparkles(xPx: number, yPx: number, color: string, count: number = 6): void {
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
   for (let i = 0; i < count; i += 1) {
     const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
     const speed = 8 + Math.random() * 12;
@@ -1973,7 +1979,7 @@ function spawnRepairSparkles(xPx: number, yPx: number, color: string, count: num
       vyPx: Math.sin(angle) * speed,
       ageSec: 0,
       maxAgeSec: REPAIR_SPARKLE_MAX_AGE_SEC,
-      color,
+      r, g, b,
     });
   }
 }
@@ -1993,8 +1999,9 @@ function updateRepairers(dtSec: number): void {
       // Find an adjacent damaged structure within range
       let bestIdx = -1;
       let bestMissing = 0;
-      for (let dy = -Math.ceil(REPAIRER_RANGE_TILE); dy <= Math.ceil(REPAIRER_RANGE_TILE); dy += 1) {
-        for (let dx = -Math.ceil(REPAIRER_RANGE_TILE); dx <= Math.ceil(REPAIRER_RANGE_TILE); dx += 1) {
+      const rangeCell = Math.ceil(REPAIRER_RANGE_TILE);
+      for (let dy = -rangeCell; dy <= rangeCell; dy += 1) {
+        for (let dx = -rangeCell; dx <= rangeCell; dx += 1) {
           if (dx === 0 && dy === 0) { continue; }
           if (Math.hypot(dx, dy) > REPAIRER_RANGE_TILE) { continue; }
           const nx = xTile + dx;
@@ -2457,7 +2464,7 @@ function update(dtSec: number): void {
     if (sp.ageSec >= REPAIR_SPARKLE_MAX_AGE_SEC) { repairSparkles.splice(i, 1); continue; }
     sp.xPx += sp.vxPx * dtSec;
     sp.yPx += sp.vyPx * dtSec;
-    sp.vyPx += 30 * dtSec; // gravity
+    sp.vyPx += REPAIR_SPARKLE_GRAVITY_PX_PER_SEC2 * dtSec; // gravity
   }
 }
 
@@ -3227,10 +3234,7 @@ function render(): void {
   // Repair/explosion sparkles
   for (const sp of repairSparkles) {
     const alpha = Math.max(0, 1 - sp.ageSec / REPAIR_SPARKLE_MAX_AGE_SEC);
-    const r = parseInt(sp.color.slice(1, 3), 16);
-    const g = parseInt(sp.color.slice(3, 5), 16);
-    const b = parseInt(sp.color.slice(5, 7), 16);
-    ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+    ctx.fillStyle = `rgba(${sp.r},${sp.g},${sp.b},${alpha})`;
     ctx.fillRect(Math.round(sp.xPx), Math.round(sp.yPx), 2, 2);
   }
 
