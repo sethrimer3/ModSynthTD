@@ -99,6 +99,24 @@ interface Worm {
   isArmored?: boolean;
 }
 
+type WeatherType = 'clear' | 'rain' | 'snow';
+
+interface EnvironmentState {
+  dayNightTimeSec: number;
+  weatherType: WeatherType;
+  weatherIntensity: number;
+}
+
+interface SunState {
+  phase: number;
+  altitude: number;
+  dirX: number;
+  dirY: number;
+  daylightAmount: number;
+  warmthAmount: number;
+  isNight: boolean;
+}
+
 type MetaUpgradeKey = 'coreArmor' | 'turretPower' | 'oreBonus';
 
 interface MetaUpgradeConfig {
@@ -236,6 +254,17 @@ const ARMORED_WORM_SPAWN_INTERVAL = 2; // spawn every N waves
 const ARMORED_WORM_HP_MULTIPLIER = 2.0;
 const ARMORED_WORM_SPEED_BASE = 0.55; // slower than regular worm
 const WORM_SEGMENT_HIT_FLASH_SEC = 0.14; // how long a hit flash lasts on a segment
+
+// ── Day/night cycle constants ──────────────────────────────────────────────
+const DAY_NIGHT_CYCLE_SEC  = 3600;   // 1 real-time hour per full cycle
+const SUNRISE_START_PHASE  = 0.18;   // fraction of cycle where sunrise begins
+const SUNRISE_END_PHASE    = 0.28;   // fraction where sunrise is complete (full day)
+const SUNSET_START_PHASE   = 0.68;   // fraction where sunset begins
+const SUNSET_END_PHASE     = 0.78;   // fraction where sunset is complete (full night)
+const SHADOW_MAX_ALPHA     = 0.38;   // maximum tile shadow opacity
+const BEAM_MAX_ALPHA       = 0.09;   // maximum sunbeam streak opacity
+const NIGHT_OVERLAY_ALPHA  = 0.72;   // darkness overlay at full night
+const DUSK_DAWN_TINT_ALPHA = 0.22;   // warm-colour tint during sunrise/sunset
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function clamp(v: number, lo: number, hi: number): number {
@@ -531,6 +560,12 @@ let hoveredXTile = -1;
 let hoveredYTile = -1;
 let isPointerHeld = false;
 let isMetaMenuOpen = false;
+
+const environment: EnvironmentState = {
+  dayNightTimeSec: DAY_NIGHT_CYCLE_SEC * 0.35, // start mid-morning (full daylight)
+  weatherType: 'clear',
+  weatherIntensity: 0,
+};
 
 // ── Build palette setup ────────────────────────────────────────────────────
 const BUILD_CATEGORIES: BuildCategoryDef[] = [
@@ -2518,6 +2553,10 @@ function updateTutorialHints(): void {
 }
 
 function update(dtSec: number): void {
+  // Advance day/night cycle (real-time, independent of wave timing)
+  environment.dayNightTimeSec = (environment.dayNightTimeSec + dtSec) % DAY_NIGHT_CYCLE_SEC;
+  updateWeather(dtSec);
+
   if (isRunOver) {
     if (gameOverDelaySec > 0) {
       gameOverDelaySec -= dtSec;
@@ -3062,10 +3101,203 @@ function drawWorm(worm: Worm): void {
   }
 }
 
+// ── Environment helpers ────────────────────────────────────────────────────
+
+/** Returns how strongly a transition window is active: 1 at its midpoint, 0 outside. */
+function phaseWindowPeak(phase: number, start: number, end: number): number {
+  if (phase < start || phase > end) return 0;
+  const half = (end - start) / 2;
+  return 1 - Math.abs(phase - (start + half)) / half;
+}
+
+function getSunState(env: EnvironmentState): SunState {
+  const phase = env.dayNightTimeSec / DAY_NIGHT_CYCLE_SEC;
+
+  // Raw daylight 0..1 across sunrise/sunset windows
+  let raw: number;
+  if (phase < SUNRISE_START_PHASE || phase > SUNSET_END_PHASE) {
+    raw = 0;
+  } else if (phase < SUNRISE_END_PHASE) {
+    raw = (phase - SUNRISE_START_PHASE) / (SUNRISE_END_PHASE - SUNRISE_START_PHASE);
+  } else if (phase < SUNSET_START_PHASE) {
+    raw = 1;
+  } else {
+    raw = 1 - (phase - SUNSET_START_PHASE) / (SUNSET_END_PHASE - SUNSET_START_PHASE);
+  }
+  const daylightAmount = raw * raw * (3 - 2 * raw); // smoothstep
+  const isNight = daylightAmount < 0.01;
+
+  // Sun sweeps east→west during the day; altitude peaks at noon
+  const dayFrac = clamp(
+    (phase - SUNRISE_END_PHASE) / (SUNSET_START_PHASE - SUNRISE_END_PHASE),
+    0, 1,
+  );
+  const altitude = Math.sin(dayFrac * Math.PI); // 0 at horizon, 1 at noon
+  const sweepAngle = dayFrac * Math.PI;
+  const dirX = Math.cos(sweepAngle);          // +1=east(dawn), 0=noon, -1=west(dusk)
+  const dirY = -Math.sin(sweepAngle) * 0.35;  // slight north-tilt shadow at noon
+
+  // Warmth peaks at midpoint of each sunrise/sunset window
+  const warmthAmount = Math.max(
+    phaseWindowPeak(phase, SUNRISE_START_PHASE, SUNRISE_END_PHASE),
+    phaseWindowPeak(phase, SUNSET_START_PHASE,  SUNSET_END_PHASE),
+  );
+
+  return { phase, altitude, dirX, dirY, daylightAmount, warmthAmount, isNight };
+}
+
+function drawTileShadows(sunState: SunState): void {
+  if (sunState.daylightAmount < 0.05) return;
+  const { dirX, dirY, daylightAmount, altitude } = sunState;
+  const shadowAlpha = SHADOW_MAX_ALPHA * daylightAmount * Math.max(0.15, 1 - altitude * 0.7);
+  const shadowLen = Math.max(2, (1 - altitude) * tileSizePx * 2.0);
+  const offX = Math.round(-dirX * shadowLen);
+  const offY = Math.round(-dirY * shadowLen);
+
+  ctx.save();
+  ctx.globalAlpha = shadowAlpha;
+  ctx.fillStyle = '#000000';
+
+  for (let yTile = 0; yTile < gridHeightTile; yTile += 1) {
+    for (let xTile = 0; xTile < gridWidthTile; xTile += 1) {
+      const index = tileIndex(xTile, yTile);
+      if (!isTileVisible(xTile, yTile)) continue;
+      const isCaster = terrainIsDebris[index]
+        || structures[index] !== 'empty'
+        || (xTile === coreTile.x && yTile === coreTile.y);
+      if (!isCaster) continue;
+      const sxPx = xTile * tileSizePx + offX;
+      const syPx = yTile * tileSizePx + offY;
+      const destXTile = Math.floor(sxPx / tileSizePx);
+      const destYTile = Math.floor(syPx / tileSizePx);
+      if (!isInBounds(destXTile, destYTile) || !isTileVisible(destXTile, destYTile)) continue;
+      ctx.fillRect(sxPx, syPx, tileSizePx, tileSizePx);
+    }
+  }
+  ctx.restore();
+}
+
+// Each entry: [x-offset from canvas centre (px), beam width (px)]
+const SUNBEAM_DEFS: readonly [number, number][] = [
+  [-65, 5], [-42, 8], [-18, 3], [12, 9], [38, 5], [62, 4],
+];
+
+function drawSunBeams(sunState: SunState): void {
+  if (sunState.daylightAmount < 0.05 || sunState.warmthAmount < 0.02) return;
+  const alpha = sunState.warmthAmount * BEAM_MAX_ALPHA;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#ffcc88';
+  ctx.translate(nativeWidthPx / 2, nativeHeightPx / 2);
+  ctx.rotate(Math.atan2(sunState.dirY, sunState.dirX) + Math.PI / 2);
+  const halfDiag = Math.sqrt(nativeWidthPx * nativeWidthPx + nativeHeightPx * nativeHeightPx) / 2 + 4;
+  for (const [xOff, w] of SUNBEAM_DEFS) {
+    ctx.fillRect(xOff - w / 2, -halfDiag, w, halfDiag * 2);
+  }
+  ctx.restore();
+}
+
+function drawDaylightOverlay(sunState: SunState): void {
+  ctx.save();
+  // Night darkness (no moonlight)
+  const nightAlpha = (1 - sunState.daylightAmount) * NIGHT_OVERLAY_ALPHA;
+  if (nightAlpha > 0.01) {
+    ctx.globalAlpha = nightAlpha;
+    ctx.fillStyle = '#000810';
+    ctx.fillRect(0, 0, nativeWidthPx, nativeHeightPx);
+  }
+  // Dawn/dusk warm tint
+  if (sunState.warmthAmount > 0.01) {
+    ctx.globalAlpha = sunState.warmthAmount * DUSK_DAWN_TINT_ALPHA;
+    ctx.fillStyle = '#ff6622';
+    ctx.fillRect(0, 0, nativeWidthPx, nativeHeightPx);
+  }
+  ctx.restore();
+}
+
+// Light colour / base-radius config per structure type (r, g, b, radius-px at full intensity)
+const STRUCTURE_LIGHT_CONFIG: Partial<Record<Structure, [number, number, number, number]>> = {
+  turret:    [39,  224, 255, 12],
+  gatling:   [255, 204, 68,  10],
+  cannon:    [255, 119, 51,  10],
+  radar:     [141, 104, 255, 12],
+  crusher:   [200, 160, 80,  8],
+  extractor: [240, 166, 0,   7],
+  repairer:  [68,  255, 136, 7],
+  conveyor:  [34,  221, 187, 4],
+  splitter:  [34,  221, 187, 4],
+};
+const CORE_LIGHT_CFG: [number, number, number, number] = [32, 255, 160, 20];
+
+function drawNightLights(sunState: SunState): void {
+  const intensity = 1 - sunState.daylightAmount;
+  if (intensity < 0.02) return;
+  const centerAlpha = 0.55 * intensity;
+
+  ctx.save();
+
+  function emitLight(cxPx: number, cyPx: number, cfg: [number, number, number, number]): void {
+    const r = cfg[3] * intensity;
+    const grad = ctx.createRadialGradient(cxPx, cyPx, 0, cxPx, cyPx, r);
+    grad.addColorStop(0, `rgba(${cfg[0]},${cfg[1]},${cfg[2]},${centerAlpha.toFixed(3)})`);
+    grad.addColorStop(1, `rgba(${cfg[0]},${cfg[1]},${cfg[2]},0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(cxPx - r, cyPx - r, r * 2, r * 2);
+  }
+
+  // Core light
+  if (isTileVisible(coreTile.x, coreTile.y)) {
+    emitLight(
+      coreTile.x * tileSizePx + tileSizePx / 2,
+      coreTile.y * tileSizePx + tileSizePx / 2,
+      CORE_LIGHT_CFG,
+    );
+  }
+
+  // Structure lights
+  for (let yTile = 0; yTile < gridHeightTile; yTile += 1) {
+    for (let xTile = 0; xTile < gridWidthTile; xTile += 1) {
+      if (!isTileVisible(xTile, yTile)) continue;
+      const index = tileIndex(xTile, yTile);
+      const st = structures[index];
+      if (st === 'empty') continue;
+      const cfg = STRUCTURE_LIGHT_CONFIG[st];
+      if (!cfg) continue;
+      emitLight(
+        xTile * tileSizePx + tileSizePx / 2,
+        yTile * tileSizePx + tileSizePx / 2,
+        cfg,
+      );
+    }
+  }
+
+  ctx.restore();
+}
+
+// ── Weather stubs (scaffolding for future rain / snow) ─────────────────────
+function updateWeather(_dtSec: number): void {
+  // TODO rain: advance particle positions, increase intensity during storm
+  // TODO snow: drift particles, accumulate visual snow-layer thickness
+}
+
+function drawWeatherBackground(_env: EnvironmentState): void {
+  // TODO rain: apply bluish wet-ground tint (low-alpha overlay)
+  // TODO snow: apply white/light-blue ground tint proportional to accumulation
+}
+
+function drawWeatherForeground(_env: EnvironmentState): void {
+  // TODO rain: diagonal streaks influenced by wind (_env.weatherIntensity + sun direction)
+  // TODO snow: drifting white particles at _env.weatherIntensity density
+  // TODO ice/wet: post-effect tint overlay pass
+}
+
 // ── Render ─────────────────────────────────────────────────────────────────
 function render(): void {
   ctx.fillStyle = '#07090f';
   ctx.fillRect(0, 0, nativeWidthPx, nativeHeightPx);
+
+  const sunState = getSunState(environment);
+  drawWeatherBackground(environment);
 
   for (let yTile = 0; yTile < gridHeightTile; yTile += 1) {
     for (let xTile = 0; xTile < gridWidthTile; xTile += 1) {
@@ -3121,6 +3353,9 @@ function render(): void {
       }
     }
   }
+
+  drawTileShadows(sunState);
+  drawSunBeams(sunState);
 
   drawCoreTile(coreTile.x * tileSizePx, coreTile.y * tileSizePx);
   drawDepositTile(depositTile.x * tileSizePx, depositTile.y * tileSizePx);
@@ -3465,6 +3700,10 @@ function render(): void {
     ctx.fillRect(0, 0, nativeWidthPx, nativeHeightPx);
     ctx.restore();
   }
+
+  drawDaylightOverlay(sunState);
+  drawNightLights(sunState);
+  drawWeatherForeground(environment);
 
   // Overlay (WAVE / BREACH / GAME OVER)
   if (overlayText && overlayTimerSec > 0) {
