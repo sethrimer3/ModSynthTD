@@ -30,8 +30,8 @@ AI agents should maintain this file as part of normal implementation work.
 - [x] Show visible stored ammo or charge inside turrets (ammo bar replaces charge bar).
 - [x] Add ammo starvation feedback when a turret has no supplied resource (red pixel when ammo=0).
 - [x] Add at least one distinct weapon beyond the basic turret, such as Laser or Cannon.
-- [ ] Add enemy approach warnings for newly revealed directions.
-- [ ] Improve the Breaker breach event with stronger warning and visual telegraphing.
+- [x] Add enemy approach warnings for newly revealed directions.
+- [x] Improve the Breaker breach event with stronger warning and visual telegraphing.
 - [ ] Add one non-worm enemy variant with a meaningfully different counterplay pattern.
 
 ## Repair, Rebuild, and Destruction
@@ -97,7 +97,7 @@ AI agents should maintain this file as part of normal implementation work.
 - [ ] Improve build previews for multi-tile buildings and routed structures.
 - [ ] Add clearer tutorial prompts for the first route, first turret, first wall, first radar, and first breach.
 - [ ] Keep all visuals readable at the native pixel scale.
-- [ ] Add conveyor direction preview ghost for conveyor/extractor tool (Q to rotate tooltip visible in place).
+- [x] Add conveyor direction preview ghost for conveyor/extractor tool (Q to rotate tooltip visible in place).
 
 ## Maintenance
 

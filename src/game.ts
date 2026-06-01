@@ -104,7 +104,7 @@ const depositTile = { x: 5, y: 10 };          // Moved closer to base (was {3,2}
 const coalDepositTile = { x: 15, y: 10 };      // coal deposit on the right side of base
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 14;
+const currentBuildNumber = 15;
 const turretRangeTile = 4.5;
 
 // ── Conveyor/Extractor constants ─────────────────────────────────────────────
@@ -119,6 +119,8 @@ const TURRET_AMMO_STARTING = 4;  // initial ammo so first wave is survivable
 const BASE_STARTING_ORE = 20;    // ore given at run start; player must build first route
 const shotFlashDurationSec = 0.12;
 const breakerArrivalDistanceTile = 0.2;
+const BREAKER_WARN_DIST_TILE = 6; // distance at which the pre-breach warning activates
+const BREACH_FLASH_DURATION_SEC = 0.65; // full-screen magenta flash duration on breach
 const coreHpHealthyThreshold = 60;
 const coreHpDamagedThreshold = 30;
 const secondEntranceTile = { x: coreTile.x, y: 0 };
@@ -443,6 +445,10 @@ const cannonAmmo = new Map<number, number>();
 const cannonFireCooldowns = new Map<number, number>();
 const splitterToggle = new Map<number, boolean>();
 let breachOpened = false;
+// True once the Breaker is within BREAKER_WARN_DIST_TILE tiles of its debris target
+let breakerWarningActive = false;
+// Counts down after breach triggers; drives the full-screen magenta flash
+let breachFlashTimerSec = 0;
 
 // ── Conveyor/Extractor/Routed-mote state ─────────────────────────────────────
 // Direction each conveyor/extractor tile outputs (0=E,1=S,2=W,3=N)
@@ -1256,6 +1262,8 @@ function resetRun(): void {
   conveyorPlacementDir = 0;
   breakerTriggered = false;
   breachOpened = false;
+  breakerWarningActive = false;
+  breachFlashTimerSec = 0;
   structures.fill('empty');
   turretAngleRad.clear();
   totalOreEarned = 0;
@@ -1273,12 +1281,18 @@ function updateEnemies(dtSec: number): void {
       const dxTile = breakerTargetTile.x - enemy.xTile;
       const dyTile = breakerTargetTile.y - enemy.yTile;
       const breakerDistance = Math.hypot(dxTile, dyTile);
+      // Activate pre-breach warning when breaker closes in
+      if (breakerDistance < BREAKER_WARN_DIST_TILE) {
+        breakerWarningActive = true;
+      }
       if (breakerDistance < breakerArrivalDistanceTile) {
         terrainIsDebris[tileIndex(breakerTargetTile.x, breakerTargetTile.y)] = false;
         distanceField = computeDistanceField();
         breachOpened = true;
+        breakerWarningActive = false;
+        breachFlashTimerSec = BREACH_FLASH_DURATION_SEC;
         enemies.splice(enemyIndex, 1);
-        showOverlay('BREACH!', '#ff42d2', 3);
+        showOverlay('BREACH!', '#ff42d2', 4);
         continue;
       }
       const stepTile = (enemy.speedTilePerSec * dtSec) / Math.max(0.0001, breakerDistance);
@@ -2178,6 +2192,10 @@ function update(dtSec: number): void {
     overlayTimerSec -= dtSec;
   }
 
+  if (breachFlashTimerSec > 0) {
+    breachFlashTimerSec = Math.max(0, breachFlashTimerSec - dtSec);
+  }
+
   elapsedSec += dtSec;
   waveTimerSec -= dtSec;
   if (waveTimerSec <= 0) {
@@ -2960,6 +2978,66 @@ function render(): void {
     ctx.fillRect(xPx, yPx, tileSizePx, tileSizePx);
     ctx.lineWidth = 1;
     ctx.strokeRect(xPx + 0.5, yPx + 0.5, tileSizePx - 1, tileSizePx - 1);
+    // Direction arrow preview for directional placement tools
+    if (selectedTool === 'conveyor' || selectedTool === 'extractor' || selectedTool === 'splitter') {
+      const arrowColor = 'rgba(34,221,187,0.9)';
+      const d = conveyorPlacementDir;
+      if (d === 0) { // East →
+        fillPx(xPx + 4, yPx + 5, 4, 1, arrowColor);
+        fillPx(xPx + 6, yPx + 4, 1, 3, arrowColor);
+        fillPx(xPx + 7, yPx + 5, 1, 1, arrowColor);
+      } else if (d === 2) { // West ←
+        fillPx(xPx + 4, yPx + 5, 4, 1, arrowColor);
+        fillPx(xPx + 4, yPx + 4, 1, 3, arrowColor);
+        fillPx(xPx + 3, yPx + 5, 1, 1, arrowColor);
+      } else if (d === 1) { // South ↓
+        fillPx(xPx + 5, yPx + 4, 1, 4, arrowColor);
+        fillPx(xPx + 4, yPx + 6, 3, 1, arrowColor);
+        fillPx(xPx + 5, yPx + 7, 1, 1, arrowColor);
+      } else { // North ↑
+        fillPx(xPx + 5, yPx + 4, 1, 4, arrowColor);
+        fillPx(xPx + 4, yPx + 4, 3, 1, arrowColor);
+        fillPx(xPx + 5, yPx + 3, 1, 1, arrowColor);
+      }
+    }
+  }
+
+  // ── Breaker warning glow on target tile ──────────────────────────────────────
+  if (breakerWarningActive && !breachOpened) {
+    const pulse = 0.45 + 0.35 * Math.sin(elapsedSec * 7.7);
+    const wxPx = breakerTargetTile.x * tileSizePx;
+    const wyPx = breakerTargetTile.y * tileSizePx;
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#ff42d2';
+    ctx.fillRect(wxPx, wyPx, tileSizePx, tileSizePx);
+    ctx.restore();
+  }
+
+  // ── Enemy approach warning at newly revealed north entrance ──────────────────
+  if (breachOpened && !isRunOver) {
+    const pulse = 0.55 + 0.35 * Math.sin(elapsedSec * 5.0);
+    const exPx = secondEntranceTile.x * tileSizePx + Math.floor(tileSizePx / 2);
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    // Downward arrow (↓) above top edge, pointing into the grid
+    const arrowColor = '#ff3344';
+    fillPx(exPx - 1, 1, 3, 1, arrowColor); // top bar of arrow
+    fillPx(exPx, 1, 1, 5, arrowColor);      // shaft
+    fillPx(exPx - 2, 5, 5, 1, arrowColor);  // wide bar
+    fillPx(exPx - 1, 6, 3, 1, arrowColor);  // taper
+    fillPx(exPx, 7, 1, 1, arrowColor);       // tip
+    ctx.restore();
+  }
+
+  // ── Full-screen magenta flash on breach ───────────────────────────────────────
+  if (breachFlashTimerSec > 0) {
+    const alpha = (breachFlashTimerSec / BREACH_FLASH_DURATION_SEC) * 0.55;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#ff42d2';
+    ctx.fillRect(0, 0, nativeWidthPx, nativeHeightPx);
+    ctx.restore();
   }
 
   // Overlay (WAVE / BREACH / GAME OVER)
@@ -3061,7 +3139,7 @@ function render(): void {
         if (hovStructure !== 'empty') {
           statusText = `Erase: ${hovStructure}`;
         }
-      } else if (selectedTool === 'turret' || selectedTool === 'radar' || selectedTool === 'crusher' || selectedTool === 'gatling' || selectedTool === 'cannon' || selectedTool === 'splitter') {
+      } else if (selectedTool === 'turret' || selectedTool === 'radar' || selectedTool === 'crusher' || selectedTool === 'gatling' || selectedTool === 'cannon') {
         const isValidTile = !terrainIsDebris[hovIndex]
           && hovStructure === 'empty'
           && !(hoveredXTile === coreTile.x && hoveredYTile === coreTile.y)
@@ -3076,7 +3154,27 @@ function render(): void {
           statusText = isRebuild ? `Rebuild: ${statusCost}${ORE_SYMBOL}` : `Cost: ${statusCost}${ORE_SYMBOL}`;
           hasPositiveCost = true;
         }
+      } else if (selectedTool === 'conveyor' || selectedTool === 'extractor' || selectedTool === 'splitter') {
+        const dirSymbol = DIR_SYMBOLS[conveyorPlacementDir];
+        const isValidTile = !terrainIsDebris[hovIndex]
+          && hovStructure === 'empty'
+          && !(hoveredXTile === coreTile.x && hoveredYTile === coreTile.y)
+          && !(hoveredXTile === depositTile.x && hoveredYTile === depositTile.y)
+          && !(hoveredXTile === deposit2Tile.x && hoveredYTile === deposit2Tile.y)
+          && !(hoveredXTile === coalDepositTile.x && hoveredYTile === coalDepositTile.y)
+          && isTileVisible(hoveredXTile, hoveredYTile);
+        const isRebuild = ghost === selectedTool;
+        const costTable = isRebuild ? STRUCTURE_REBUILD_COST : STRUCTURE_ORE_COST;
+        statusCost = costTable[selectedTool] ?? 0;
+        const costPart = isValidTile ? (isRebuild ? ` · Rebuild: ${statusCost}${ORE_SYMBOL}` : ` · Cost: ${statusCost}${ORE_SYMBOL}`) : '';
+        statusText = `Dir [${dirSymbol}] · Q: rotate${costPart}`;
+        hasPositiveCost = isValidTile;
       }
+    }
+
+    // Always show direction hint for directional tools even when not hovering
+    if (statusText === '' && (selectedTool === 'conveyor' || selectedTool === 'extractor' || selectedTool === 'splitter')) {
+      statusText = `Dir [${DIR_SYMBOLS[conveyorPlacementDir]}] · Q: rotate`;
     }
 
     statusBarElement.textContent = statusText;
