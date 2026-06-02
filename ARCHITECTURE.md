@@ -85,6 +85,7 @@ Top-level mutable state is declared as `let` at module level:
 | `blueprintGhosts` | Map<number, Structure> | Destroyed structure ghosts for rebuilding |
 | `distanceField` | Int16Array | BFS distance from core, recomputed on structural change |
 | `turretAngleRad` | Map<number, number> | Last firing angle per turret tile |
+| `environment` | EnvironmentState | Day/night time accumulator and disabled-by-default weather scaffold |
 
 ### 3.3 Persistence
 
@@ -159,25 +160,21 @@ The HUD is DOM rendered over the top-left and top-right of the square playing fi
 
 Draw order per frame:
 1. Background clear
-2. Terrain tiles (debris, ground, unexplored fog)
-3. Blueprint ghosts
-4. Structures (wall, turret, radar)
-5. Structure HP bars
-6. Core tile (with pulsing red overlay when critically damaged)
-7. Deposits
-8. Dotted route lines
-9. Faint grid lines (when hovering)
-10. Turret range preview ring (when turret tool selected)
-11. Deposit 2 motes
-12. Deposit 1 motes
-13. Shot flashes
-14. Enemies with HP bars
-15. Worm enemies (smooth bezier body skin + segment circles + head eyes)
-16. Hover ghost tile (green tint for repair tool, red for erase)
-17. Overlays (WAVE, BREACH, GAME OVER)
-18. Build number watermark
-19. HUD span updates (ore shows rate `/s` after 4 s elapsed) + upgrade panel state update
-20. Status bar update (cost hint for turret/radar; erase target name; repair cost)
+2. Weather background scaffold (currently no-op while clear)
+3. Terrain tiles (debris, ground, unexplored fog)
+4. Blueprint ghosts
+5. Structures (wall, turret, radar, logistics, production, repair)
+6. Structure HP bars
+7. Directional tile shadows and dawn/dusk sunbeams
+8. Core tile (with pulsing red overlay when critically damaged)
+9. Deposits, resource motes, route rings, grid/range previews, shot flashes, enemies, worms, and hover ghost
+10. Daylight/sunset tint and night darkness
+11. Masked local building/core night glows clipped to visible radar tiles
+12. Weather foreground scaffold (currently no-op while clear)
+13. Canvas overlays (breach warnings, wave text, game over)
+14. Build number watermark and optional day/night debug time
+15. HUD span updates (ore shows rate `/s` after 4 s elapsed) + upgrade panel state update
+16. Status bar update (cost hint for turret/radar; erase target name; repair cost)
 
 ---
 
@@ -185,7 +182,7 @@ Draw order per frame:
 
 Mouse and touch input is handled via `pointerdown`, `pointermove`, `pointerup`, and `pointercancel` events on the canvas. Pointer capture is used to support drag-placing structures.
 
-Keyboard shortcuts are handled via `keydown` on `window`. Keys `w/1`, `t/2`, `r/3`, `e/4`, `f/5` select tools.
+Keyboard shortcuts are handled via `keydown` on `window`. Keys `w/1`, `t/2`, `r/3`, `e/4`, `f/5` select tools. `[` and `]` jump the day/night clock backward/forward by 5 minutes for visual testing, and `\` toggles a fast day/night preview; normal play remains one 3600-second cycle.
 
 ---
 

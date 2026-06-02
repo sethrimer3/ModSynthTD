@@ -253,3 +253,15 @@ The global `turretFireCooldownSec` is retained to throttle the fire cadence; the
 
 **Reason**: With deposits no longer auto-delivering ore, the player needs starting capital to place at least one extractor and a short conveyor chain before any income arrives. 20 ore is enough to build one turret (12 ore) with change to spare for conveyors, or to build a short route first and accumulate ammo before the first wave.
 
+---
+
+## D-024: Bounded Day/Night Lighting Pass
+
+**Decision**: The day/night cycle remains exactly 3600 seconds by default. The renderer computes one `SunState` per frame, draws bounded stepped shadows from visible debris/structures/core opposite the sun direction, applies daylight/sunset/night overlays to the board, then draws local building lights clipped to radar-visible tiles.
+
+**Reason**: This gives the prototype visible time-of-day motion without per-pixel raytracing or large allocations. Shadows change direction and length across the cycle, while lights make the core and powered buildings readable at night without revealing unexplored tiles.
+
+**Debug controls**: `[` and `]` jump the lighting clock by 5 minutes. `\` toggles a fast preview speed. These controls only affect the environment clock and watermark/debug display; normal gameplay starts with a one-hour cycle.
+
+**Weather scope**: Weather remains clear by default. Rain and snow are documented as no-op scaffolding for future background tint and foreground particle passes.
+

@@ -93,6 +93,7 @@ AI agents should maintain this file as part of normal implementation work.
 
 - [x] Add flow rate readouts per route.
 - [x] Add turret uptime and ammo starvation readouts.
+- [x] Finish day/night lighting integration with directional shadows, masked building glows, and debug time controls.
 - [ ] Add optional advanced overlays: heat, bottlenecks, purity, threat forecast.
 - [ ] Improve build previews for multi-tile buildings and routed structures.
 - [x] Add clearer tutorial prompts for the first route, first turret, first wall, first radar, and first breach.

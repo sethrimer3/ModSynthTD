@@ -249,3 +249,18 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Arrow pulses continuously while breach is open and the run is active
 - [ ] Arrow disappears when the run ends
 
+---
+
+## 25. Day/Night Lighting *(new in build 18)*
+
+- [ ] Normal day/night cycle remains one full cycle per 3600 seconds
+- [ ] `[` and `]` jump the lighting clock backward/forward by 5 minutes and append time to the build watermark
+- [ ] `\` toggles fast day/night preview and appends `FAST` to the build watermark
+- [ ] Shadows rotate/change direction as the clock advances
+- [ ] Shadows are shortest near noon and longest near sunrise/sunset
+- [ ] Shadows and lights do not reveal radar-hidden tiles
+- [ ] Sunrise and sunset add a warm tint with subtle directional beams
+- [ ] Night is dark with no moonlight wash
+- [ ] Core and placed buildings visibly glow through night darkness
+- [ ] Canvas warning overlays, build watermark, and DOM HUD remain readable after the darkness pass
+

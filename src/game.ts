@@ -138,7 +138,7 @@ const coalDepositTile = { x: 15, y: 10 };      // coal deposit on the right side
 const deposit3Tile = { x: 5, y: 16 };          // 3rd ore deposit — revealed at high radar
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 17;
+const currentBuildNumber = 18;
 const turretRangeTile = 4.5;
 
 // ── Conveyor/Extractor constants ─────────────────────────────────────────────
@@ -265,6 +265,8 @@ const SHADOW_MAX_ALPHA     = 0.38;   // maximum tile shadow opacity
 const BEAM_MAX_ALPHA       = 0.09;   // maximum sunbeam streak opacity
 const NIGHT_OVERLAY_ALPHA  = 0.72;   // darkness overlay at full night
 const DUSK_DAWN_TINT_ALPHA = 0.22;   // warm-colour tint during sunrise/sunset
+const DAY_NIGHT_DEBUG_STEP_SEC = 300; // 5-minute keyboard jump for lighting review
+const DAY_NIGHT_PREVIEW_SPEED = 60;   // 1 full cycle per minute when debug preview is enabled
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function clamp(v: number, lo: number, hi: number): number {
@@ -566,6 +568,8 @@ const environment: EnvironmentState = {
   weatherType: 'clear',
   weatherIntensity: 0,
 };
+let isDayNightPreviewFast = false;
+let isDayNightDebugActive = false;
 
 // ── Build palette setup ────────────────────────────────────────────────────
 const BUILD_CATEGORIES: BuildCategoryDef[] = [
@@ -657,6 +661,20 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   if (isMetaMenuOpen) {
+    return;
+  }
+  if (event.key === '[' || event.key === ']') {
+    const dir = event.key === '[' ? -1 : 1;
+    environment.dayNightTimeSec = (environment.dayNightTimeSec + DAY_NIGHT_CYCLE_SEC + dir * DAY_NIGHT_DEBUG_STEP_SEC) % DAY_NIGHT_CYCLE_SEC;
+    isDayNightDebugActive = true;
+    event.preventDefault();
+    return;
+  }
+  if (event.key === '\\') {
+    isDayNightPreviewFast = !isDayNightPreviewFast;
+    isDayNightDebugActive = true;
+    showOverlay(isDayNightPreviewFast ? 'DAY PREVIEW FAST' : 'DAY PREVIEW NORMAL', '#ffcc88', 0.8);
+    event.preventDefault();
     return;
   }
   const keyMap: Record<string, Tool> = {
@@ -2554,7 +2572,8 @@ function updateTutorialHints(): void {
 
 function update(dtSec: number): void {
   // Advance day/night cycle (real-time, independent of wave timing)
-  environment.dayNightTimeSec = (environment.dayNightTimeSec + dtSec) % DAY_NIGHT_CYCLE_SEC;
+  const environmentDtSec = dtSec * (isDayNightPreviewFast ? DAY_NIGHT_PREVIEW_SPEED : 1);
+  environment.dayNightTimeSec = (environment.dayNightTimeSec + environmentDtSec) % DAY_NIGHT_CYCLE_SEC;
   updateWeather(dtSec);
 
   if (isRunOver) {
@@ -3147,15 +3166,16 @@ function getSunState(env: EnvironmentState): SunState {
 }
 
 function drawTileShadows(sunState: SunState): void {
-  if (sunState.daylightAmount < 0.05) return;
+  if (sunState.daylightAmount < 0.05 || sunState.isNight) return;
   const { dirX, dirY, daylightAmount, altitude } = sunState;
-  const shadowAlpha = SHADOW_MAX_ALPHA * daylightAmount * Math.max(0.15, 1 - altitude * 0.7);
-  const shadowLen = Math.max(2, (1 - altitude) * tileSizePx * 2.0);
-  const offX = Math.round(-dirX * shadowLen);
-  const offY = Math.round(-dirY * shadowLen);
+  const lowSunAmount = clamp(1 - altitude, 0, 1);
+  const shadowStepCount = Math.floor(1 + lowSunAmount * 5);
+  const stepX = -dirX;
+  const stepY = -dirY;
+  const baseAlpha = SHADOW_MAX_ALPHA * daylightAmount * (0.2 + lowSunAmount * 0.8);
+  if (shadowStepCount <= 0 || baseAlpha <= 0.01) return;
 
   ctx.save();
-  ctx.globalAlpha = shadowAlpha;
   ctx.fillStyle = '#000000';
 
   for (let yTile = 0; yTile < gridHeightTile; yTile += 1) {
@@ -3166,12 +3186,20 @@ function drawTileShadows(sunState: SunState): void {
         || structures[index] !== 'empty'
         || (xTile === coreTile.x && yTile === coreTile.y);
       if (!isCaster) continue;
-      const sxPx = xTile * tileSizePx + offX;
-      const syPx = yTile * tileSizePx + offY;
-      const destXTile = Math.floor(sxPx / tileSizePx);
-      const destYTile = Math.floor(syPx / tileSizePx);
-      if (!isInBounds(destXTile, destYTile) || !isTileVisible(destXTile, destYTile)) continue;
-      ctx.fillRect(sxPx, syPx, tileSizePx, tileSizePx);
+      for (let stepIndex = 1; stepIndex <= shadowStepCount; stepIndex += 1) {
+        const destXTile = Math.round(xTile + stepX * stepIndex);
+        const destYTile = Math.round(yTile + stepY * stepIndex);
+        if (!isInBounds(destXTile, destYTile) || !isTileVisible(destXTile, destYTile)) continue;
+        const alpha = baseAlpha * (1 - (stepIndex - 1) / (shadowStepCount + 1));
+        ctx.globalAlpha = alpha;
+        const shrinkPx = Math.min(4, stepIndex);
+        ctx.fillRect(
+          destXTile * tileSizePx + shrinkPx,
+          destYTile * tileSizePx + shrinkPx,
+          tileSizePx - shrinkPx * 2,
+          tileSizePx - shrinkPx * 2,
+        );
+      }
     }
   }
   ctx.restore();
@@ -3184,7 +3212,7 @@ const SUNBEAM_DEFS: readonly [number, number][] = [
 
 function drawSunBeams(sunState: SunState): void {
   if (sunState.daylightAmount < 0.05 || sunState.warmthAmount < 0.02) return;
-  const alpha = sunState.warmthAmount * BEAM_MAX_ALPHA;
+  const alpha = sunState.warmthAmount * BEAM_MAX_ALPHA * (0.45 + sunState.daylightAmount * 0.55);
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = '#ffcc88';
@@ -3208,8 +3236,8 @@ function drawDaylightOverlay(sunState: SunState): void {
   }
   // Dawn/dusk warm tint
   if (sunState.warmthAmount > 0.01) {
-    ctx.globalAlpha = sunState.warmthAmount * DUSK_DAWN_TINT_ALPHA;
-    ctx.fillStyle = '#ff6622';
+    ctx.globalAlpha = sunState.warmthAmount * DUSK_DAWN_TINT_ALPHA * (0.35 + sunState.daylightAmount * 0.65);
+    ctx.fillStyle = sunState.phase < 0.5 ? '#ff8a32' : '#ff5a5f';
     ctx.fillRect(0, 0, nativeWidthPx, nativeHeightPx);
   }
   ctx.restore();
@@ -3230,19 +3258,32 @@ const STRUCTURE_LIGHT_CONFIG: Partial<Record<Structure, [number, number, number,
 const CORE_LIGHT_CFG: [number, number, number, number] = [32, 255, 160, 20];
 
 function drawNightLights(sunState: SunState): void {
-  const intensity = 1 - sunState.daylightAmount;
+  const intensity = Math.pow(1 - sunState.daylightAmount, 1.4);
   if (intensity < 0.02) return;
-  const centerAlpha = 0.55 * intensity;
+  const centerAlpha = 0.68 * intensity;
 
   ctx.save();
+  ctx.beginPath();
+  for (let yTile = 0; yTile < gridHeightTile; yTile += 1) {
+    for (let xTile = 0; xTile < gridWidthTile; xTile += 1) {
+      if (isTileVisible(xTile, yTile)) {
+        ctx.rect(xTile * tileSizePx, yTile * tileSizePx, tileSizePx, tileSizePx);
+      }
+    }
+  }
+  ctx.clip();
+  ctx.globalCompositeOperation = 'source-over';
 
   function emitLight(cxPx: number, cyPx: number, cfg: [number, number, number, number]): void {
-    const r = cfg[3] * intensity;
+    const r = cfg[3] * (0.55 + intensity * 0.75);
     const grad = ctx.createRadialGradient(cxPx, cyPx, 0, cxPx, cyPx, r);
     grad.addColorStop(0, `rgba(${cfg[0]},${cfg[1]},${cfg[2]},${centerAlpha.toFixed(3)})`);
+    grad.addColorStop(0.35, `rgba(${cfg[0]},${cfg[1]},${cfg[2]},${(centerAlpha * 0.34).toFixed(3)})`);
     grad.addColorStop(1, `rgba(${cfg[0]},${cfg[1]},${cfg[2]},0)`);
     ctx.fillStyle = grad;
     ctx.fillRect(cxPx - r, cyPx - r, r * 2, r * 2);
+    ctx.fillStyle = `rgba(${cfg[0]},${cfg[1]},${cfg[2]},${(0.16 * intensity).toFixed(3)})`;
+    ctx.fillRect(Math.round(cxPx) - 2, Math.round(cyPx) - 2, 4, 4);
   }
 
   // Core light
@@ -3276,19 +3317,19 @@ function drawNightLights(sunState: SunState): void {
 
 // ── Weather stubs (scaffolding for future rain / snow) ─────────────────────
 function updateWeather(_dtSec: number): void {
-  // TODO rain: advance particle positions, increase intensity during storm
-  // TODO snow: drift particles, accumulate visual snow-layer thickness
+  if (environment.weatherType === 'clear') return;
+  // Future rain: advance streak positions; direction can combine wind + sun direction.
+  // Future snow: drift particles and optionally accumulate a visual snow layer.
 }
 
-function drawWeatherBackground(_env: EnvironmentState): void {
-  // TODO rain: apply bluish wet-ground tint (low-alpha overlay)
-  // TODO snow: apply white/light-blue ground tint proportional to accumulation
+function drawWeatherBackground(env: EnvironmentState): void {
+  if (env.weatherType === 'clear' || env.weatherIntensity <= 0) return;
+  // Future weather can add background tint before terrain is drawn.
 }
 
-function drawWeatherForeground(_env: EnvironmentState): void {
-  // TODO rain: diagonal streaks influenced by wind (_env.weatherIntensity + sun direction)
-  // TODO snow: drifting white particles at _env.weatherIntensity density
-  // TODO ice/wet: post-effect tint overlay pass
+function drawWeatherForeground(env: EnvironmentState): void {
+  if (env.weatherType === 'clear' || env.weatherIntensity <= 0) return;
+  // Future rain/snow can add foreground particles after lighting, before HUD overlays.
 }
 
 // ── Render ─────────────────────────────────────────────────────────────────
@@ -3664,6 +3705,10 @@ function render(): void {
   }
 
   // ── Breaker warning glow on target tile ──────────────────────────────────────
+  drawDaylightOverlay(sunState);
+  drawNightLights(sunState);
+  drawWeatherForeground(environment);
+
   if (breakerWarningActive && !breachOpened) {
     const pulse = 0.45 + 0.35 * Math.sin(elapsedSec * 7.7);
     const wxPx = breakerTargetTile.x * tileSizePx;
@@ -3700,10 +3745,6 @@ function render(): void {
     ctx.fillRect(0, 0, nativeWidthPx, nativeHeightPx);
     ctx.restore();
   }
-
-  drawDaylightOverlay(sunState);
-  drawNightLights(sunState);
-  drawWeatherForeground(environment);
 
   // Overlay (WAVE / BREACH / GAME OVER)
   if (overlayText && overlayTimerSec > 0) {
@@ -3753,7 +3794,15 @@ function render(): void {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
   ctx.fillStyle = '#2a3a50';
-  ctx.fillText(`b${currentBuildNumber}`, 2, nativeHeightPx - 1);
+  let buildLabel = `b${currentBuildNumber}`;
+  if (isDayNightDebugActive || isDayNightPreviewFast) {
+    const timeSec = Math.floor(environment.dayNightTimeSec);
+    const hour = Math.floor(timeSec / 150) % 24;
+    const minute = Math.floor((timeSec % 150) / 2.5);
+    buildLabel += ` ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+    if (isDayNightPreviewFast) { buildLabel += ' FAST'; }
+  }
+  ctx.fillText(buildLabel, 2, nativeHeightPx - 1);
   ctx.restore();
 
   // HUD spans
