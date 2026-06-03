@@ -138,7 +138,7 @@ const coalDepositTile = { x: 15, y: 10 };      // coal deposit on the right side
 const deposit3Tile = { x: 5, y: 16 };          // 3rd ore deposit — revealed at high radar
 const entranceTile = { x: 6, y: coreTile.y };
 const breakerTargetTile = { x: coreTile.x, y: 3 };
-const currentBuildNumber = 18;
+const currentBuildNumber = 19;
 const turretRangeTile = 4.5;
 
 // ── Conveyor/Extractor constants ─────────────────────────────────────────────
@@ -3169,10 +3169,13 @@ function drawTileShadows(sunState: SunState): void {
   if (sunState.daylightAmount < 0.05 || sunState.isNight) return;
   const { dirX, dirY, daylightAmount, altitude } = sunState;
   const lowSunAmount = clamp(1 - altitude, 0, 1);
-  const shadowStepCount = Math.floor(1 + lowSunAmount * 5);
-  const stepX = -dirX;
-  const stepY = -dirY;
-  const baseAlpha = SHADOW_MAX_ALPHA * daylightAmount * (0.2 + lowSunAmount * 0.8);
+  if (lowSunAmount < 0.12) return;
+  const shadowStepCount = Math.floor(lowSunAmount * 6);
+  const shadowDirLen = Math.hypot(dirX, dirY);
+  if (shadowDirLen <= 0.001) return;
+  const stepX = -dirX / shadowDirLen;
+  const stepY = -dirY / shadowDirLen;
+  const baseAlpha = SHADOW_MAX_ALPHA * daylightAmount * lowSunAmount * lowSunAmount;
   if (shadowStepCount <= 0 || baseAlpha <= 0.01) return;
 
   ctx.save();
@@ -3190,6 +3193,11 @@ function drawTileShadows(sunState: SunState): void {
         const destXTile = Math.round(xTile + stepX * stepIndex);
         const destYTile = Math.round(yTile + stepY * stepIndex);
         if (!isInBounds(destXTile, destYTile) || !isTileVisible(destXTile, destYTile)) continue;
+        if (destXTile === xTile && destYTile === yTile) continue;
+        const destIndex = tileIndex(destXTile, destYTile);
+        if (structures[destIndex] !== 'empty') continue;
+        if (terrainIsDebris[destIndex]) continue;
+        if (destXTile === coreTile.x && destYTile === coreTile.y) continue;
         const alpha = baseAlpha * (1 - (stepIndex - 1) / (shadowStepCount + 1));
         ctx.globalAlpha = alpha;
         const shrinkPx = Math.min(4, stepIndex);
@@ -3333,6 +3341,69 @@ function drawWeatherForeground(env: EnvironmentState): void {
 }
 
 // ── Render ─────────────────────────────────────────────────────────────────
+function drawPostLightBuildPreview(): void {
+  if (hoveredXTile < 0 || !isInBounds(hoveredXTile, hoveredYTile) || !isTileVisible(hoveredXTile, hoveredYTile)) return;
+  const cx = hoveredXTile * tileSizePx + tileSizePx / 2;
+  const cy = hoveredYTile * tileSizePx + tileSizePx / 2;
+
+  if (selectedTool === 'turret' || selectedTool === 'gatling' || selectedTool === 'cannon') {
+    const color = selectedTool === 'turret'
+      ? 'rgba(88,235,255,0.68)'
+      : selectedTool === 'gatling'
+        ? 'rgba(255,220,90,0.68)'
+        : 'rgba(255,140,80,0.70)';
+    const rangeTile = selectedTool === 'cannon' ? CANNON_RANGE_TILE : turretRangeTile;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, rangeTile * tileSizePx, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  if (isPointerHeld) return;
+  const xPx = hoveredXTile * tileSizePx;
+  const yPx = hoveredYTile * tileSizePx;
+  const hoverIndex = tileIndex(hoveredXTile, hoveredYTile);
+  const isRebuildHover = blueprintGhosts.get(hoverIndex) === selectedTool;
+  ctx.save();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = isRebuildHover
+    ? 'rgba(130,255,180,0.95)'
+    : selectedTool === 'erase'
+      ? 'rgba(255,120,100,0.95)'
+      : selectedTool === 'repair'
+        ? 'rgba(90,255,150,0.95)'
+        : 'rgba(130,220,255,0.9)';
+  ctx.strokeRect(xPx + 0.5, yPx + 0.5, tileSizePx - 1, tileSizePx - 1);
+
+  if (selectedTool === 'conveyor' || selectedTool === 'extractor' || selectedTool === 'splitter') {
+    const arrowColor = 'rgba(80,255,220,0.95)';
+    const d = conveyorPlacementDir;
+    if (d === 0) {
+      fillPx(xPx + 4, yPx + 5, 4, 1, arrowColor);
+      fillPx(xPx + 6, yPx + 4, 1, 3, arrowColor);
+      fillPx(xPx + 7, yPx + 5, 1, 1, arrowColor);
+    } else if (d === 2) {
+      fillPx(xPx + 4, yPx + 5, 4, 1, arrowColor);
+      fillPx(xPx + 4, yPx + 4, 1, 3, arrowColor);
+      fillPx(xPx + 3, yPx + 5, 1, 1, arrowColor);
+    } else if (d === 1) {
+      fillPx(xPx + 5, yPx + 4, 1, 4, arrowColor);
+      fillPx(xPx + 4, yPx + 6, 3, 1, arrowColor);
+      fillPx(xPx + 5, yPx + 7, 1, 1, arrowColor);
+    } else {
+      fillPx(xPx + 5, yPx + 4, 1, 4, arrowColor);
+      fillPx(xPx + 4, yPx + 4, 3, 1, arrowColor);
+      fillPx(xPx + 5, yPx + 3, 1, 1, arrowColor);
+    }
+  }
+  ctx.restore();
+}
+
 function render(): void {
   ctx.fillStyle = '#07090f';
   ctx.fillRect(0, 0, nativeWidthPx, nativeHeightPx);
@@ -3708,6 +3779,7 @@ function render(): void {
   drawDaylightOverlay(sunState);
   drawNightLights(sunState);
   drawWeatherForeground(environment);
+  drawPostLightBuildPreview();
 
   if (breakerWarningActive && !breachOpened) {
     const pulse = 0.45 + 0.35 * Math.sin(elapsedSec * 7.7);
