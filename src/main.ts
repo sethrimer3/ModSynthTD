@@ -1,4 +1,4 @@
 import './styles.css';
-import { startGame } from './game';
+import { showVersionSelect } from './versionSelect';
 
-startGame();
+showVersionSelect();
