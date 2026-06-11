@@ -4,6 +4,9 @@
 
 type Waveform = 'pulse' | 'sine' | 'square';
 
+// One neon color per channel (CH1, CH2, ...). Only CH1 used currently.
+const CHANNEL_COLORS = ['#00ffee', '#ff33aa', '#ffcc00', '#88ff22', '#ff6600'];
+
 interface SynthLevelConfig {
   id: number;
   name: string;
@@ -43,8 +46,11 @@ class SynthChannel {
   amplitude: number;
   phaseBeats: number;
 
+  readonly color: string;
+
   constructor(id: number) {
     this.id = id;
+    this.color = CHANNEL_COLORS[(id - 1) % CHANNEL_COLORS.length];
     this.waveform = 'pulse';
     this.periodBeats = 1;
     this.amplitude = 1;
@@ -721,6 +727,7 @@ function checkCollisions(
 // ── Rendering ──────────────────────────────────────────────────────────────
 
 const BASE_TILE_PX = 40;
+const SIGNAL_TAIL_BEATS = 3; // how many beats of trail to draw
 
 function renderLevel(
   ctx: CanvasRenderingContext2D,
@@ -738,14 +745,10 @@ function renderLevel(
   const tileZ = BASE_TILE_PX * dpr * view.zoom;
   const beatFloat = clock.beatFloat;
   const beatFrac = clock.beatFrac;
+  const zDpr = view.zoom * dpr;
 
-  // Background + vignette
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, W, H);
-  const vig = ctx.createRadialGradient(W / 2, H / 2, H * 0.2, W / 2, H / 2, H * 0.8);
-  vig.addColorStop(0, 'rgba(0,0,0,0)');
-  vig.addColorStop(1, 'rgba(0,0,10,0.7)');
-  ctx.fillStyle = vig;
+  // ── Background ─────────────────────────────────────────────────────────────
+  ctx.fillStyle = '#01030a';
   ctx.fillRect(0, 0, W, H);
 
   ctx.save();
@@ -755,88 +758,121 @@ function renderLevel(
   const start = level.trackTiles[0];
   const finish = level.trackTiles[level.trackTiles.length - 1];
 
-  // Grid tiles
+  // ── Grid tile fills (no shadowBlur here) ──────────────────────────────────
   for (let ty = 0; ty < level.gridHeight; ty++) {
     for (let tx = 0; tx < level.gridWidth; tx++) {
       const px = tx * tileZ, py = ty * tileZ;
       const isTrack = trackSet.has(`${tx},${ty}`);
 
-      ctx.fillStyle = isTrack ? '#060f1a' : '#03060e';
-      ctx.fillRect(px, py, tileZ, tileZ);
-
       if (isTrack) {
-        ctx.save();
-        ctx.shadowColor = '#00ddcc';
-        ctx.shadowBlur = 6 * view.zoom * dpr;
-        ctx.strokeStyle = 'rgba(0,200,180,0.55)';
-        ctx.lineWidth = Math.max(0.8, 1.2 * view.zoom * dpr);
-        ctx.strokeRect(px + 1, py + 1, tileZ - 2, tileZ - 2);
-        ctx.restore();
-        ctx.fillStyle = 'rgba(0,180,160,0.06)';
-        ctx.fillRect(px + 2, py + 2, tileZ - 4, tileZ - 4);
+        // Darker backing for track — circuit channel groove
+        ctx.fillStyle = '#030a14';
+        ctx.fillRect(px, py, tileZ, tileZ);
+        // Subtle inner tint
+        ctx.fillStyle = 'rgba(0,160,140,0.04)';
+        ctx.fillRect(px + 1, py + 1, tileZ - 2, tileZ - 2);
       } else {
-        ctx.strokeStyle = 'rgba(30,50,90,0.55)';
-        ctx.lineWidth = Math.max(0.4, 0.5 * dpr);
+        ctx.fillStyle = '#010409';
+        ctx.fillRect(px, py, tileZ, tileZ);
+        // Dim grid lines — no blur
+        ctx.strokeStyle = 'rgba(20,38,72,0.6)';
+        ctx.lineWidth = Math.max(0.3, 0.5 * dpr);
         ctx.strokeRect(px + 0.5, py + 0.5, tileZ - 1, tileZ - 1);
-        if ((tx + ty) % 3 === 0) {
-          ctx.fillStyle = 'rgba(40,70,120,0.35)';
+        // Circuit via dots at grid intersections (every 4th tile)
+        if (tx % 4 === 0 && ty % 4 === 0) {
+          ctx.fillStyle = 'rgba(30,55,100,0.5)';
+          const dotR = Math.max(1, 1.8 * zDpr);
           ctx.beginPath();
-          ctx.arc(px + tileZ / 2, py + tileZ / 2, Math.max(0.8, 1.2 * view.zoom * dpr), 0, Math.PI * 2);
+          ctx.arc(px, py, dotR, 0, Math.PI * 2);
           ctx.fill();
+        }
+        // Horizontal trace stubs on empty tiles for circuit flavor
+        if ((tx + ty * 3) % 7 === 0 && !isTrack) {
+          ctx.strokeStyle = 'rgba(20,45,80,0.4)';
+          ctx.lineWidth = Math.max(0.3, 0.4 * dpr);
+          ctx.beginPath();
+          ctx.moveTo(px + tileZ * 0.2, py + tileZ / 2);
+          ctx.lineTo(px + tileZ * 0.8, py + tileZ / 2);
+          ctx.stroke();
         }
       }
     }
   }
 
-  // Track center-line trace
+  // ── Track circuit traces — 3 passes, NO per-pass shadowBlur ──────────────
+  // Build the path once, reuse for each pass
+  const buildTracePath = () => {
+    ctx.beginPath();
+    for (let i = 0; i < level.trackTiles.length; i++) {
+      const [tx, ty] = level.trackTiles[i];
+      const px = tx * tileZ + tileZ / 2, py = ty * tileZ + tileZ / 2;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+  };
+
   ctx.save();
-  ctx.strokeStyle = 'rgba(0,220,200,0.15)';
-  ctx.lineWidth = Math.max(1.5, 3 * view.zoom * dpr);
-  ctx.shadowColor = '#00ddcc';
-  ctx.shadowBlur = 4 * view.zoom * dpr;
   ctx.lineCap = 'round';
-  ctx.beginPath();
-  for (let i = 0; i < level.trackTiles.length; i++) {
-    const [tx, ty] = level.trackTiles[i];
-    const px = tx * tileZ + tileZ / 2, py = ty * tileZ + tileZ / 2;
-    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-  }
+  ctx.lineJoin = 'round';
+
+  // Pass 1 — wide soft outer glow (thick, very dim — simulates blur without blur)
+  ctx.strokeStyle = 'rgba(0,220,200,0.055)';
+  ctx.lineWidth = Math.max(4, 10 * zDpr);
+  buildTracePath();
   ctx.stroke();
+
+  // Pass 2 — medium inner glow
+  ctx.strokeStyle = 'rgba(0,220,200,0.18)';
+  ctx.lineWidth = Math.max(2.5, 5 * zDpr);
+  buildTracePath();
+  ctx.stroke();
+
+  // Pass 3 — bright thin core line
+  ctx.strokeStyle = 'rgba(0,240,210,0.75)';
+  ctx.lineWidth = Math.max(0.8, 1.4 * zDpr);
+  buildTracePath();
+  ctx.stroke();
+
   ctx.restore();
 
-  if (start) drawMarker(ctx, start[0], start[1], tileZ, '#33ff88', '#00cc66', 'S');
-  if (finish) drawMarker(ctx, finish[0], finish[1], tileZ, '#ff3366', '#cc0044', 'F');
+  // ── Track direction-change junction dots ───────────────────────────────────
+  ctx.save();
+  for (let i = 1; i < level.trackTiles.length - 1; i++) {
+    const [ax, ay] = level.trackTiles[i - 1];
+    const [bx, by] = level.trackTiles[i];
+    const [cx2, cy2] = level.trackTiles[i + 1];
+    const dirChanged = (bx - ax !== cx2 - bx) || (by - ay !== cy2 - by);
+    if (dirChanged) {
+      const px = bx * tileZ + tileZ / 2, py = by * tileZ + tileZ / 2;
+      // Filled dot at corner — no shadowBlur, achieved by stacked circles
+      ctx.fillStyle = 'rgba(0,240,210,0.15)';
+      ctx.beginPath(); ctx.arc(px, py, Math.max(3, 5 * zDpr), 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(0,240,210,0.55)';
+      ctx.beginPath(); ctx.arc(px, py, Math.max(1.5, 2.5 * zDpr), 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(180,255,245,0.9)';
+      ctx.beginPath(); ctx.arc(px, py, Math.max(0.8, 1.2 * zDpr), 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
 
-  // Tower — color reflects channel waveform
+  // ── Start / Finish markers ─────────────────────────────────────────────────
+  if (start) drawMarker(ctx, start[0], start[1], tileZ, '#33ff88', '#00cc66', 'S', zDpr);
+  if (finish) drawMarker(ctx, finish[0], finish[1], tileZ, '#ff3366', '#cc0044', 'F', zDpr);
+
+  // ── Tower ──────────────────────────────────────────────────────────────────
   const isHigh = channel.isHighAt(beatFloat);
-  drawTower(ctx, tower.tileX, tower.tileY, tileZ, beatFrac, view.zoom * dpr, channel.waveform, isHigh);
+  drawTower(ctx, tower.tileX, tower.tileY, tileZ, beatFrac, zDpr, channel.waveform, isHigh);
 
-  // Projectiles
+  // ── Signal projectiles — tail + node head ──────────────────────────────────
   for (const p of projectiles) {
     if (p.dead) continue;
-    const age = beatFloat - p.spawnBeat;
-    const logX = p.originX + age * p.dirX;
-    const logY = p.originY + age * p.dirY;
-
-    // Sine offset: perpendicular to travel direction
-    let vizX = logX, vizY = logY;
-    if (p.waveform === 'sine') {
-      const perpX = -p.dirY, perpY = p.dirX; // 90° rotation
-      const sineOff = Math.sin(age / p.periodBeats * Math.PI * 2) * 0.45 * p.periodBeats / 4;
-      vizX += perpX * sineOff;
-      vizY += perpY * sineOff;
-    }
-
-    const px = vizX * tileZ + tileZ / 2;
-    const py = vizY * tileZ + tileZ / 2;
-    drawSignalMote(ctx, px, py, tileZ, beatFrac, view.zoom * dpr, p.waveform, age);
+    drawSignalWithTail(ctx, p, beatFloat, tileZ, zDpr, channel.color);
   }
 
-  // Enemy
+  // ── Enemy ──────────────────────────────────────────────────────────────────
   if (level.trackTiles.length > 0) {
     const pos = enemy.getFloatPos(beatFloat);
     drawEnemy(ctx, pos.x * tileZ + tileZ / 2, pos.y * tileZ + tileZ / 2,
-      tileZ, enemy, beatFrac, view.zoom * dpr);
+      tileZ, enemy, beatFrac, zDpr);
   }
 
   ctx.restore();
@@ -844,20 +880,191 @@ function renderLevel(
 
 // ── Draw helpers ───────────────────────────────────────────────────────────
 
+// Smoothstep easing — gives signals a "settle into tile" feel on beat ticks
+function smoothstep(t: number): number {
+  return t * t * (3 - 2 * t);
+}
+
+// Compute visual (x, y) in tile-space for a projectile at a given age
+function signalVizPos(p: SignalProjectile, age: number): { x: number; y: number } {
+  const intAge = Math.floor(age);
+  const frac = smoothstep(age - intAge);
+
+  let vx = p.originX + (intAge + frac) * p.dirX;
+  let vy = p.originY + (intAge + frac) * p.dirY;
+
+  if (p.waveform === 'sine') {
+    const perpX = -p.dirY, perpY = p.dirX;
+    const sineOff = Math.sin(age / p.periodBeats * Math.PI * 2) * 0.38;
+    vx += perpX * sineOff;
+    vy += perpY * sineOff;
+  }
+
+  return { x: vx, y: vy };
+}
+
+function drawSignalWithTail(
+  ctx: CanvasRenderingContext2D,
+  p: SignalProjectile,
+  beatFloat: number,
+  tileZ: number,
+  zoomDpr: number,
+  channelColor: string,
+): void {
+  const age = beatFloat - p.spawnBeat;
+  const head = signalVizPos(p, age);
+  const hpx = head.x * tileZ + tileZ / 2;
+  const hpy = head.y * tileZ + tileZ / 2;
+
+  // ── Tail ─────────────────────────────────────────────────────────────────
+  // For straight waveforms: gradient line backward along travel direction.
+  // For sine: sampled polyline following oscillating path.
+  const tailBeats = Math.min(age, SIGNAL_TAIL_BEATS);
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (p.waveform === 'sine' && tailBeats > 0) {
+    // Sample the sine path at intervals back in time
+    const SAMPLES = 24;
+    const points: { x: number; y: number }[] = [];
+    for (let i = 0; i <= SAMPLES; i++) {
+      const t = age - tailBeats * (i / SAMPLES);
+      if (t < 0) break;
+      const pt = signalVizPos(p, t);
+      points.push({ x: pt.x * tileZ + tileZ / 2, y: pt.y * tileZ + tileZ / 2 });
+    }
+    // Draw with fading opacity using multiple short segments
+    for (let i = 0; i < points.length - 1; i++) {
+      const alpha = (1 - i / points.length) * 0.7;
+      ctx.strokeStyle = hexAlpha(channelColor, alpha);
+      ctx.lineWidth = Math.max(0.8, (1.5 - i / points.length) * 1.8 * zoomDpr);
+      ctx.beginPath();
+      ctx.moveTo(points[i].x, points[i].y);
+      ctx.lineTo(points[i + 1].x, points[i + 1].y);
+      ctx.stroke();
+    }
+  } else if (tailBeats > 0) {
+    // Straight tail: linear gradient from head back along -dir
+    const tailAge = age - tailBeats;
+    const tail = signalVizPos(p, Math.max(0, tailAge));
+    const tpx = tail.x * tileZ + tileZ / 2;
+    const tpy = tail.y * tileZ + tileZ / 2;
+
+    const dx = hpx - tpx, dy = hpy - tpy;
+    if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+      // Outer soft tail — thick dim
+      const gradOuter = ctx.createLinearGradient(hpx, hpy, tpx, tpy);
+      gradOuter.addColorStop(0, hexAlpha(channelColor, 0.25));
+      gradOuter.addColorStop(1, hexAlpha(channelColor, 0));
+      ctx.strokeStyle = gradOuter;
+      ctx.lineWidth = Math.max(2, 4 * zoomDpr);
+      ctx.beginPath(); ctx.moveTo(hpx, hpy); ctx.lineTo(tpx, tpy); ctx.stroke();
+
+      // Inner bright core tail
+      const gradCore = ctx.createLinearGradient(hpx, hpy, tpx, tpy);
+      gradCore.addColorStop(0, hexAlpha(channelColor, 0.85));
+      gradCore.addColorStop(0.4, hexAlpha(channelColor, 0.4));
+      gradCore.addColorStop(1, hexAlpha(channelColor, 0));
+      ctx.strokeStyle = gradCore;
+      ctx.lineWidth = Math.max(0.8, 1.4 * zoomDpr);
+      ctx.beginPath(); ctx.moveTo(hpx, hpy); ctx.lineTo(tpx, tpy); ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+
+  // ── Node head ──────────────────────────────────────────────────────────────
+  const r = Math.max(2.5, tileZ * 0.11);
+  ctx.save();
+
+  if (p.waveform === 'pulse') {
+    // Sharp circuit node: outer ring + radial-gradient core
+    ctx.strokeStyle = hexAlpha(channelColor, 0.5);
+    ctx.lineWidth = Math.max(0.8, 1.2 * zoomDpr);
+    ctx.beginPath(); ctx.arc(hpx, hpy, r * 2.0, 0, Math.PI * 2); ctx.stroke();
+
+    const cg = ctx.createRadialGradient(hpx, hpy, 0, hpx, hpy, r);
+    cg.addColorStop(0, '#ffffff');
+    cg.addColorStop(0.35, channelColor);
+    cg.addColorStop(1, hexAlpha(channelColor, 0.4));
+    ctx.fillStyle = cg;
+    // Single shadowBlur pass, small radius — localized cost
+    ctx.shadowColor = channelColor;
+    ctx.shadowBlur = 8 * zoomDpr;
+    ctx.beginPath(); ctx.arc(hpx, hpy, r, 0, Math.PI * 2); ctx.fill();
+
+  } else if (p.waveform === 'sine') {
+    // Soft glowing orb
+    const halo = ctx.createRadialGradient(hpx, hpy, 0, hpx, hpy, r * 2.8);
+    halo.addColorStop(0, hexAlpha(channelColor, 0.4));
+    halo.addColorStop(0.5, hexAlpha(channelColor, 0.15));
+    halo.addColorStop(1, hexAlpha(channelColor, 0));
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(hpx, hpy, r * 2.8, 0, Math.PI * 2); ctx.fill();
+
+    const cg = ctx.createRadialGradient(hpx, hpy, 0, hpx, hpy, r);
+    cg.addColorStop(0, '#ffffff');
+    cg.addColorStop(0.5, channelColor);
+    cg.addColorStop(1, hexAlpha(channelColor, 0.5));
+    ctx.fillStyle = cg;
+    ctx.shadowColor = channelColor;
+    ctx.shadowBlur = 10 * zoomDpr;
+    ctx.beginPath(); ctx.arc(hpx, hpy, r * 0.85, 0, Math.PI * 2); ctx.fill();
+
+  } else {
+    // Square: square ring + inner pixel
+    const sz = r * 1.3;
+    ctx.strokeStyle = hexAlpha(channelColor, 0.7);
+    ctx.lineWidth = Math.max(1, 1.6 * zoomDpr);
+    ctx.shadowColor = channelColor;
+    ctx.shadowBlur = 8 * zoomDpr;
+    ctx.strokeRect(hpx - sz, hpy - sz, sz * 2, sz * 2);
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = channelColor;
+    const core = r * 0.38;
+    ctx.fillRect(hpx - core, hpy - core, core * 2, core * 2);
+
+    // Bright center flash on beat boundary (first 40% of beat)
+    if ((age % 1) < 0.4) {
+      ctx.fillStyle = '#ffffff';
+      const fc = core * 0.5;
+      ctx.fillRect(hpx - fc, hpy - fc, fc * 2, fc * 2);
+    }
+  }
+
+  ctx.restore();
+}
+
+// Convert a 6-char hex color + alpha 0..1 → rgba string (avoids repeated hex manipulation)
+function hexAlpha(hex: string, alpha: number): string {
+  // hex is '#rrggbb' or '#rrggbbaa'
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+}
+
 function drawMarker(
   ctx: CanvasRenderingContext2D,
   tx: number, ty: number, tileZ: number,
   color: string, glow: string, label: string,
+  zoomDpr: number,
 ): void {
   const px = tx * tileZ + tileZ / 2, py = ty * tileZ + tileZ / 2;
-  const r = tileZ * 0.24;
+  const r = tileZ * 0.22;
   ctx.save();
-  ctx.shadowColor = glow; ctx.shadowBlur = 12;
+  // Stacked circles for glow — no shadowBlur
+  ctx.fillStyle = hexAlpha(glow, 0.15);
+  ctx.beginPath(); ctx.arc(px, py, r * 2.2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = hexAlpha(glow, 0.3);
+  ctx.beginPath(); ctx.arc(px, py, r * 1.5, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = color;
   ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
   if (tileZ > 18) {
-    ctx.shadowBlur = 0;
-    ctx.font = `bold ${Math.max(8, Math.round(tileZ * 0.22))}px 'Pixelify Sans',system-ui,sans-serif`;
+    ctx.font = `bold ${Math.max(8, Math.round(tileZ * 0.2))}px 'Pixelify Sans',system-ui,sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillStyle = '#000'; ctx.fillText(label, px, py);
   }
@@ -873,110 +1080,49 @@ function drawTower(
   const px = tx * tileZ + tileZ / 2, py = ty * tileZ + tileZ / 2;
   const half = tileZ * 0.3;
   const pulse = Math.pow(1 - beatFrac, 2) * 0.6;
-
   const color = WAVEFORM_COLORS[waveform];
-  const dimColor = isHigh ? color : `${color}44`;
-  const glowStrength = isHigh ? (8 + pulse * 20) : 3;
 
   ctx.save();
   ctx.translate(px, py);
-  ctx.shadowColor = color;
-  ctx.shadowBlur = glowStrength * zoomDpr;
 
-  // Outer diamond
-  ctx.strokeStyle = `${dimColor}`;
-  ctx.lineWidth = Math.max(1, 1.5 * zoomDpr);
+  // Low-state dim background fill
+  if (!isHigh) {
+    ctx.fillStyle = hexAlpha(color, 0.04);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillRect(-half * 0.9, -half * 0.9, half * 1.8, half * 1.8);
+    ctx.rotate(-Math.PI / 4);
+  }
+
+  // Outer diamond — single shadowBlur allowed here (tower is one element)
+  const glowAmt = isHigh ? (6 + pulse * 16) : 2;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = glowAmt * zoomDpr;
+  ctx.strokeStyle = isHigh ? hexAlpha(color, 0.85 + pulse * 0.15) : hexAlpha(color, 0.2);
+  ctx.lineWidth = Math.max(1, 1.4 * zoomDpr);
   ctx.rotate(Math.PI / 4);
   ctx.strokeRect(-half * 0.8, -half * 0.8, half * 1.6, half * 1.6);
   ctx.rotate(-Math.PI / 4);
 
-  // Inner cross
-  ctx.shadowBlur = (4 + pulse * 8) * zoomDpr;
-  ctx.strokeStyle = isHigh ? `${color}cc` : `${color}33`;
-  ctx.lineWidth = Math.max(0.8, zoomDpr);
+  // Inner cross (no extra blur pass)
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = isHigh ? hexAlpha(color, 0.5 + pulse * 0.4) : hexAlpha(color, 0.12);
+  ctx.lineWidth = Math.max(0.7, 0.9 * zoomDpr);
   ctx.beginPath();
-  ctx.moveTo(-half * 0.55, 0); ctx.lineTo(half * 0.55, 0);
-  ctx.moveTo(0, -half * 0.55); ctx.lineTo(0, half * 0.55);
+  ctx.moveTo(-half * 0.52, 0); ctx.lineTo(half * 0.52, 0);
+  ctx.moveTo(0, -half * 0.52); ctx.lineTo(0, half * 0.52);
   ctx.stroke();
 
-  // Center dot
-  ctx.shadowBlur = (6 + pulse * 12) * zoomDpr;
-  ctx.fillStyle = isHigh ? `${color}dd` : `${color}33`;
-  ctx.beginPath();
-  ctx.arc(0, 0, Math.max(2, tileZ * 0.06), 0, Math.PI * 2);
-  ctx.fill();
-
-  // Square wave: show low-state dim ring when low
-  if (waveform === 'square' && !isHigh) {
-    ctx.strokeStyle = `${color}22`;
-    ctx.lineWidth = Math.max(0.5, 0.8 * zoomDpr);
-    ctx.beginPath();
-    ctx.arc(0, 0, half * 0.5, 0, Math.PI * 2);
-    ctx.stroke();
+  // Center node — stacked circles instead of more shadowBlur
+  const cr = Math.max(2, tileZ * 0.065);
+  if (isHigh) {
+    ctx.fillStyle = hexAlpha(color, 0.25 + pulse * 0.15);
+    ctx.beginPath(); ctx.arc(0, 0, cr * 2.5, 0, Math.PI * 2); ctx.fill();
   }
-
-  ctx.restore();
-}
-
-function drawSignalMote(
-  ctx: CanvasRenderingContext2D,
-  px: number, py: number, tileZ: number,
-  beatFrac: number, zoomDpr: number,
-  waveform: Waveform, age: number,
-): void {
-  const r = Math.max(2, tileZ * 0.1);
-  const color = WAVEFORM_COLORS[waveform];
-
-  ctx.save();
-  ctx.shadowColor = color;
-
-  if (waveform === 'pulse') {
-    // Sharp, bright — existing style
-    ctx.shadowBlur = 12 * zoomDpr;
-    ctx.strokeStyle = `${color}66`;
-    ctx.lineWidth = Math.max(0.8, 1.5 * zoomDpr);
-    ctx.beginPath(); ctx.arc(px, py, r * 2.2, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = '#b0fff8';
-    ctx.shadowBlur = 18 * zoomDpr;
-    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowBlur = 6 * zoomDpr;
-    ctx.beginPath(); ctx.arc(px, py, r * 0.4, 0, Math.PI * 2); ctx.fill();
-
-  } else if (waveform === 'sine') {
-    // Smooth rounded glow, softer edges
-    ctx.shadowBlur = 16 * zoomDpr;
-    // Outer soft halo
-    const grad = ctx.createRadialGradient(px, py, 0, px, py, r * 3);
-    grad.addColorStop(0, `${color}cc`);
-    grad.addColorStop(0.4, `${color}55`);
-    grad.addColorStop(1, `${color}00`);
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(px, py, r * 3, 0, Math.PI * 2); ctx.fill();
-    // Core
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowBlur = 8 * zoomDpr;
-    ctx.beginPath(); ctx.arc(px, py, r * 0.7, 0, Math.PI * 2); ctx.fill();
-
-  } else {
-    // square: angular ring / stepped look
-    const size = r * 1.4;
-    ctx.shadowBlur = 10 * zoomDpr;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(1, 1.8 * zoomDpr);
-    // Outer square ring
-    ctx.strokeRect(px - size, py - size, size * 2, size * 2);
-    // Inner dot
-    ctx.shadowBlur = 14 * zoomDpr;
-    ctx.fillStyle = color;
-    ctx.fillRect(px - r * 0.45, py - r * 0.45, r * 0.9, r * 0.9);
-    // Step pulse: flicker on/off each half-beat
-    const stepFlash = (age % 1) < 0.5;
-    if (stepFlash) {
-      ctx.fillStyle = '#ffffff';
-      ctx.shadowBlur = 4 * zoomDpr;
-      ctx.fillRect(px - r * 0.2, py - r * 0.2, r * 0.4, r * 0.4);
-    }
+  ctx.fillStyle = isHigh ? hexAlpha(color, 0.9) : hexAlpha(color, 0.2);
+  ctx.beginPath(); ctx.arc(0, 0, cr, 0, Math.PI * 2); ctx.fill();
+  if (isHigh && pulse > 0.1) {
+    ctx.fillStyle = `rgba(255,255,255,${pulse * 0.8})`;
+    ctx.beginPath(); ctx.arc(0, 0, cr * 0.5, 0, Math.PI * 2); ctx.fill();
   }
 
   ctx.restore();
