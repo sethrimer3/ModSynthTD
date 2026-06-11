@@ -1,16 +1,31 @@
 // ── Version 2: Modular Synth Tower Defense ─────────────────────────────────
 
 import { createRackWiringSystem } from './version2-rack-wiring';
-import type { RackWiringHandle } from './version2-rack-wiring';
+import type { RackWiringHandle, RackWireConnection } from './version2-rack-wiring';
 import { rackPlugColor } from './version2-rack-wiring-types';
 import type { RackPlugType } from './version2-rack-wiring-types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type Waveform = 'pulse' | 'sine' | 'square';
+type SignalDirection = 'north' | 'south' | 'east' | 'west';
 
-// One neon color per channel (CH1, CH2, ...). Only CH1 used currently.
 const CHANNEL_COLORS = ['#00ffee', '#ff33aa', '#ffcc00', '#88ff22', '#ff6600'];
+
+interface SynthSignal {
+  waveform: Waveform;
+  amplitude: number;
+  periodBeats: number;
+  phaseBeats: number;
+  color: string;
+  directions: SignalDirection[];
+}
+
+interface EvaluatedRoute {
+  signals: SynthSignal[];
+  routeLabel: string;
+  activeModules: Set<string>;
+}
 
 interface SynthLevelConfig {
   id: number;
@@ -38,7 +53,9 @@ interface SignalProjectile {
   dirX: number;
   dirY: number;
   waveform: Waveform;
-  periodBeats: number;  // for sine oscillation period
+  periodBeats: number;
+  amplitude: number;
+  color: string;
   dead: boolean;
 }
 
@@ -50,7 +67,6 @@ class SynthChannel {
   periodBeats: number;
   amplitude: number;
   phaseBeats: number;
-
   readonly color: string;
 
   constructor(id: number) {
@@ -64,33 +80,9 @@ class SynthChannel {
 
   setWaveform(w: Waveform): void {
     this.waveform = w;
-    // Set sensible default period when switching
     if (w === 'pulse') this.periodBeats = 1;
     else if (w === 'square') this.periodBeats = 4;
     else if (w === 'sine') this.periodBeats = 4;
-  }
-
-  // Returns true if the tower should fire on this integer beat
-  shouldFireOnBeat(beat: number): boolean {
-    const p = this.periodBeats;
-    const beatInCycle = ((beat - this.phaseBeats) % p + p) % p;
-
-    switch (this.waveform) {
-      case 'pulse':
-        return beatInCycle === 0;
-      case 'square':
-        // High phase = first half of period
-        return beatInCycle < p / 2;
-      case 'sine':
-        return true; // fires every beat; visual offset applied at render
-    }
-  }
-
-  // Visual high/low state for square wave tower indicator
-  isHighAt(beatFloat: number): boolean {
-    const p = this.periodBeats;
-    const phase = ((beatFloat - this.phaseBeats) % p + p) % p;
-    return this.waveform !== 'square' || phase < p / 2;
   }
 }
 
@@ -138,7 +130,7 @@ class Enemy {
     return this.track[idx];
   }
 
-  hit(): void { this.hp = Math.max(0, this.hp - 1); this.flashTimer = 0.25; }
+  hit(damage = 1): void { this.hp = Math.max(0, this.hp - damage); this.flashTimer = 0.25; }
   update(dt: number): void { if (this.flashTimer > 0) this.flashTimer = Math.max(0, this.flashTimer - dt); }
   get isFlashing(): boolean { return this.flashTimer > 0; }
 }
@@ -148,28 +140,133 @@ class Enemy {
 class OutputTower {
   readonly tileX = 8;
   readonly tileY = 4;
-  readonly dirX = 0;
-  readonly dirY = -1;
-
   private lastCheckedBeat = -1;
 
-  update(beat: number, channel: SynthChannel, projectiles: SignalProjectile[], routeActive = true): void {
-    if (beat <= this.lastCheckedBeat) return;
+  update(beat: number, signals: SynthSignal[], projectiles: SignalProjectile[]): boolean {
+    if (beat <= this.lastCheckedBeat) return false;
     this.lastCheckedBeat = beat;
+    if (signals.length === 0) return false;
 
-    if (routeActive && channel.shouldFireOnBeat(beat)) {
-      projectiles.push({
-        spawnBeat: beat,
-        originX: this.tileX,
-        originY: this.tileY,
-        dirX: this.dirX,
-        dirY: this.dirY,
-        waveform: channel.waveform,
-        periodBeats: channel.periodBeats,
-        dead: false,
-      });
+    let fired = false;
+    for (const sig of signals) {
+      if (!signalShouldFireOnBeat(sig, beat)) continue;
+      for (const dir of sig.directions) {
+        const [dx, dy] = dirToVector(dir);
+        projectiles.push({
+          spawnBeat: beat,
+          originX: this.tileX,
+          originY: this.tileY,
+          dirX: dx, dirY: dy,
+          waveform: sig.waveform,
+          periodBeats: sig.periodBeats,
+          amplitude: sig.amplitude,
+          color: sig.color,
+          dead: false,
+        });
+        fired = true;
+      }
     }
+    return fired;
   }
+}
+
+// ── Signal graph helpers ───────────────────────────────────────────────────
+
+function dirToVector(dir: SignalDirection): [number, number] {
+  switch (dir) {
+    case 'north': return [0, -1];
+    case 'south': return [0,  1];
+    case 'east':  return [1,  0];
+    case 'west':  return [-1, 0];
+  }
+}
+
+function signalShouldFireOnBeat(sig: SynthSignal, beat: number): boolean {
+  const p = sig.periodBeats;
+  const beatInCycle = ((beat - sig.phaseBeats) % p + p) % p;
+  switch (sig.waveform) {
+    case 'pulse':  return beatInCycle === 0;
+    case 'square': return beatInCycle < p / 2;
+    case 'sine':   return true;
+  }
+}
+
+function signalIsHighAt(sig: SynthSignal, beatFloat: number): boolean {
+  const p = sig.periodBeats;
+  const phase = ((beatFloat - sig.phaseBeats) % p + p) % p;
+  return sig.waveform !== 'square' || phase < p / 2;
+}
+
+function evaluateSignalGraph(
+  connections: readonly RackWireConnection[],
+  channel: SynthChannel,
+): EvaluatedRoute {
+  const EMPTY: EvaluatedRoute = { signals: [], routeLabel: 'NO SIGNAL', activeModules: new Set() };
+
+  function next(fromId: string): string | null {
+    const c = connections.find(conn => conn.fromPlugId === fromId);
+    return c ? c.toPlugId : null;
+  }
+
+  const afterCh1 = next('ch1-out');
+  if (!afterCh1) return EMPTY;
+
+  // CH1 → OUT (direct, default pulse)
+  if (afterCh1 === 'out-in') {
+    return {
+      signals: [{
+        waveform: 'pulse', amplitude: 1, periodBeats: 1, phaseBeats: 0,
+        color: channel.color, directions: ['north'],
+      }],
+      routeLabel: 'CH1 → OUT',
+      activeModules: new Set(['ch1', 'out']),
+    };
+  }
+
+  // CH1 → WAVE → ...
+  if (afterCh1 === 'wf-in') {
+    const afterWf = next('wf-out');
+    if (!afterWf) return EMPTY;
+
+    // CH1 → WAVE → OUT
+    if (afterWf === 'out-in') {
+      return {
+        signals: [{
+          waveform: channel.waveform,
+          amplitude: channel.amplitude,
+          periodBeats: channel.periodBeats,
+          phaseBeats: channel.phaseBeats,
+          color: channel.color,
+          directions: ['north'],
+        }],
+        routeLabel: 'CH1 → WAVE → OUT',
+        activeModules: new Set(['ch1', 'wave', 'out']),
+      };
+    }
+
+    // CH1 → WAVE → SPLIT → OUT
+    if (afterWf === 'split-in') {
+      const afterSplit = next('split-out');
+      if (afterSplit !== 'out-in') return EMPTY;
+      const splitAmp = channel.amplitude / 2;
+      return {
+        signals: [{
+          waveform: channel.waveform,
+          amplitude: splitAmp,
+          periodBeats: channel.periodBeats,
+          phaseBeats: channel.phaseBeats,
+          color: channel.color,
+          directions: ['north', 'south'],
+        }],
+        routeLabel: 'CH1 → WAVE → SPLIT → OUT',
+        activeModules: new Set(['ch1', 'wave', 'split', 'out']),
+      };
+    }
+
+    return EMPTY;
+  }
+
+  return EMPTY;
 }
 
 // ── Level Configs ──────────────────────────────────────────────────────────
@@ -504,9 +601,10 @@ export function enterLevel(levelId: number): void {
   const tower = new OutputTower();
   const projectiles: SignalProjectile[] = [];
 
-  // Default wiring: Channel 1 → Waveform → Output
+  // Default patch: CH1 → WAVE → SPLIT → OUTPUT
   wiring.connectPlugs('ch1-out', 'wf-in');
-  wiring.connectPlugs('wf-out', 'out-in');
+  wiring.connectPlugs('wf-out', 'split-in');
+  wiring.connectPlugs('split-out', 'out-in');
 
   let lastNow = performance.now();
   const ctx = canvas.getContext('2d')!;
@@ -520,16 +618,18 @@ export function enterLevel(levelId: number): void {
     const beatFloat = clock.beatFloat;
     const beat = clock.beat;
 
+    const route = evaluateSignalGraph(wiring.getConnections(), channel);
+    const justFired = tower.update(beat, route.signals, projectiles);
+
     enemy.update(dt);
-    tower.update(beat, channel, projectiles, wiring.hasRoute('out-in'));
     cullProjectiles(projectiles, level, beatFloat);
     checkCollisions(enemy, projectiles, level, beatFloat);
 
     beatDisplay.textContent = `beat ${beat}`;
-    updatePanel();
+    updatePanel(dt, route, justFired);
     wiring.update(now);
 
-    renderLevel(ctx, canvas, level, view, clock, channel, enemy, tower, projectiles);
+    renderLevel(ctx, canvas, level, view, clock, channel, enemy, tower, projectiles, route);
     rafId = requestAnimationFrame(tick);
   };
   rafId = requestAnimationFrame(tick);
@@ -543,7 +643,12 @@ const WAVEFORM_COLORS: Record<Waveform, string> = {
   square: '#ff8800',
 };
 
-// ── Rack helper: create a plug socket element ────────────────────────────
+const MODULE_FLASH_COLORS: Record<string, string> = {
+  ch1:   '#00ffee',
+  wave:  '#cc44ff',
+  split: '#ff8800',
+  out:   '#ffcc00',
+};
 
 function createPlugEl(type: RackPlugType): HTMLElement {
   const color = rackPlugColor(type);
@@ -560,8 +665,6 @@ function createPlugEl(type: RackPlugType): HTMLElement {
   `;
   return el;
 }
-
-// ── Rack module card ──────────────────────────────────────────────────────
 
 interface RackModuleSpec {
   title: string;
@@ -584,10 +687,9 @@ function buildModuleCard(
     display:flex;flex-direction:column;gap:0.4rem;
     background:#060c18;border:1.5px solid #1a2a44;border-radius:10px;
     padding:0.5rem 0.55rem;min-width:110px;flex:1;
-    position:relative;
+    position:relative;transition:border-color 0.15s,box-shadow 0.15s;
   `;
 
-  // Header row: [inPlug] TITLE [outPlug]
   const header = document.createElement('div');
   header.style.cssText = `display:flex;align-items:center;gap:0.4rem;`;
 
@@ -625,12 +727,11 @@ function buildModuleCard(
 
 function buildRackPanel(channel: SynthChannel): {
   panel: HTMLElement;
-  updatePanel: () => void;
+  updatePanel: (dt: number, route: EvaluatedRoute, justFired: boolean) => void;
   wiring: RackWiringHandle;
 } {
   const ff = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
 
-  // Outer rack container — position:relative so SVG and tip handles can overlay it
   const panel = document.createElement('div');
   panel.style.cssText = `
     ${ff}
@@ -650,6 +751,7 @@ function buildRackPanel(channel: SynthChannel): {
   const rackLabel = document.createElement('div');
   rackLabel.textContent = 'SYNTH RACK';
   rackLabel.style.cssText = `color:#2a4060;font-size:0.52rem;font-weight:800;letter-spacing:0.14em;`;
+
   const routeIndicator = document.createElement('div');
   routeIndicator.style.cssText = `font-size:0.52rem;letter-spacing:0.1em;`;
   labelsRow.append(rackLabel, routeIndicator);
@@ -660,7 +762,7 @@ function buildRackPanel(channel: SynthChannel): {
   modulesRow.style.cssText = `display:flex;gap:0.4rem;align-items:stretch;overflow-x:auto;`;
   panel.append(modulesRow);
 
-  // Waveform buttons (shared state)
+  // Waveform button state — shared, now lives in WAVE card
   const waveforms: Waveform[] = ['pulse', 'sine', 'square'];
   const wfButtons: Record<Waveform, HTMLButtonElement> = {} as Record<Waveform, HTMLButtonElement>;
   let previewCanvas: HTMLCanvasElement;
@@ -668,6 +770,7 @@ function buildRackPanel(channel: SynthChannel): {
   const refreshButtons = () => {
     for (const wf of waveforms) {
       const btn = wfButtons[wf];
+      if (!btn) continue;
       const active = channel.waveform === wf;
       const color = WAVEFORM_COLORS[wf];
       if (active) {
@@ -685,40 +788,28 @@ function buildRackPanel(channel: SynthChannel): {
     if (previewCanvas) drawWaveformPreview(previewCanvas, channel.waveform);
   };
 
-  // ── Channel 1 module ──────────────────────────────────────────────────────
+  // ── CH 1 card — timing source ─────────────────────────────────────────────
+  let ch1PeriodEl: HTMLElement;
+  let ch1PhaseEl: HTMLElement;
+
   const { card: ch1Card } = buildModuleCard({
     title: 'CH 1',
     titleColor: '#00ffee',
     outputPlugId: 'ch1-out',
     outputPlugType: 'channelOut',
     buildContent: (card) => {
-      const btnRow = document.createElement('div');
-      btnRow.style.cssText = `display:flex;gap:0.25rem;flex-wrap:wrap;justify-content:center;`;
-      for (const wf of waveforms) {
-        const btn = document.createElement('button');
-        btn.textContent = wf.slice(0, 3).toUpperCase();
-        btn.style.cssText = `
-          font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
-          font-size:0.52rem;font-weight:800;letter-spacing:0.05em;
-          padding:0.18rem 0.38rem;border-radius:4px;cursor:pointer;
-          transition:background 0.1s,border-color 0.1s,color 0.1s,box-shadow 0.1s;
-        `;
-        wfButtons[wf] = btn;
-        btn.addEventListener('click', () => { channel.setWaveform(wf); refreshButtons(); });
-        btnRow.append(btn);
-      }
-      previewCanvas = document.createElement('canvas');
-      previewCanvas.width = 60; previewCanvas.height = 20;
-      previewCanvas.style.cssText = `
-        width:60px;height:20px;border-radius:3px;display:block;
-        background:#030609;border:1px solid #1a2a44;margin-top:0.2rem;
-      `;
-      card.append(btnRow, previewCanvas);
+      ch1PeriodEl = document.createElement('div');
+      ch1PeriodEl.style.cssText = `color:#00ffee88;font-size:0.54rem;text-align:center;letter-spacing:0.05em;`;
+      ch1PhaseEl = document.createElement('div');
+      ch1PhaseEl.style.cssText = `color:#00ffee44;font-size:0.5rem;text-align:center;`;
+      card.append(ch1PeriodEl, ch1PhaseEl);
     },
   }, wiring);
   modulesRow.append(ch1Card);
 
-  // ── Waveform module ───────────────────────────────────────────────────────
+  // ── Waveform module — owns waveform selection ─────────────────────────────
+  let wfIndicatorEl: HTMLElement;
+
   const { card: wfCard } = buildModuleCard({
     title: 'WAVE',
     titleColor: '#cc44ff',
@@ -727,19 +818,37 @@ function buildRackPanel(channel: SynthChannel): {
     outputPlugId: 'wf-out',
     outputPlugType: 'waveformOut',
     buildContent: (card) => {
-      const desc = document.createElement('div');
-      desc.style.cssText = `color:#441a66;font-size:0.52rem;letter-spacing:0.07em;text-align:center;`;
-      desc.textContent = 'SHAPER';
-      card.append(desc);
-      const wfIndicator = document.createElement('div');
-      wfIndicator.style.cssText = `color:#9933cc;font-size:0.62rem;font-weight:800;text-align:center;margin-top:0.15rem;`;
-      wfIndicator.id = 'v2-wf-indicator';
-      card.append(wfIndicator);
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = `display:flex;gap:0.22rem;flex-wrap:wrap;justify-content:center;`;
+      for (const wf of waveforms) {
+        const btn = document.createElement('button');
+        btn.textContent = wf.slice(0, 3).toUpperCase();
+        btn.style.cssText = `
+          font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
+          font-size:0.5rem;font-weight:800;letter-spacing:0.05em;
+          padding:0.16rem 0.3rem;border-radius:4px;cursor:pointer;
+          transition:background 0.1s,border-color 0.1s,color 0.1s,box-shadow 0.1s;
+        `;
+        wfButtons[wf] = btn;
+        btn.addEventListener('click', () => { channel.setWaveform(wf); refreshButtons(); });
+        btnRow.append(btn);
+      }
+      previewCanvas = document.createElement('canvas');
+      previewCanvas.width = 60; previewCanvas.height = 18;
+      previewCanvas.style.cssText = `
+        width:60px;height:18px;border-radius:3px;display:block;
+        background:#030609;border:1px solid #1a2a44;margin-top:0.15rem;
+      `;
+      wfIndicatorEl = document.createElement('div');
+      wfIndicatorEl.style.cssText = `color:#9933cc;font-size:0.55rem;font-weight:800;text-align:center;`;
+      card.append(btnRow, previewCanvas, wfIndicatorEl);
     },
   }, wiring);
   modulesRow.append(wfCard);
 
-  // ── Splitter module ───────────────────────────────────────────────────────
+  // ── Splitter module — N/S fixed split ─────────────────────────────────────
+  let splitAmpEl: HTMLElement;
+
   const { card: splitCard } = buildModuleCard({
     title: 'SPLIT',
     titleColor: '#ff8800',
@@ -748,78 +857,92 @@ function buildRackPanel(channel: SynthChannel): {
     outputPlugId: 'split-out',
     outputPlugType: 'splitterOut',
     buildContent: (card) => {
-      const desc = document.createElement('div');
-      desc.style.cssText = `color:#553311;font-size:0.52rem;letter-spacing:0.07em;text-align:center;`;
-      desc.textContent = '1→2';
-      card.append(desc);
-      const placeholder = document.createElement('div');
-      placeholder.style.cssText = `color:#331a00;font-size:0.48rem;text-align:center;margin-top:0.1rem;`;
-      placeholder.textContent = 'SOON';
-      card.append(placeholder);
+      const dirLabel = document.createElement('div');
+      dirLabel.style.cssText = `color:#ff8800cc;font-size:0.7rem;font-weight:800;text-align:center;`;
+      dirLabel.textContent = 'N ↕ S';
+      splitAmpEl = document.createElement('div');
+      splitAmpEl.style.cssText = `color:#ff880077;font-size:0.5rem;text-align:center;margin-top:0.05rem;`;
+      card.append(dirLabel, splitAmpEl);
     },
   }, wiring);
   modulesRow.append(splitCard);
 
   // ── Output module ─────────────────────────────────────────────────────────
+  const outLed = document.createElement('div');
+  outLed.style.cssText = `
+    width:10px;height:10px;border-radius:50%;
+    background:#332200;border:1.5px solid #664400;
+    margin:0.2rem auto 0;
+    transition:background 0.08s,box-shadow 0.08s;
+  `;
+
   const { card: outCard } = buildModuleCard({
     title: 'OUTPUT',
     titleColor: '#ffcc00',
     inputPlugId: 'out-in',
     inputPlugType: 'outputIn',
     buildContent: (card) => {
-      const outLed = document.createElement('div');
-      outLed.id = 'v2-out-led';
-      outLed.style.cssText = `
-        width:10px;height:10px;border-radius:50%;
-        background:#332200;border:1.5px solid #664400;
-        margin:0.2rem auto 0;
-        transition:background 0.15s,box-shadow 0.15s;
-      `;
       card.append(outLed);
     },
   }, wiring);
   modulesRow.append(outCard);
 
-  // ── Params row ────────────────────────────────────────────────────────────
-  const paramsRow = document.createElement('div');
-  paramsRow.style.cssText = `display:flex;gap:0.8rem;margin-top:0.3rem;color:#2a4060;font-size:0.54rem;letter-spacing:0.06em;`;
-  const paramPeriod = document.createElement('span');
-  const paramAmp    = document.createElement('span');
-  const paramPhase  = document.createElement('span');
-  paramsRow.append(paramPeriod, paramAmp, paramPhase);
-  panel.append(paramsRow);
+  // Module card references for flash
+  const moduleCards: Record<string, HTMLElement> = { ch1: ch1Card, wave: wfCard, split: splitCard, out: outCard };
+  const flashTimers: Record<string, number> = { ch1: 0, wave: 0, split: 0, out: 0 };
 
-  // Initial button refresh
+  // Initial state
   refreshButtons();
 
-  const updatePanel = () => {
-    paramPeriod.textContent = `period: ${channel.periodBeats}♩`;
-    paramAmp.textContent    = `amp: ${channel.amplitude}`;
-    paramPhase.textContent  = `φ: ${channel.phaseBeats}`;
+  // ── updatePanel ───────────────────────────────────────────────────────────
+  const updatePanel = (dt: number, route: EvaluatedRoute, justFired: boolean) => {
+    // CH1 timing info
+    ch1PeriodEl.textContent = `${channel.periodBeats}♩`;
+    ch1PhaseEl.textContent = `φ ${channel.phaseBeats}`;
 
-    // Update waveform indicator in WAVE module
-    const wfInd = document.getElementById('v2-wf-indicator');
-    if (wfInd) wfInd.textContent = channel.waveform.toUpperCase();
+    // WAVE indicator
+    if (wfIndicatorEl) wfIndicatorEl.textContent = channel.waveform.toUpperCase();
 
-    // Update route indicator and output LED
-    const active = wiring.hasRoute('out-in');
-    routeIndicator.textContent = active ? '● ACTIVE' : '○ NO ROUTE';
+    // SPLIT amplitude display
+    const splitAmp = (channel.amplitude / 2).toFixed(2);
+    if (splitAmpEl) splitAmpEl.textContent = `1→2  ×${splitAmp}`;
+
+    // Route label
+    const active = route.signals.length > 0;
+    routeIndicator.textContent = route.routeLabel;
     routeIndicator.style.color = active ? '#00ffee' : '#2a4060';
 
-    const led = document.getElementById('v2-out-led');
-    if (led) {
-      if (active) {
-        led.style.background = '#ffcc00';
-        led.style.boxShadow  = '0 0 8px #ffcc0099';
-        led.style.borderColor = '#ffcc00';
+    // Module card flash timers
+    for (const key of Object.keys(flashTimers)) {
+      if (justFired && route.activeModules.has(key)) {
+        flashTimers[key] = 0.35;
       } else {
-        led.style.background = '#332200';
-        led.style.boxShadow  = '';
-        led.style.borderColor = '#664400';
+        flashTimers[key] = Math.max(0, flashTimers[key] - dt);
       }
+      const flashing = flashTimers[key] > 0;
+      const fc = MODULE_FLASH_COLORS[key] ?? '#ffffff';
+      moduleCards[key].style.borderColor = flashing ? fc : '#1a2a44';
+      moduleCards[key].style.boxShadow = flashing ? `0 0 10px ${fc}55` : '';
+    }
+
+    // Output LED
+    const ledFlashing = flashTimers['out'] > 0;
+    if (ledFlashing) {
+      outLed.style.background = '#ffffff';
+      outLed.style.boxShadow = '0 0 14px #ffcc00cc, 0 0 6px #fff';
+      outLed.style.borderColor = '#ffcc00';
+    } else if (active) {
+      outLed.style.background = '#ffcc00';
+      outLed.style.boxShadow = '0 0 8px #ffcc0099';
+      outLed.style.borderColor = '#ffcc00';
+    } else {
+      outLed.style.background = '#332200';
+      outLed.style.boxShadow = '';
+      outLed.style.borderColor = '#664400';
     }
   };
-  updatePanel();
+
+  updatePanel(0, { signals: [], routeLabel: 'NO SIGNAL', activeModules: new Set() }, false);
 
   return { panel, updatePanel, wiring };
 }
@@ -846,7 +969,7 @@ function drawWaveformPreview(canvas: HTMLCanvasElement, wf: Waveform): void {
 
   ctx.beginPath();
   for (let i = 0; i <= steps; i++) {
-    const t = i / steps;          // 0..1 = one full cycle
+    const t = i / steps;
     const x = t * W;
     let y: number;
 
@@ -855,7 +978,6 @@ function drawWaveformPreview(canvas: HTMLCanvasElement, wf: Waveform): void {
     } else if (wf === 'square') {
       y = t < 0.5 ? midY - amp : midY + amp;
     } else {
-      // pulse: thin spike at 0 and 0.5
       const phase = t % 0.5;
       y = phase < 0.06 ? midY - amp : midY;
     }
@@ -901,12 +1023,11 @@ function checkCollisions(
   for (const p of projectiles) {
     if (p.dead) continue;
     const age = beatFloat - p.spawnBeat;
-    // Collision uses logical (straight-line) tile position only, ignoring sine offset
     const ptx = Math.round(p.originX + age * p.dirX);
     const pty = Math.round(p.originY + age * p.dirY);
     if (ptx === etx && pty === ety) {
       p.dead = true;
-      enemy.hit();
+      enemy.hit(p.amplitude);
     }
   }
 }
@@ -914,7 +1035,7 @@ function checkCollisions(
 // ── Rendering ──────────────────────────────────────────────────────────────
 
 const BASE_TILE_PX = 40;
-const SIGNAL_TAIL_BEATS = 3; // how many beats of trail to draw
+const SIGNAL_TAIL_BEATS = 3;
 
 function renderLevel(
   ctx: CanvasRenderingContext2D,
@@ -926,6 +1047,7 @@ function renderLevel(
   enemy: Enemy,
   tower: OutputTower,
   projectiles: SignalProjectile[],
+  route: EvaluatedRoute,
 ): void {
   const W = canvas.width, H = canvas.height;
   const dpr = devicePixelRatio;
@@ -934,7 +1056,6 @@ function renderLevel(
   const beatFrac = clock.beatFrac;
   const zDpr = view.zoom * dpr;
 
-  // ── Background ─────────────────────────────────────────────────────────────
   ctx.fillStyle = '#01030a';
   ctx.fillRect(0, 0, W, H);
 
@@ -945,27 +1066,23 @@ function renderLevel(
   const start = level.trackTiles[0];
   const finish = level.trackTiles[level.trackTiles.length - 1];
 
-  // ── Grid tile fills (no shadowBlur here) ──────────────────────────────────
+  // ── Grid tile fills ────────────────────────────────────────────────────────
   for (let ty = 0; ty < level.gridHeight; ty++) {
     for (let tx = 0; tx < level.gridWidth; tx++) {
       const px = tx * tileZ, py = ty * tileZ;
       const isTrack = trackSet.has(`${tx},${ty}`);
 
       if (isTrack) {
-        // Darker backing for track — circuit channel groove
         ctx.fillStyle = '#030a14';
         ctx.fillRect(px, py, tileZ, tileZ);
-        // Subtle inner tint
         ctx.fillStyle = 'rgba(0,160,140,0.04)';
         ctx.fillRect(px + 1, py + 1, tileZ - 2, tileZ - 2);
       } else {
         ctx.fillStyle = '#010409';
         ctx.fillRect(px, py, tileZ, tileZ);
-        // Dim grid lines — no blur
         ctx.strokeStyle = 'rgba(20,38,72,0.6)';
         ctx.lineWidth = Math.max(0.3, 0.5 * dpr);
         ctx.strokeRect(px + 0.5, py + 0.5, tileZ - 1, tileZ - 1);
-        // Circuit via dots at grid intersections (every 4th tile)
         if (tx % 4 === 0 && ty % 4 === 0) {
           ctx.fillStyle = 'rgba(30,55,100,0.5)';
           const dotR = Math.max(1, 1.8 * zDpr);
@@ -973,7 +1090,6 @@ function renderLevel(
           ctx.arc(px, py, dotR, 0, Math.PI * 2);
           ctx.fill();
         }
-        // Horizontal trace stubs on empty tiles for circuit flavor
         if ((tx + ty * 3) % 7 === 0 && !isTrack) {
           ctx.strokeStyle = 'rgba(20,45,80,0.4)';
           ctx.lineWidth = Math.max(0.3, 0.4 * dpr);
@@ -986,8 +1102,7 @@ function renderLevel(
     }
   }
 
-  // ── Track circuit traces — 3 passes, NO per-pass shadowBlur ──────────────
-  // Build the path once, reuse for each pass
+  // ── Track circuit traces ───────────────────────────────────────────────────
   const buildTracePath = () => {
     ctx.beginPath();
     for (let i = 0; i < level.trackTiles.length; i++) {
@@ -1001,19 +1116,16 @@ function renderLevel(
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
-  // Pass 1 — wide soft outer glow (thick, very dim — simulates blur without blur)
   ctx.strokeStyle = 'rgba(0,220,200,0.055)';
   ctx.lineWidth = Math.max(4, 10 * zDpr);
   buildTracePath();
   ctx.stroke();
 
-  // Pass 2 — medium inner glow
   ctx.strokeStyle = 'rgba(0,220,200,0.18)';
   ctx.lineWidth = Math.max(2.5, 5 * zDpr);
   buildTracePath();
   ctx.stroke();
 
-  // Pass 3 — bright thin core line
   ctx.strokeStyle = 'rgba(0,240,210,0.75)';
   ctx.lineWidth = Math.max(0.8, 1.4 * zDpr);
   buildTracePath();
@@ -1021,7 +1133,7 @@ function renderLevel(
 
   ctx.restore();
 
-  // ── Track direction-change junction dots ───────────────────────────────────
+  // ── Track junction dots ────────────────────────────────────────────────────
   ctx.save();
   for (let i = 1; i < level.trackTiles.length - 1; i++) {
     const [ax, ay] = level.trackTiles[i - 1];
@@ -1030,7 +1142,6 @@ function renderLevel(
     const dirChanged = (bx - ax !== cx2 - bx) || (by - ay !== cy2 - by);
     if (dirChanged) {
       const px = bx * tileZ + tileZ / 2, py = by * tileZ + tileZ / 2;
-      // Filled dot at corner — no shadowBlur, achieved by stacked circles
       ctx.fillStyle = 'rgba(0,240,210,0.15)';
       ctx.beginPath(); ctx.arc(px, py, Math.max(3, 5 * zDpr), 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = 'rgba(0,240,210,0.55)';
@@ -1046,13 +1157,15 @@ function renderLevel(
   if (finish) drawMarker(ctx, finish[0], finish[1], tileZ, '#ff3366', '#cc0044', 'F', zDpr);
 
   // ── Tower ──────────────────────────────────────────────────────────────────
-  const isHigh = channel.isHighAt(beatFloat);
-  drawTower(ctx, tower.tileX, tower.tileY, tileZ, beatFrac, zDpr, channel.waveform, isHigh);
+  const firstSig = route.signals[0];
+  const towerWaveform: Waveform = firstSig ? firstSig.waveform : 'pulse';
+  const isHigh = firstSig ? signalIsHighAt(firstSig, beatFloat) : false;
+  drawTower(ctx, tower.tileX, tower.tileY, tileZ, beatFrac, zDpr, towerWaveform, isHigh);
 
-  // ── Signal projectiles — tail + node head ──────────────────────────────────
+  // ── Signal projectiles ─────────────────────────────────────────────────────
   for (const p of projectiles) {
     if (p.dead) continue;
-    drawSignalWithTail(ctx, p, beatFloat, tileZ, zDpr, channel.color);
+    drawSignalWithTail(ctx, p, beatFloat, tileZ, zDpr);
   }
 
   // ── Enemy ──────────────────────────────────────────────────────────────────
@@ -1067,12 +1180,10 @@ function renderLevel(
 
 // ── Draw helpers ───────────────────────────────────────────────────────────
 
-// Smoothstep easing — gives signals a "settle into tile" feel on beat ticks
 function smoothstep(t: number): number {
   return t * t * (3 - 2 * t);
 }
 
-// Compute visual (x, y) in tile-space for a projectile at a given age
 function signalVizPos(p: SignalProjectile, age: number): { x: number; y: number } {
   const intAge = Math.floor(age);
   const frac = smoothstep(age - intAge);
@@ -1096,16 +1207,13 @@ function drawSignalWithTail(
   beatFloat: number,
   tileZ: number,
   zoomDpr: number,
-  channelColor: string,
 ): void {
+  const color = p.color;
   const age = beatFloat - p.spawnBeat;
   const head = signalVizPos(p, age);
   const hpx = head.x * tileZ + tileZ / 2;
   const hpy = head.y * tileZ + tileZ / 2;
 
-  // ── Tail ─────────────────────────────────────────────────────────────────
-  // For straight waveforms: gradient line backward along travel direction.
-  // For sine: sampled polyline following oscillating path.
   const tailBeats = Math.min(age, SIGNAL_TAIL_BEATS);
 
   ctx.save();
@@ -1113,7 +1221,6 @@ function drawSignalWithTail(
   ctx.lineJoin = 'round';
 
   if (p.waveform === 'sine' && tailBeats > 0) {
-    // Sample the sine path at intervals back in time
     const SAMPLES = 24;
     const points: { x: number; y: number }[] = [];
     for (let i = 0; i <= SAMPLES; i++) {
@@ -1122,10 +1229,9 @@ function drawSignalWithTail(
       const pt = signalVizPos(p, t);
       points.push({ x: pt.x * tileZ + tileZ / 2, y: pt.y * tileZ + tileZ / 2 });
     }
-    // Draw with fading opacity using multiple short segments
     for (let i = 0; i < points.length - 1; i++) {
       const alpha = (1 - i / points.length) * 0.7;
-      ctx.strokeStyle = hexAlpha(channelColor, alpha);
+      ctx.strokeStyle = hexAlpha(color, alpha);
       ctx.lineWidth = Math.max(0.8, (1.5 - i / points.length) * 1.8 * zoomDpr);
       ctx.beginPath();
       ctx.moveTo(points[i].x, points[i].y);
@@ -1133,7 +1239,6 @@ function drawSignalWithTail(
       ctx.stroke();
     }
   } else if (tailBeats > 0) {
-    // Straight tail: linear gradient from head back along -dir
     const tailAge = age - tailBeats;
     const tail = signalVizPos(p, Math.max(0, tailAge));
     const tpx = tail.x * tileZ + tileZ / 2;
@@ -1141,19 +1246,17 @@ function drawSignalWithTail(
 
     const dx = hpx - tpx, dy = hpy - tpy;
     if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-      // Outer soft tail — thick dim
       const gradOuter = ctx.createLinearGradient(hpx, hpy, tpx, tpy);
-      gradOuter.addColorStop(0, hexAlpha(channelColor, 0.25));
-      gradOuter.addColorStop(1, hexAlpha(channelColor, 0));
+      gradOuter.addColorStop(0, hexAlpha(color, 0.25));
+      gradOuter.addColorStop(1, hexAlpha(color, 0));
       ctx.strokeStyle = gradOuter;
       ctx.lineWidth = Math.max(2, 4 * zoomDpr);
       ctx.beginPath(); ctx.moveTo(hpx, hpy); ctx.lineTo(tpx, tpy); ctx.stroke();
 
-      // Inner bright core tail
       const gradCore = ctx.createLinearGradient(hpx, hpy, tpx, tpy);
-      gradCore.addColorStop(0, hexAlpha(channelColor, 0.85));
-      gradCore.addColorStop(0.4, hexAlpha(channelColor, 0.4));
-      gradCore.addColorStop(1, hexAlpha(channelColor, 0));
+      gradCore.addColorStop(0, hexAlpha(color, 0.85));
+      gradCore.addColorStop(0.4, hexAlpha(color, 0.4));
+      gradCore.addColorStop(1, hexAlpha(color, 0));
       ctx.strokeStyle = gradCore;
       ctx.lineWidth = Math.max(0.8, 1.4 * zoomDpr);
       ctx.beginPath(); ctx.moveTo(hpx, hpy); ctx.lineTo(tpx, tpy); ctx.stroke();
@@ -1162,59 +1265,55 @@ function drawSignalWithTail(
 
   ctx.restore();
 
-  // ── Node head ──────────────────────────────────────────────────────────────
-  const r = Math.max(2.5, tileZ * 0.11);
+  // Amplitude scales core radius mildly (visible range: 0.5–1.0 → 0.85–1.0)
+  const ampScale = 0.8 + p.amplitude * 0.2;
+  const r = Math.max(2.5, tileZ * 0.11) * ampScale;
   ctx.save();
 
   if (p.waveform === 'pulse') {
-    // Sharp circuit node: outer ring + radial-gradient core
-    ctx.strokeStyle = hexAlpha(channelColor, 0.5);
+    ctx.strokeStyle = hexAlpha(color, 0.5);
     ctx.lineWidth = Math.max(0.8, 1.2 * zoomDpr);
     ctx.beginPath(); ctx.arc(hpx, hpy, r * 2.0, 0, Math.PI * 2); ctx.stroke();
 
     const cg = ctx.createRadialGradient(hpx, hpy, 0, hpx, hpy, r);
     cg.addColorStop(0, '#ffffff');
-    cg.addColorStop(0.35, channelColor);
-    cg.addColorStop(1, hexAlpha(channelColor, 0.4));
+    cg.addColorStop(0.35, color);
+    cg.addColorStop(1, hexAlpha(color, 0.4));
     ctx.fillStyle = cg;
-    // Single shadowBlur pass, small radius — localized cost
-    ctx.shadowColor = channelColor;
+    ctx.shadowColor = color;
     ctx.shadowBlur = 8 * zoomDpr;
     ctx.beginPath(); ctx.arc(hpx, hpy, r, 0, Math.PI * 2); ctx.fill();
 
   } else if (p.waveform === 'sine') {
-    // Soft glowing orb
     const halo = ctx.createRadialGradient(hpx, hpy, 0, hpx, hpy, r * 2.8);
-    halo.addColorStop(0, hexAlpha(channelColor, 0.4));
-    halo.addColorStop(0.5, hexAlpha(channelColor, 0.15));
-    halo.addColorStop(1, hexAlpha(channelColor, 0));
+    halo.addColorStop(0, hexAlpha(color, 0.4));
+    halo.addColorStop(0.5, hexAlpha(color, 0.15));
+    halo.addColorStop(1, hexAlpha(color, 0));
     ctx.fillStyle = halo;
     ctx.beginPath(); ctx.arc(hpx, hpy, r * 2.8, 0, Math.PI * 2); ctx.fill();
 
     const cg = ctx.createRadialGradient(hpx, hpy, 0, hpx, hpy, r);
     cg.addColorStop(0, '#ffffff');
-    cg.addColorStop(0.5, channelColor);
-    cg.addColorStop(1, hexAlpha(channelColor, 0.5));
+    cg.addColorStop(0.5, color);
+    cg.addColorStop(1, hexAlpha(color, 0.5));
     ctx.fillStyle = cg;
-    ctx.shadowColor = channelColor;
+    ctx.shadowColor = color;
     ctx.shadowBlur = 10 * zoomDpr;
     ctx.beginPath(); ctx.arc(hpx, hpy, r * 0.85, 0, Math.PI * 2); ctx.fill();
 
   } else {
-    // Square: square ring + inner pixel
     const sz = r * 1.3;
-    ctx.strokeStyle = hexAlpha(channelColor, 0.7);
+    ctx.strokeStyle = hexAlpha(color, 0.7);
     ctx.lineWidth = Math.max(1, 1.6 * zoomDpr);
-    ctx.shadowColor = channelColor;
+    ctx.shadowColor = color;
     ctx.shadowBlur = 8 * zoomDpr;
     ctx.strokeRect(hpx - sz, hpy - sz, sz * 2, sz * 2);
 
     ctx.shadowBlur = 0;
-    ctx.fillStyle = channelColor;
+    ctx.fillStyle = color;
     const core = r * 0.38;
     ctx.fillRect(hpx - core, hpy - core, core * 2, core * 2);
 
-    // Bright center flash on beat boundary (first 40% of beat)
     if ((age % 1) < 0.4) {
       ctx.fillStyle = '#ffffff';
       const fc = core * 0.5;
@@ -1225,9 +1324,7 @@ function drawSignalWithTail(
   ctx.restore();
 }
 
-// Convert a 6-char hex color + alpha 0..1 → rgba string (avoids repeated hex manipulation)
 function hexAlpha(hex: string, alpha: number): string {
-  // hex is '#rrggbb' or '#rrggbbaa'
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
@@ -1243,7 +1340,6 @@ function drawMarker(
   const px = tx * tileZ + tileZ / 2, py = ty * tileZ + tileZ / 2;
   const r = tileZ * 0.22;
   ctx.save();
-  // Stacked circles for glow — no shadowBlur
   ctx.fillStyle = hexAlpha(glow, 0.15);
   ctx.beginPath(); ctx.arc(px, py, r * 2.2, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = hexAlpha(glow, 0.3);
@@ -1272,7 +1368,6 @@ function drawTower(
   ctx.save();
   ctx.translate(px, py);
 
-  // Low-state dim background fill
   if (!isHigh) {
     ctx.fillStyle = hexAlpha(color, 0.04);
     ctx.rotate(Math.PI / 4);
@@ -1280,7 +1375,6 @@ function drawTower(
     ctx.rotate(-Math.PI / 4);
   }
 
-  // Outer diamond — single shadowBlur allowed here (tower is one element)
   const glowAmt = isHigh ? (6 + pulse * 16) : 2;
   ctx.shadowColor = color;
   ctx.shadowBlur = glowAmt * zoomDpr;
@@ -1290,7 +1384,6 @@ function drawTower(
   ctx.strokeRect(-half * 0.8, -half * 0.8, half * 1.6, half * 1.6);
   ctx.rotate(-Math.PI / 4);
 
-  // Inner cross (no extra blur pass)
   ctx.shadowBlur = 0;
   ctx.strokeStyle = isHigh ? hexAlpha(color, 0.5 + pulse * 0.4) : hexAlpha(color, 0.12);
   ctx.lineWidth = Math.max(0.7, 0.9 * zoomDpr);
@@ -1299,7 +1392,6 @@ function drawTower(
   ctx.moveTo(0, -half * 0.52); ctx.lineTo(0, half * 0.52);
   ctx.stroke();
 
-  // Center node — stacked circles instead of more shadowBlur
   const cr = Math.max(2, tileZ * 0.065);
   if (isHigh) {
     ctx.fillStyle = hexAlpha(color, 0.25 + pulse * 0.15);
@@ -1348,8 +1440,18 @@ function drawEnemy(
     const pipY = size + pipH * 1.5;
     ctx.shadowBlur = 0;
     for (let i = 0; i < enemy.maxHp; i++) {
-      ctx.fillStyle = i < enemy.hp ? '#ff8800' : '#331100';
-      ctx.fillRect(startX, pipY, pipW, pipH);
+      const pipFill = Math.max(0, Math.min(1, enemy.hp - i));
+      if (pipFill > 0) {
+        ctx.fillStyle = '#ff8800';
+        ctx.fillRect(startX, pipY, pipW * pipFill, pipH);
+        if (pipFill < 1) {
+          ctx.fillStyle = '#331100';
+          ctx.fillRect(startX + pipW * pipFill, pipY, pipW * (1 - pipFill), pipH);
+        }
+      } else {
+        ctx.fillStyle = '#331100';
+        ctx.fillRect(startX, pipY, pipW, pipH);
+      }
       startX += pipW + pipW * 0.3;
     }
   }

@@ -85,10 +85,9 @@ export interface RackWireEntry {
 export interface RackWiringHandle {
   registerPlug(plugId: string, type: RackPlugType, el: HTMLElement): void;
   unregisterPlug(plugId: string): void;
-  /** Programmatically connect two already-registered plugs (used for default wiring). */
   connectPlugs(fromId: string, toId: string): void;
-  /** Returns true if the given toPlugId has at least one active incoming connection. */
   hasRoute(toPlugId: string): boolean;
-  /** Call once per frame with the current timestamp in ms. */
+  /** Read-only snapshot of all active connections for signal graph evaluation. */
+  getConnections(): readonly RackWireConnection[];
   update(nowMs: number): void;
 }

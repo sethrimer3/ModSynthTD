@@ -7,13 +7,13 @@
 
 import { createSoftWireRenderer } from './version2-soft-wire';
 import type { SoftWireData } from './version2-soft-wire';
-import type { RackPlugType, RackPlugRecord, RackWireEntry, RackWiringHandle } from './version2-rack-wiring-types';
+import type { RackPlugType, RackPlugRecord, RackWireEntry, RackWiringHandle, RackWireConnection } from './version2-rack-wiring-types';
 import {
   isRackCompatible, isRackOutputPlug, rackMaxOutgoing, rackMaxIncoming,
   rackWireColor, rackWireDstColor,
 } from './version2-rack-wiring-types';
 
-export type { RackPlugType, RackWiringHandle } from './version2-rack-wiring-types';
+export type { RackPlugType, RackWiringHandle, RackWireConnection } from './version2-rack-wiring-types';
 
 // ── Factory ───────────────────────────────────────────────────────────────────
 
@@ -303,5 +303,9 @@ export function createRackWiringSystem(panelEl: HTMLElement): RackWiringHandle {
     }
   }
 
-  return { registerPlug, unregisterPlug, connectPlugs, hasRoute, update };
+  function getConnections(): readonly RackWireConnection[] {
+    return connections;
+  }
+
+  return { registerPlug, unregisterPlug, connectPlugs, hasRoute, getConnections, update };
 }
