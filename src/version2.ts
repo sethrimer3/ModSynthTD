@@ -1,5 +1,10 @@
 // ── Version 2: Modular Synth Tower Defense ─────────────────────────────────
 
+import { createRackWiringSystem } from './version2-rack-wiring';
+import type { RackWiringHandle } from './version2-rack-wiring';
+import { rackPlugColor } from './version2-rack-wiring-types';
+import type { RackPlugType } from './version2-rack-wiring-types';
+
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type Waveform = 'pulse' | 'sine' | 'square';
@@ -148,11 +153,11 @@ class OutputTower {
 
   private lastCheckedBeat = -1;
 
-  update(beat: number, channel: SynthChannel, projectiles: SignalProjectile[]): void {
+  update(beat: number, channel: SynthChannel, projectiles: SignalProjectile[], routeActive = true): void {
     if (beat <= this.lastCheckedBeat) return;
     this.lastCheckedBeat = beat;
 
-    if (channel.shouldFireOnBeat(beat)) {
+    if (routeActive && channel.shouldFireOnBeat(beat)) {
       projectiles.push({
         spawnBeat: beat,
         originX: this.tileX,
@@ -429,11 +434,11 @@ export function enterLevel(levelId: number): void {
     font-size:0.58rem;color:#2a4055;letter-spacing:0.08em;
   `;
 
-  // ── Synth Panel ───────────────────────────────────────────────────────────
+  // ── Rack Panel ────────────────────────────────────────────────────────────
   const channel = new SynthChannel(1);
-  const { panel: synthPanel, updatePanel } = buildSynthPanel(channel);
+  const { panel: rackPanel, updatePanel, wiring } = buildRackPanel(channel);
 
-  root.append(hud, canvasWrapper, hint, synthPanel);
+  root.append(hud, canvasWrapper, hint, rackPanel);
   app.append(root);
 
   // ── Canvas sizing ─────────────────────────────────────────────────────────
@@ -499,6 +504,10 @@ export function enterLevel(levelId: number): void {
   const tower = new OutputTower();
   const projectiles: SignalProjectile[] = [];
 
+  // Default wiring: Channel 1 → Waveform → Output
+  wiring.connectPlugs('ch1-out', 'wf-in');
+  wiring.connectPlugs('wf-out', 'out-in');
+
   let lastNow = performance.now();
   const ctx = canvas.getContext('2d')!;
 
@@ -512,12 +521,13 @@ export function enterLevel(levelId: number): void {
     const beat = clock.beat;
 
     enemy.update(dt);
-    tower.update(beat, channel, projectiles);
+    tower.update(beat, channel, projectiles, wiring.hasRoute('out-in'));
     cullProjectiles(projectiles, level, beatFloat);
     checkCollisions(enemy, projectiles, level, beatFloat);
 
     beatDisplay.textContent = `beat ${beat}`;
     updatePanel();
+    wiring.update(now);
 
     renderLevel(ctx, canvas, level, view, clock, channel, enemy, tower, projectiles);
     rafId = requestAnimationFrame(tick);
@@ -525,7 +535,7 @@ export function enterLevel(levelId: number): void {
   rafId = requestAnimationFrame(tick);
 }
 
-// ── Synth Panel ────────────────────────────────────────────────────────────
+// ── Rack Panel ─────────────────────────────────────────────────────────────
 
 const WAVEFORM_COLORS: Record<Waveform, string> = {
   pulse: '#cc44ff',
@@ -533,78 +543,127 @@ const WAVEFORM_COLORS: Record<Waveform, string> = {
   square: '#ff8800',
 };
 
-function buildSynthPanel(channel: SynthChannel): {
+// ── Rack helper: create a plug socket element ────────────────────────────
+
+function createPlugEl(type: RackPlugType): HTMLElement {
+  const color = rackPlugColor(type);
+  const el = document.createElement('div');
+  el.dataset.color = color;
+  const shadow = `0 0 6px ${color}99`;
+  el.dataset.defaultShadow = shadow;
+  el.style.cssText = `
+    width:13px;height:13px;border-radius:50%;flex-shrink:0;
+    background:${color}33;border:2px solid ${color};
+    box-shadow:${shadow};
+    transition:transform 0.1s,box-shadow 0.1s;
+    touch-action:none;
+  `;
+  return el;
+}
+
+// ── Rack module card ──────────────────────────────────────────────────────
+
+interface RackModuleSpec {
+  title: string;
+  titleColor: string;
+  inputPlugId?: string;
+  inputPlugType?: RackPlugType;
+  outputPlugId?: string;
+  outputPlugType?: RackPlugType;
+  buildContent: (card: HTMLElement) => void;
+}
+
+function buildModuleCard(
+  spec: RackModuleSpec,
+  wiring: RackWiringHandle,
+): { card: HTMLElement; inPlugEl?: HTMLElement; outPlugEl?: HTMLElement } {
+  const ff = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
+  const card = document.createElement('div');
+  card.style.cssText = `
+    ${ff}
+    display:flex;flex-direction:column;gap:0.4rem;
+    background:#060c18;border:1.5px solid #1a2a44;border-radius:10px;
+    padding:0.5rem 0.55rem;min-width:110px;flex:1;
+    position:relative;
+  `;
+
+  // Header row: [inPlug] TITLE [outPlug]
+  const header = document.createElement('div');
+  header.style.cssText = `display:flex;align-items:center;gap:0.4rem;`;
+
+  let inPlugEl: HTMLElement | undefined;
+  let outPlugEl: HTMLElement | undefined;
+
+  if (spec.inputPlugId && spec.inputPlugType) {
+    inPlugEl = createPlugEl(spec.inputPlugType);
+    header.append(inPlugEl);
+    wiring.registerPlug(spec.inputPlugId, spec.inputPlugType, inPlugEl);
+  }
+
+  const titleEl = document.createElement('div');
+  titleEl.textContent = spec.title;
+  titleEl.style.cssText = `
+    color:${spec.titleColor};font-size:0.58rem;font-weight:800;
+    letter-spacing:0.1em;flex:1;text-align:center;
+  `;
+  header.append(titleEl);
+
+  if (spec.outputPlugId && spec.outputPlugType) {
+    outPlugEl = createPlugEl(spec.outputPlugType);
+    outPlugEl.style.cursor = 'crosshair';
+    header.append(outPlugEl);
+    wiring.registerPlug(spec.outputPlugId, spec.outputPlugType, outPlugEl);
+  }
+
+  card.append(header);
+  spec.buildContent(card);
+
+  return { card, inPlugEl, outPlugEl };
+}
+
+// ── Main rack panel builder ───────────────────────────────────────────────
+
+function buildRackPanel(channel: SynthChannel): {
   panel: HTMLElement;
   updatePanel: () => void;
+  wiring: RackWiringHandle;
 } {
   const ff = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
 
+  // Outer rack container — position:relative so SVG and tip handles can overlay it
   const panel = document.createElement('div');
   panel.style.cssText = `
-    width:100%;
-    background:#060c18;
-    border:1.5px solid #1a2a44;
-    border-radius:10px;
-    padding:0.6rem 0.8rem;
-    display:flex;
-    flex-direction:column;
-    gap:0.4rem;
     ${ff}
+    width:100%;position:relative;
+    background:#040912;border:1.5px solid #1a2a44;border-radius:10px;
+    padding:0.5rem 0.6rem;
   `;
 
-  // Row 1: label + waveform buttons
-  const row1 = document.createElement('div');
-  row1.style.cssText = `display:flex;align-items:center;gap:0.6rem;`;
+  const wiring = createRackWiringSystem(panel);
 
-  const chLabel = document.createElement('div');
-  chLabel.textContent = `CH ${channel.id}`;
-  chLabel.style.cssText = `color:#5577aa;font-size:0.62rem;font-weight:800;letter-spacing:0.1em;min-width:2.2rem;`;
+  // ── Labels row ────────────────────────────────────────────────────────────
+  const labelsRow = document.createElement('div');
+  labelsRow.style.cssText = `
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:0.3rem;
+  `;
+  const rackLabel = document.createElement('div');
+  rackLabel.textContent = 'SYNTH RACK';
+  rackLabel.style.cssText = `color:#2a4060;font-size:0.52rem;font-weight:800;letter-spacing:0.14em;`;
+  const routeIndicator = document.createElement('div');
+  routeIndicator.style.cssText = `font-size:0.52rem;letter-spacing:0.1em;`;
+  labelsRow.append(rackLabel, routeIndicator);
+  panel.append(labelsRow);
 
-  const btnRow = document.createElement('div');
-  btnRow.style.cssText = `display:flex;gap:0.3rem;`;
+  // ── Modules row ───────────────────────────────────────────────────────────
+  const modulesRow = document.createElement('div');
+  modulesRow.style.cssText = `display:flex;gap:0.4rem;align-items:stretch;overflow-x:auto;`;
+  panel.append(modulesRow);
 
+  // Waveform buttons (shared state)
   const waveforms: Waveform[] = ['pulse', 'sine', 'square'];
   const wfButtons: Record<Waveform, HTMLButtonElement> = {} as Record<Waveform, HTMLButtonElement>;
-
-  for (const wf of waveforms) {
-    const btn = document.createElement('button');
-    btn.textContent = wf.toUpperCase();
-    btn.style.cssText = `
-      ${ff}
-      font-size:0.6rem;font-weight:800;letter-spacing:0.07em;
-      padding:0.25rem 0.55rem;border-radius:5px;cursor:pointer;
-      transition:background 0.1s,border-color 0.1s,color 0.1s,box-shadow 0.1s;
-    `;
-    wfButtons[wf] = btn;
-
-    btn.addEventListener('click', () => {
-      channel.setWaveform(wf);
-      refreshButtons();
-    });
-    btnRow.append(btn);
-  }
-
-  // Row 2: channel params text
-  const row2 = document.createElement('div');
-  row2.style.cssText = `display:flex;gap:1rem;color:#3a5070;font-size:0.58rem;letter-spacing:0.06em;`;
-
-  const paramPeriod = document.createElement('span');
-  const paramAmp = document.createElement('span');
-  const paramPhase = document.createElement('span');
-  row2.append(paramPeriod, paramAmp, paramPhase);
-
-  // Waveform preview minicanvas
-  const previewCanvas = document.createElement('canvas');
-  previewCanvas.width = 80;
-  previewCanvas.height = 28;
-  previewCanvas.style.cssText = `
-    width:80px;height:28px;border-radius:4px;
-    background:#030609;border:1px solid #1a2a44;
-    display:block;margin-left:auto;
-  `;
-
-  row1.append(chLabel, btnRow, previewCanvas);
-  panel.append(row1, row2);
+  let previewCanvas: HTMLCanvasElement;
 
   const refreshButtons = () => {
     for (const wf of waveforms) {
@@ -623,18 +682,146 @@ function buildSynthPanel(channel: SynthChannel): {
         btn.style.boxShadow = '';
       }
     }
-    drawWaveformPreview(previewCanvas, channel.waveform);
+    if (previewCanvas) drawWaveformPreview(previewCanvas, channel.waveform);
   };
+
+  // ── Channel 1 module ──────────────────────────────────────────────────────
+  const { card: ch1Card } = buildModuleCard({
+    title: 'CH 1',
+    titleColor: '#00ffee',
+    outputPlugId: 'ch1-out',
+    outputPlugType: 'channelOut',
+    buildContent: (card) => {
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = `display:flex;gap:0.25rem;flex-wrap:wrap;justify-content:center;`;
+      for (const wf of waveforms) {
+        const btn = document.createElement('button');
+        btn.textContent = wf.slice(0, 3).toUpperCase();
+        btn.style.cssText = `
+          font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
+          font-size:0.52rem;font-weight:800;letter-spacing:0.05em;
+          padding:0.18rem 0.38rem;border-radius:4px;cursor:pointer;
+          transition:background 0.1s,border-color 0.1s,color 0.1s,box-shadow 0.1s;
+        `;
+        wfButtons[wf] = btn;
+        btn.addEventListener('click', () => { channel.setWaveform(wf); refreshButtons(); });
+        btnRow.append(btn);
+      }
+      previewCanvas = document.createElement('canvas');
+      previewCanvas.width = 60; previewCanvas.height = 20;
+      previewCanvas.style.cssText = `
+        width:60px;height:20px;border-radius:3px;display:block;
+        background:#030609;border:1px solid #1a2a44;margin-top:0.2rem;
+      `;
+      card.append(btnRow, previewCanvas);
+    },
+  }, wiring);
+  modulesRow.append(ch1Card);
+
+  // ── Waveform module ───────────────────────────────────────────────────────
+  const { card: wfCard } = buildModuleCard({
+    title: 'WAVE',
+    titleColor: '#cc44ff',
+    inputPlugId: 'wf-in',
+    inputPlugType: 'waveformIn',
+    outputPlugId: 'wf-out',
+    outputPlugType: 'waveformOut',
+    buildContent: (card) => {
+      const desc = document.createElement('div');
+      desc.style.cssText = `color:#441a66;font-size:0.52rem;letter-spacing:0.07em;text-align:center;`;
+      desc.textContent = 'SHAPER';
+      card.append(desc);
+      const wfIndicator = document.createElement('div');
+      wfIndicator.style.cssText = `color:#9933cc;font-size:0.62rem;font-weight:800;text-align:center;margin-top:0.15rem;`;
+      wfIndicator.id = 'v2-wf-indicator';
+      card.append(wfIndicator);
+    },
+  }, wiring);
+  modulesRow.append(wfCard);
+
+  // ── Splitter module ───────────────────────────────────────────────────────
+  const { card: splitCard } = buildModuleCard({
+    title: 'SPLIT',
+    titleColor: '#ff8800',
+    inputPlugId: 'split-in',
+    inputPlugType: 'splitterIn',
+    outputPlugId: 'split-out',
+    outputPlugType: 'splitterOut',
+    buildContent: (card) => {
+      const desc = document.createElement('div');
+      desc.style.cssText = `color:#553311;font-size:0.52rem;letter-spacing:0.07em;text-align:center;`;
+      desc.textContent = '1→2';
+      card.append(desc);
+      const placeholder = document.createElement('div');
+      placeholder.style.cssText = `color:#331a00;font-size:0.48rem;text-align:center;margin-top:0.1rem;`;
+      placeholder.textContent = 'SOON';
+      card.append(placeholder);
+    },
+  }, wiring);
+  modulesRow.append(splitCard);
+
+  // ── Output module ─────────────────────────────────────────────────────────
+  const { card: outCard } = buildModuleCard({
+    title: 'OUTPUT',
+    titleColor: '#ffcc00',
+    inputPlugId: 'out-in',
+    inputPlugType: 'outputIn',
+    buildContent: (card) => {
+      const outLed = document.createElement('div');
+      outLed.id = 'v2-out-led';
+      outLed.style.cssText = `
+        width:10px;height:10px;border-radius:50%;
+        background:#332200;border:1.5px solid #664400;
+        margin:0.2rem auto 0;
+        transition:background 0.15s,box-shadow 0.15s;
+      `;
+      card.append(outLed);
+    },
+  }, wiring);
+  modulesRow.append(outCard);
+
+  // ── Params row ────────────────────────────────────────────────────────────
+  const paramsRow = document.createElement('div');
+  paramsRow.style.cssText = `display:flex;gap:0.8rem;margin-top:0.3rem;color:#2a4060;font-size:0.54rem;letter-spacing:0.06em;`;
+  const paramPeriod = document.createElement('span');
+  const paramAmp    = document.createElement('span');
+  const paramPhase  = document.createElement('span');
+  paramsRow.append(paramPeriod, paramAmp, paramPhase);
+  panel.append(paramsRow);
+
+  // Initial button refresh
   refreshButtons();
 
   const updatePanel = () => {
     paramPeriod.textContent = `period: ${channel.periodBeats}♩`;
-    paramAmp.textContent = `amp: ${channel.amplitude}`;
-    paramPhase.textContent = `φ: ${channel.phaseBeats}`;
+    paramAmp.textContent    = `amp: ${channel.amplitude}`;
+    paramPhase.textContent  = `φ: ${channel.phaseBeats}`;
+
+    // Update waveform indicator in WAVE module
+    const wfInd = document.getElementById('v2-wf-indicator');
+    if (wfInd) wfInd.textContent = channel.waveform.toUpperCase();
+
+    // Update route indicator and output LED
+    const active = wiring.hasRoute('out-in');
+    routeIndicator.textContent = active ? '● ACTIVE' : '○ NO ROUTE';
+    routeIndicator.style.color = active ? '#00ffee' : '#2a4060';
+
+    const led = document.getElementById('v2-out-led');
+    if (led) {
+      if (active) {
+        led.style.background = '#ffcc00';
+        led.style.boxShadow  = '0 0 8px #ffcc0099';
+        led.style.borderColor = '#ffcc00';
+      } else {
+        led.style.background = '#332200';
+        led.style.boxShadow  = '';
+        led.style.borderColor = '#664400';
+      }
+    }
   };
   updatePanel();
 
-  return { panel, updatePanel };
+  return { panel, updatePanel, wiring };
 }
 
 function drawWaveformPreview(canvas: HTMLCanvasElement, wf: Waveform): void {
