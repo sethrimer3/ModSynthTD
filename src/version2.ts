@@ -6,19 +6,21 @@ import { rackPlugColor } from './version2-rack-wiring-types';
 import type { RackPlugType } from './version2-rack-wiring-types';
 import {
   Enemy,
-  createEnemies,
   drawEnemy,
   preloadEnemySprites,
 } from './version2-enemies';
 import { SubdivisionTransport, getAudioSystem } from './version2-audio';
+import { WaveManager } from './version2-waves';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type Waveform = 'pulse' | 'sine' | 'square';
 type SignalDirection = 'north' | 'south' | 'east' | 'west';
 type TowerOrientation = 'north' | 'east' | 'south' | 'west';
+type RunState = 'ready' | 'countin' | 'wave' | 'failed';
 
 const CHANNEL_COLORS = ['#00ffee', '#ff33aa', '#ffcc00', '#88ff22', '#ff6600'];
+const MAX_BASE_HP = 10;
 
 interface SynthSignal {
   waveform: Waveform;
@@ -229,10 +231,6 @@ class OutputTower {
 
 // ── Signal graph helpers ───────────────────────────────────────────────────
 
-/**
- * Convert a relative signal direction (north = forward, east = right, etc.)
- * into a world-space [dx, dy] vector given the tower's orientation.
- */
 function orientedDirToVector(relDir: SignalDirection, orientation: TowerOrientation): [number, number] {
   const fwd: Record<TowerOrientation, [number, number]> = {
     north: [0, -1], east: [1, 0], south: [0, 1], west: [-1, 0],
@@ -604,6 +602,7 @@ export function enterLevel(levelId: number): void {
   preloadEnemySprites();
 
   const audio = getAudioSystem();
+  const ff = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
 
   const app = getApp();
   app.style.cssText = `
@@ -617,16 +616,16 @@ export function enterLevel(levelId: number): void {
     width:100%;max-width:640px;
   `;
 
-  // ── HUD ───────────────────────────────────────────────────────────────────
+  // ── HUD row 1 ─────────────────────────────────────────────────────────────
   const hud = document.createElement('div');
   hud.style.cssText = `
     display:flex;align-items:center;justify-content:space-between;
-    width:100%;padding:0 0.25rem;
-    font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
+    width:100%;padding:0 0.25rem;${ff}
   `;
 
+  // Left: level name / bpm / beat
   const levelInfo = document.createElement('div');
-  levelInfo.style.cssText = `display:flex;flex-direction:column;gap:0.05rem;`;
+  levelInfo.style.cssText = `display:flex;flex-direction:column;gap:0.05rem;min-width:90px;`;
 
   const levelName = document.createElement('div');
   levelName.textContent = level.name;
@@ -642,15 +641,33 @@ export function enterLevel(levelId: number): void {
 
   levelInfo.append(levelName, bpmDisplay, beatDisplay);
 
+  // Center: wave number / state / enemy count
+  const waveInfo = document.createElement('div');
+  waveInfo.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:0.05rem;flex:1;`;
+
+  const waveDisplay = document.createElement('div');
+  waveDisplay.style.cssText = `color:#ffcc00;font-size:0.8rem;font-weight:800;letter-spacing:0.06em;`;
+
+  const stateDisplay = document.createElement('div');
+  stateDisplay.style.cssText = `font-size:0.6rem;font-weight:800;letter-spacing:0.1em;`;
+
+  const enemyCountDisplay = document.createElement('div');
+  enemyCountDisplay.style.cssText = `color:#5577aa;font-size:0.58rem;letter-spacing:0.05em;`;
+
+  waveInfo.append(waveDisplay, stateDisplay, enemyCountDisplay);
+
+  // Right: base HP / mute / exit
   const hudRight = document.createElement('div');
   hudRight.style.cssText = `display:flex;align-items:center;gap:0.5rem;`;
+
+  const baseHpDisplay = document.createElement('div');
+  baseHpDisplay.style.cssText = `font-size:0.68rem;font-weight:800;letter-spacing:0.05em;min-width:70px;text-align:right;`;
 
   const muteBtn = document.createElement('button');
   muteBtn.textContent = '🔊';
   muteBtn.title = 'Mute / Unmute audio';
   muteBtn.style.cssText = `
-    font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
-    font-size:0.75rem;background:rgba(8,15,28,0.8);
+    ${ff}font-size:0.75rem;background:rgba(8,15,28,0.8);
     border:1px solid #2a3d65;border-radius:6px;
     padding:0.35rem 0.55rem;cursor:pointer;
     transition:color 0.12s,border-color 0.12s;
@@ -667,8 +684,7 @@ export function enterLevel(levelId: number): void {
   const exitBtn = document.createElement('button');
   exitBtn.textContent = '↩ World Map';
   exitBtn.style.cssText = `
-    font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
-    font-size:0.7rem;color:#5577aa;background:rgba(8,15,28,0.8);
+    ${ff}font-size:0.7rem;color:#5577aa;background:rgba(8,15,28,0.8);
     border:1px solid #2a3d65;border-radius:6px;
     padding:0.35rem 0.8rem;cursor:pointer;letter-spacing:0.06em;
     transition:color 0.12s,border-color 0.12s;
@@ -677,8 +693,40 @@ export function enterLevel(levelId: number): void {
   exitBtn.addEventListener('mouseleave', () => { exitBtn.style.color = '#5577aa'; exitBtn.style.borderColor = '#2a3d65'; });
   exitBtn.addEventListener('click', () => showWorldMap());
 
-  hudRight.append(muteBtn, exitBtn);
-  hud.append(levelInfo, hudRight);
+  hudRight.append(baseHpDisplay, muteBtn, exitBtn);
+  hud.append(levelInfo, waveInfo, hudRight);
+
+  // ── HUD action row (START WAVE / count-in) ────────────────────────────────
+  const actionRow = document.createElement('div');
+  actionRow.style.cssText = `
+    display:flex;align-items:center;justify-content:center;
+    width:100%;min-height:28px;gap:0.75rem;
+  `;
+
+  const startWaveBtn = document.createElement('button');
+  startWaveBtn.style.cssText = `
+    ${ff}font-size:0.72rem;font-weight:800;letter-spacing:0.08em;
+    background:#ffcc0022;border:1.5px solid #ffcc00;color:#ffcc00;
+    border-radius:8px;padding:0.3rem 1.2rem;cursor:pointer;
+    box-shadow:0 0 10px #ffcc0055;
+    transition:background 0.1s,box-shadow 0.1s;display:none;
+  `;
+  startWaveBtn.addEventListener('mouseenter', () => {
+    startWaveBtn.style.background = '#ffcc0044';
+    startWaveBtn.style.boxShadow = '0 0 18px #ffcc0099';
+  });
+  startWaveBtn.addEventListener('mouseleave', () => {
+    startWaveBtn.style.background = '#ffcc0022';
+    startWaveBtn.style.boxShadow = '0 0 10px #ffcc0055';
+  });
+
+  const countInDisplay = document.createElement('div');
+  countInDisplay.style.cssText = `
+    ${ff}font-size:1.4rem;font-weight:800;color:#ffcc00;
+    text-shadow:0 0 20px #ffcc00;letter-spacing:0.1em;display:none;
+  `;
+
+  actionRow.append(startWaveBtn, countInDisplay);
 
   // ── Canvas ─────────────────────────────────────────────────────────────────
   const canvasWrapper = document.createElement('div');
@@ -694,12 +742,52 @@ export function enterLevel(levelId: number): void {
   canvas.style.cssText = `width:100%;height:100%;display:block;cursor:grab;touch-action:none;`;
   canvasWrapper.append(canvas);
 
-  const hint = document.createElement('div');
-  hint.textContent = 'Scroll to zoom · Drag to pan · Click tower to select · R to rotate';
-  hint.style.cssText = `
-    font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
-    font-size:0.58rem;color:#2a4055;letter-spacing:0.08em;
+  // ── Failure overlay ────────────────────────────────────────────────────────
+  const failureOverlay = document.createElement('div');
+  failureOverlay.style.cssText = `
+    position:absolute;inset:0;
+    background:rgba(0,2,8,0.92);
+    display:none;flex-direction:column;align-items:center;justify-content:center;
+    gap:1rem;z-index:10;${ff}
   `;
+
+  const failTitle = document.createElement('div');
+  failTitle.textContent = 'BASE DESTROYED';
+  failTitle.style.cssText = `font-size:1.1rem;font-weight:800;color:#ff3344;letter-spacing:0.12em;text-shadow:0 0 24px #ff334488;`;
+
+  const failWaveEl = document.createElement('div');
+  failWaveEl.style.cssText = `font-size:0.7rem;color:#5577aa;letter-spacing:0.1em;`;
+
+  const failBtnRow = document.createElement('div');
+  failBtnRow.style.cssText = `display:flex;gap:0.75rem;margin-top:0.5rem;`;
+
+  const restartBtn = document.createElement('button');
+  restartBtn.textContent = '↺ RESTART';
+  restartBtn.style.cssText = `
+    ${ff}font-size:0.72rem;font-weight:800;letter-spacing:0.08em;
+    background:#33ff8822;border:1.5px solid #33ff88;color:#33ff88;
+    border-radius:8px;padding:0.3rem 1rem;cursor:pointer;
+    box-shadow:0 0 10px #33ff8855;transition:background 0.1s;
+  `;
+  restartBtn.addEventListener('click', () => enterLevel(levelId));
+
+  const worldMapBtn = document.createElement('button');
+  worldMapBtn.textContent = '↩ WORLD MAP';
+  worldMapBtn.style.cssText = `
+    ${ff}font-size:0.72rem;font-weight:800;letter-spacing:0.08em;
+    background:#5577aa22;border:1.5px solid #5577aa;color:#5577aa;
+    border-radius:8px;padding:0.3rem 1rem;cursor:pointer;
+    transition:background 0.1s;
+  `;
+  worldMapBtn.addEventListener('click', () => showWorldMap());
+
+  failBtnRow.append(restartBtn, worldMapBtn);
+  failureOverlay.append(failTitle, failWaveEl, failBtnRow);
+  canvasWrapper.append(failureOverlay);
+
+  const hint = document.createElement('div');
+  hint.textContent = 'Scroll to zoom · Drag to pan · Click tower to select · R to rotate (when selected)';
+  hint.style.cssText = `${ff}font-size:0.58rem;color:#2a4055;letter-spacing:0.08em;`;
 
   // ── Pre-game objects needed by rack callbacks ──────────────────────────────
   const trackSet = new Set(level.trackTiles.map(([x, y]) => `${x},${y}`));
@@ -717,7 +805,7 @@ export function enterLevel(levelId: number): void {
     onRotate: () => { tower.rotateClockwise(); },
   });
 
-  root.append(hud, canvasWrapper, hint, rackPanel);
+  root.append(hud, actionRow, canvasWrapper, hint, rackPanel);
   app.append(root);
 
   // ── Canvas sizing ─────────────────────────────────────────────────────────
@@ -768,7 +856,6 @@ export function enterLevel(levelId: number): void {
   });
 
   canvas.addEventListener('pointermove', (e: PointerEvent) => {
-    // Update placement preview tile under cursor
     if (placement.active) {
       const pos = clientToCanvas(canvas, e.clientX, e.clientY);
       const tile = screenToTile(pos, view);
@@ -807,12 +894,14 @@ export function enterLevel(levelId: number): void {
 
       if (placement.active) {
         if (isValidTowerTile(tile.x, tile.y, level, trackSet)) {
+          // Valid tile: place and exit placement mode.
           tower.tileX = tile.x;
           tower.tileY = tile.y;
+          placement.active = false;
+          placement.previewTile = null;
+          canvas.style.cursor = 'grab';
         }
-        placement.active = false;
-        placement.previewTile = null;
-        canvas.style.cursor = 'grab';
+        // Invalid tile: keep placement mode active, preview stays.
       } else {
         if (tile.x === tower.tileX && tile.y === tower.tileY) {
           tower.selected = !tower.selected;
@@ -846,7 +935,8 @@ export function enterLevel(levelId: number): void {
       tower.selected = false;
       canvas.style.cursor = 'grab';
     } else if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey) {
-      tower.rotateClockwise();
+      // R key only rotates when the tower is selected.
+      if (tower.selected) tower.rotateClockwise();
     }
   };
   window.addEventListener('keydown', onKey);
@@ -857,7 +947,13 @@ export function enterLevel(levelId: number): void {
 
   // ── Game State ─────────────────────────────────────────────────────────────
   const clock = new BeatClock(level.bpm);
-  const enemies = createEnemies(level.trackTiles);
+  let waveEnemies: Enemy[] = [];
+  let runState: RunState = 'ready';
+  let baseHp = MAX_BASE_HP;
+  let waveStartSubdiv = -1;
+  let finishFlashTimer = 0;
+  const waveManager = new WaveManager();
+
   const projectiles: SignalProjectile[] = [];
   const delayMod = new DelayModule();
   const scheduler = new SignalScheduler();
@@ -870,6 +966,59 @@ export function enterLevel(levelId: number): void {
   wiring.connectPlugs('wf-out', 'delay-in');
   wiring.connectPlugs('delay-out', 'split-in');
   wiring.connectPlugs('split-out', 'out-in');
+
+  // ── START WAVE button ──────────────────────────────────────────────────────
+  startWaveBtn.addEventListener('click', () => {
+    if (runState !== 'ready') return;
+    const currentSubdiv = Math.floor(clock.beatFloat * 4);
+    waveStartSubdiv = waveManager.scheduleWave(currentSubdiv);
+    runState = 'countin';
+  });
+
+  // ── HUD updater ────────────────────────────────────────────────────────────
+  const updateHud = () => {
+    waveDisplay.textContent = `WAVE ${waveManager.currentWaveNumber}`;
+
+    const totalEnemies = waveEnemies.length + waveManager.pendingSpawnCount;
+    enemyCountDisplay.textContent = (runState === 'wave' || runState === 'countin') && totalEnemies > 0
+      ? `${totalEnemies} enemies`
+      : '';
+
+    const hpColor = baseHp <= 3 ? '#ff3344' : baseHp <= 6 ? '#ffcc00' : '#33ff88';
+    baseHpDisplay.style.color = hpColor;
+    baseHpDisplay.textContent = `BASE ${baseHp}/${MAX_BASE_HP}`;
+
+    const stateColors: Record<RunState, string> = {
+      ready: '#5577aa', countin: '#ffcc00', wave: '#33ff88', failed: '#ff3344',
+    };
+    const stateLabels: Record<RunState, string> = {
+      ready: 'READY', countin: 'COUNT-IN', wave: 'WAVE', failed: 'FAILED',
+    };
+    stateDisplay.textContent = stateLabels[runState];
+    stateDisplay.style.color = stateColors[runState];
+
+    if (runState === 'ready') {
+      startWaveBtn.textContent = `▶ START WAVE ${waveManager.currentWaveNumber}`;
+      startWaveBtn.style.display = 'block';
+      countInDisplay.style.display = 'none';
+    } else if (runState === 'countin') {
+      startWaveBtn.style.display = 'none';
+      const currentSubdivF = clock.beatFloat * 4;
+      const beatsLeft = Math.max(1, Math.ceil((waveStartSubdiv - currentSubdivF) / 4));
+      countInDisplay.textContent = String(beatsLeft);
+      countInDisplay.style.display = 'block';
+    } else {
+      startWaveBtn.style.display = 'none';
+      countInDisplay.style.display = 'none';
+    }
+
+    if (runState === 'failed') {
+      failureOverlay.style.display = 'flex';
+      failWaveEl.textContent = `REACHED WAVE ${waveManager.currentWaveNumber}`;
+    } else {
+      failureOverlay.style.display = 'none';
+    }
+  };
 
   let lastNow = performance.now();
   const ctx = canvas.getContext('2d')!;
@@ -884,58 +1033,103 @@ export function enterLevel(levelId: number): void {
     const beat = clock.beat;
 
     delayMod.update(dt);
+    finishFlashTimer = Math.max(0, finishFlashTimer - dt);
 
-    const echoSignals = scheduler.releaseAt(beat);
-    if (echoSignals.length > 0) {
-      tower.spawnEchoes(echoSignals, beat, projectiles);
-      delayMod.onSend();
-    }
-
+    // Signal processing (disabled when failed)
     const route = evaluateSignalGraph(wiring.getConnections(), channel);
-    const justFired = tower.update(beat, route.signals, projectiles);
+    let justFired = false;
 
-    if (justFired && route.hasDelay) {
-      scheduler.schedule(
-        beat + delayMod.delayBeats,
-        route.signals.map(s => ({ ...s, amplitude: s.amplitude * delayMod.echoAmplitude })),
-      );
-      delayMod.onReceive();
+    if (runState !== 'failed') {
+      const echoSignals = scheduler.releaseAt(beat);
+      if (echoSignals.length > 0) {
+        tower.spawnEchoes(echoSignals, beat, projectiles);
+        delayMod.onSend();
+      }
+      justFired = tower.update(beat, route.signals, projectiles);
+      if (justFired && route.hasDelay) {
+        scheduler.schedule(
+          beat + delayMod.delayBeats,
+          route.signals.map(s => ({ ...s, amplitude: s.amplitude * delayMod.echoAmplitude })),
+        );
+        delayMod.onReceive();
+      }
     }
 
-    // ── Subdivision transport: movement + audio ──────────────────────────────
+    // ── Subdivision transport ──────────────────────────────────────────────
     const secsPerSubdiv = 60 / level.bpm / 4;
     const audioCtxTime = audio.currentTime;
     const subdivEvents = transport.tick(beatFloat, audioCtxTime, secsPerSubdiv);
-    const hatPeriod = computeFastestHatPeriod(enemies);
 
     for (const { subdivIdx, audioTime } of subdivEvents) {
-      for (const enemy of enemies) {
-        enemy.processSubdiv(subdivIdx);
+      // Count-in → wave transition at the scheduled downbeat.
+      if (runState === 'countin' && subdivIdx >= waveStartSubdiv) {
+        runState = 'wave';
       }
+
+      // Spawn new enemies (wave state only; count-in keeps them pending).
+      if (runState === 'wave') {
+        const newEnemies = waveManager.tick(subdivIdx, level.trackTiles);
+        waveEnemies.push(...newEnemies);
+      }
+
+      // Advance enemies and detect escapes.
+      if (runState === 'wave') {
+        for (let i = waveEnemies.length - 1; i >= 0; i--) {
+          const result = waveEnemies[i].processSubdiv(subdivIdx);
+          if (result === 'escaped') {
+            waveEnemies.splice(i, 1);
+            baseHp = Math.max(0, baseHp - 1);
+            finishFlashTimer = 0.55;
+            if (baseHp <= 0 && runState !== 'failed') {
+              runState = 'failed';
+              scheduler.clear();
+              projectiles.length = 0;
+            }
+          }
+        }
+      }
+
+      // Percussion — always plays regardless of run state.
       if (subdivIdx % 4 === 0) {
         audio.playKick(subdivIdx / 4, audioTime);
       }
+      // Hi-hat cadence driven only by currently active (spawned, living) enemies.
+      const hatPeriod = computeFastestHatPeriod(waveEnemies);
       if (hatPeriod > 0 && subdivIdx % hatPeriod === 0) {
         audio.playHihat(audioTime);
       }
     }
 
-    // ── Per-frame enemy animation ────────────────────────────────────────────
-    for (const enemy of enemies) {
-      enemy.updateAnimation(dt);
+    // Per-frame animation
+    for (const enemy of waveEnemies) enemy.updateAnimation(dt);
+
+    // Collision and projectile culling (skip when failed)
+    if (runState !== 'failed') {
+      cullProjectiles(projectiles, level, beatFloat);
+      checkCollisions(waveEnemies, projectiles, level, beatFloat);
     }
 
-    cullProjectiles(projectiles, level, beatFloat);
-    checkCollisions(enemies, projectiles, level, beatFloat);
+    // Remove enemies killed by projectiles this frame.
+    waveEnemies = waveEnemies.filter(e => !e.isDead);
+
+    // Wave completion: all spawned, none left alive.
+    if (runState === 'wave' && waveManager.isAllSpawned && waveEnemies.length === 0) {
+      runState = 'ready';
+      waveManager.advanceWave();
+    }
 
     beatDisplay.textContent = `beat ${beat}`;
+    updateHud();
     updatePanel(dt, route, justFired, delayMod, scheduler);
     updateOutputCard(tower, placement.active);
     wiring.update(now);
 
-    renderLevel(ctx, canvas, level, view, clock, channel, enemies, tower, projectiles, route, placement, trackSet);
+    renderLevel(ctx, canvas, level, view, clock, channel, waveEnemies, tower, projectiles, route, placement, trackSet, finishFlashTimer);
     rafId = requestAnimationFrame(tick);
   };
+
+  // Initial HUD state
+  updateHud();
   rafId = requestAnimationFrame(tick);
 }
 
@@ -1274,8 +1468,9 @@ function buildRackPanel(
 
       const rotateBtn = document.createElement('button');
       rotateBtn.textContent = '↻ R';
-      rotateBtn.title = 'Rotate tower clockwise (R)';
+      rotateBtn.title = 'Rotate tower clockwise';
       rotateBtn.style.cssText = smallBtnCss;
+      // Rack ROTATE button always rotates (no selection required).
       rotateBtn.addEventListener('click', () => towerCallbacks.onRotate());
 
       btnRow.append(outPlaceBtn, rotateBtn);
@@ -1474,6 +1669,7 @@ function renderLevel(
   route: EvaluatedRoute,
   placement: PlacementState,
   trackSet: Set<string>,
+  finishFlashTimer: number,
 ): void {
   const W = canvas.width, H = canvas.height;
   const dpr = devicePixelRatio;
@@ -1577,9 +1773,26 @@ function renderLevel(
   }
   ctx.restore();
 
-  // ── Start / Finish markers ─────────────────────────────────────────────────
+  // ── Start marker ──────────────────────────────────────────────────────────
   if (start) drawMarker(ctx, start[0], start[1], tileZ, '#33ff88', '#00cc66', 'S', zDpr);
-  if (finish) drawMarker(ctx, finish[0], finish[1], tileZ, '#ff3366', '#cc0044', 'F', zDpr);
+
+  // ── Finish marker with damage flash ───────────────────────────────────────
+  if (finish) {
+    if (finishFlashTimer > 0) {
+      const flashAmt = Math.abs(Math.sin(finishFlashTimer * Math.PI * 18)) * finishFlashTimer * 1.5;
+      const fpx = finish[0] * tileZ + tileZ / 2;
+      const fpy = finish[1] * tileZ + tileZ / 2;
+      ctx.save();
+      ctx.fillStyle = `rgba(255,50,80,${Math.min(0.55, flashAmt * 0.55)})`;
+      ctx.shadowColor = '#ff3366';
+      ctx.shadowBlur = tileZ * 0.7 * flashAmt;
+      ctx.beginPath();
+      ctx.arc(fpx, fpy, tileZ * 0.48, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    drawMarker(ctx, finish[0], finish[1], tileZ, '#ff3366', '#cc0044', 'F', zDpr);
+  }
 
   // ── Placement ghost ────────────────────────────────────────────────────────
   if (placement.active && placement.previewTile) {
@@ -1840,7 +2053,6 @@ function drawTower(
   ctx.save();
   ctx.translate(px, py);
 
-  // Selection ring
   if (selected) {
     ctx.strokeStyle = hexAlpha('#ffcc00', 0.5);
     ctx.lineWidth = Math.max(1.5, 2.5 * zoomDpr);
@@ -1888,7 +2100,6 @@ function drawTower(
     ctx.beginPath(); ctx.arc(0, 0, cr * 0.5, 0, Math.PI * 2); ctx.fill();
   }
 
-  // Orientation arrow
   const [arrowFX, arrowFY] = orientedDirToVector('north', orientation);
   const perpX = -arrowFY, perpY = arrowFX;
   const tip = half * 0.65, base = half * 0.3, hw = half * 0.2;

@@ -10,6 +10,8 @@ import sixteenthNoteUrl from '../ASSETS/SPRITES/ENEMIES/enemy_sixteenthNote.png'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+export type SubdivResult = 'none' | 'moved' | 'escaped';
+
 export interface EnemyTypeConfig {
   id: string;
   label: string;
@@ -108,10 +110,8 @@ export class Enemy {
   readonly maxHp: number;
   flashTimer = 0;
 
-  /** Subdiv index (0.25-beat units) at which this enemy was first created. */
+  /** Subdiv index at which this enemy becomes active. */
   readonly spawnSubdiv: number;
-  /** Effective spawn subdiv — reset to current subdiv on each respawn. */
-  private _effectiveSpawnSubdiv: number;
 
   private currentTileIdx = 0;
   private prevTileIdx = 0;
@@ -120,9 +120,8 @@ export class Enemy {
 
   private _spawned = false;
   private _alive = true;
-  private _respawnAtSubdiv = -1;
+  private _escaped = false;
   private _lastStepTaken = -1;
-  private _lastSubdivIdx = -1;
 
   constructor(
     public readonly typeConfig: EnemyTypeConfig,
@@ -130,55 +129,46 @@ export class Enemy {
     spawnBeat: number,
   ) {
     this.spawnSubdiv = Math.round(spawnBeat * 4);
-    this._effectiveSpawnSubdiv = this.spawnSubdiv;
     this.hp = typeConfig.maxHp;
     this.maxHp = typeConfig.maxHp;
   }
 
   /**
-   * Called once per subdivision event. Returns true if the enemy moved.
-   * Handles initial spawn, respawn, and tab-suspension snap.
+   * Called once per subdivision event. Returns:
+   *   'none'    – no state change
+   *   'moved'   – enemy advanced one tile
+   *   'escaped' – enemy reached the end of the track (base takes damage)
    */
-  processSubdiv(subdivIdx: number): boolean {
-    this._lastSubdivIdx = subdivIdx;
-    if (this.track.length === 0) return false;
-
-    // While dead: check if it's time to respawn.
-    if (!this._alive) {
-      if (this._respawnAtSubdiv >= 0 && subdivIdx >= this._respawnAtSubdiv) {
-        this._alive = true;
-        this.hp = this.maxHp;
-        this._effectiveSpawnSubdiv = subdivIdx;
-        this.currentTileIdx = 0;
-        this.prevTileIdx = 0;
-        this.hopTimer = this.HOP_DURATION; // snap to start tile without animation
-        this._lastStepTaken = 0;
-        this._respawnAtSubdiv = -1;
-        this.flashTimer = 0;
-      }
-      return false;
-    }
-
-    // Before initial spawn time: invisible and inactive.
-    if (subdivIdx < this._effectiveSpawnSubdiv) return false;
+  processSubdiv(subdivIdx: number): SubdivResult {
+    if (this.track.length === 0) return 'none';
+    if (!this._alive) return 'none';
+    if (subdivIdx < this.spawnSubdiv) return 'none';
 
     // First frame at or past spawn: place on tile 0.
     if (!this._spawned) {
       this._spawned = true;
       this.hopTimer = this.HOP_DURATION; // snap to tile 0
       this._lastStepTaken = 0;
-      return false;
+      return 'none';
     }
 
-    const delta = subdivIdx - this._effectiveSpawnSubdiv;
-    if (delta % this.typeConfig.moveEverySubdivs !== 0) return false;
+    const delta = subdivIdx - this.spawnSubdiv;
+    if (delta % this.typeConfig.moveEverySubdivs !== 0) return 'none';
 
     const stepsTaken = Math.floor(delta / this.typeConfig.moveEverySubdivs);
-    const nextIdx = stepsTaken % this.track.length;
+
+    // Enemy has walked past the final track tile → escape.
+    if (stepsTaken >= this.track.length) {
+      this._alive = false;
+      this._escaped = true;
+      return 'escaped';
+    }
+
+    const nextIdx = stepsTaken;
 
     if (nextIdx === this.currentTileIdx) {
       this._lastStepTaken = stepsTaken;
-      return false;
+      return 'none';
     }
 
     // Snap without hop animation if steps were skipped (e.g. tab suspension).
@@ -187,7 +177,7 @@ export class Enemy {
     this.currentTileIdx = nextIdx;
     this._lastStepTaken = stepsTaken;
     this.hopTimer = skipped ? this.HOP_DURATION : 0;
-    return true;
+    return 'moved';
   }
 
   updateAnimation(dt: number): void {
@@ -217,32 +207,14 @@ export class Enemy {
     this.flashTimer = 0.25;
     if (this.hp <= 0) {
       this._alive = false;
-      // Respawn after 4 beats (16 sixteenth-note subdivisions).
-      this._respawnAtSubdiv = (this._lastSubdivIdx >= 0 ? this._lastSubdivIdx : 0) + 16;
     }
   }
 
   get isDead(): boolean { return !this._alive; }
+  get isEscaped(): boolean { return this._escaped; }
   get isSpawned(): boolean { return this._spawned && this._alive; }
   get isFlashing(): boolean { return this.flashTimer > 0; }
   get tileIndex(): number { return this.currentTileIdx; }
-}
-
-// ── Factory ────────────────────────────────────────────────────────────────
-
-/**
- * Create one of each enemy type, staggered by spawnBeat so they
- * enter the track at different times and are visually separated.
- */
-export function createEnemies(track: [number, number][]): Enemy[] {
-  if (track.length === 0) return [];
-  return [
-    new Enemy(ENEMY_TYPES.sixteenth, track, 0),
-    new Enemy(ENEMY_TYPES.eighth,    track, 2),
-    new Enemy(ENEMY_TYPES.quarter,   track, 4),
-    new Enemy(ENEMY_TYPES.half,      track, 6),
-    new Enemy(ENEMY_TYPES.whole,     track, 8),
-  ];
 }
 
 // ── Rendering ──────────────────────────────────────────────────────────────
@@ -287,7 +259,6 @@ export function drawEnemy(
     ctx.drawImage(sprite, -drawW / 2, -drawH / 2, drawW, drawH);
 
     if (isFlash) {
-      // White overlay via lighter compositing
       ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = 0.55;
       ctx.drawImage(sprite, -drawW / 2, -drawH / 2, drawW, drawH);
@@ -295,7 +266,6 @@ export function drawEnemy(
       ctx.globalAlpha = 1;
     }
   } else {
-    // Fallback symbol while image loads
     const fontSize = Math.max(10, tileZ * 0.38);
     ctx.font = `${fontSize}px sans-serif`;
     ctx.textAlign = 'center';
