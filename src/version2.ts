@@ -16,6 +16,7 @@ import { SubdivisionTransport, getAudioSystem } from './version2-audio';
 
 type Waveform = 'pulse' | 'sine' | 'square';
 type SignalDirection = 'north' | 'south' | 'east' | 'west';
+type TowerOrientation = 'north' | 'east' | 'south' | 'west';
 
 const CHANNEL_COLORS = ['#00ffee', '#ff33aa', '#ffcc00', '#88ff22', '#ff6600'];
 
@@ -54,9 +55,6 @@ interface ViewState {
   zoom: number;
   panX: number;
   panY: number;
-  isPanning: boolean;
-  lastPanX: number;
-  lastPanY: number;
 }
 
 interface SignalProjectile {
@@ -70,6 +68,11 @@ interface SignalProjectile {
   amplitude: number;
   color: string;
   dead: boolean;
+}
+
+interface PlacementState {
+  active: boolean;
+  previewTile: { x: number; y: number } | null;
 }
 
 // ── SynthChannel ───────────────────────────────────────────────────────────
@@ -161,9 +164,21 @@ class SignalScheduler {
 // ── OutputTower ────────────────────────────────────────────────────────────
 
 class OutputTower {
-  readonly tileX = 8;
-  readonly tileY = 4;
+  tileX: number;
+  tileY: number;
+  orientation: TowerOrientation = 'north';
+  selected = false;
   private lastCheckedBeat = -1;
+
+  constructor(tileX = 8, tileY = 4) {
+    this.tileX = tileX;
+    this.tileY = tileY;
+  }
+
+  rotateClockwise(): void {
+    const seq: TowerOrientation[] = ['north', 'east', 'south', 'west'];
+    this.orientation = seq[(seq.indexOf(this.orientation) + 1) % 4];
+  }
 
   update(beat: number, signals: SynthSignal[], projectiles: SignalProjectile[]): boolean {
     if (beat <= this.lastCheckedBeat) return false;
@@ -173,8 +188,8 @@ class OutputTower {
     let fired = false;
     for (const sig of signals) {
       if (!signalShouldFireOnBeat(sig, beat)) continue;
-      for (const dir of sig.directions) {
-        const [dx, dy] = dirToVector(dir);
+      for (const relDir of sig.directions) {
+        const [dx, dy] = orientedDirToVector(relDir, this.orientation);
         projectiles.push({
           spawnBeat: beat,
           originX: this.tileX,
@@ -194,8 +209,8 @@ class OutputTower {
 
   spawnEchoes(signals: SynthSignal[], beat: number, projectiles: SignalProjectile[]): void {
     for (const sig of signals) {
-      for (const dir of sig.directions) {
-        const [dx, dy] = dirToVector(dir);
+      for (const relDir of sig.directions) {
+        const [dx, dy] = orientedDirToVector(relDir, this.orientation);
         projectiles.push({
           spawnBeat: beat,
           originX: this.tileX,
@@ -214,12 +229,24 @@ class OutputTower {
 
 // ── Signal graph helpers ───────────────────────────────────────────────────
 
-function dirToVector(dir: SignalDirection): [number, number] {
-  switch (dir) {
-    case 'north': return [0, -1];
-    case 'south': return [0,  1];
-    case 'east':  return [1,  0];
-    case 'west':  return [-1, 0];
+/**
+ * Convert a relative signal direction (north = forward, east = right, etc.)
+ * into a world-space [dx, dy] vector given the tower's orientation.
+ */
+function orientedDirToVector(relDir: SignalDirection, orientation: TowerOrientation): [number, number] {
+  const fwd: Record<TowerOrientation, [number, number]> = {
+    north: [0, -1], east: [1, 0], south: [0, 1], west: [-1, 0],
+  };
+  const rgt: Record<TowerOrientation, [number, number]> = {
+    north: [1, 0], east: [0, 1], south: [-1, 0], west: [0, -1],
+  };
+  const [fx, fy] = fwd[orientation];
+  const [rx, ry] = rgt[orientation];
+  switch (relDir) {
+    case 'north': return [ fx,  fy];
+    case 'south': return [-fx, -fy];
+    case 'east':  return [ rx,  ry];
+    case 'west':  return [-rx, -ry];
   }
 }
 
@@ -389,6 +416,46 @@ function clearApp(): void {
   app.style.cssText = '';
 }
 
+// ── Rendering constants ────────────────────────────────────────────────────
+
+const BASE_TILE_PX = 40;
+const SIGNAL_TAIL_BEATS = 3;
+
+// ── Coordinate helpers ─────────────────────────────────────────────────────
+
+function clientToCanvas(
+  canvas: HTMLCanvasElement,
+  clientX: number,
+  clientY: number,
+): { x: number; y: number } {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (clientX - rect.left) * (canvas.width / rect.width) / devicePixelRatio,
+    y: (clientY - rect.top) * (canvas.height / rect.height) / devicePixelRatio,
+  };
+}
+
+function screenToTile(
+  canvasPos: { x: number; y: number },
+  view: ViewState,
+): { x: number; y: number } {
+  const tileZ = BASE_TILE_PX * view.zoom;
+  return {
+    x: Math.floor((canvasPos.x - view.panX) / tileZ),
+    y: Math.floor((canvasPos.y - view.panY) / tileZ),
+  };
+}
+
+function isValidTowerTile(
+  tx: number,
+  ty: number,
+  level: SynthLevelConfig,
+  trackSet: Set<string>,
+): boolean {
+  if (tx < 0 || tx >= level.gridWidth || ty < 0 || ty >= level.gridHeight) return false;
+  return !trackSet.has(`${tx},${ty}`);
+}
+
 // ── World Map ──────────────────────────────────────────────────────────────
 
 export function showWorldMap(): void {
@@ -516,17 +583,13 @@ function seededRng(seed: number): () => number {
 
 // ── Fastest hi-hat subdiv period ────────────────────────────────────────────
 
-/**
- * Returns the hi-hat subdivision period in subdiv units (1 = 0.25 beats, 2 = 0.5 beats).
- * 0 means no hat. Only counts alive, spawned enemies.
- */
 function computeFastestHatPeriod(enemies: Enemy[]): number {
   let fastest = 0;
   for (const e of enemies) {
     if (!e.isSpawned) continue;
     const p = e.typeConfig.moveEverySubdivs;
-    if (p === 1) return 1; // sixteenth — can't be faster
-    if (p === 2 && fastest !== 1) fastest = 2; // eighth
+    if (p === 1) return 1;
+    if (p === 2 && fastest !== 1) fastest = 2;
   }
   return fastest;
 }
@@ -579,11 +642,9 @@ export function enterLevel(levelId: number): void {
 
   levelInfo.append(levelName, bpmDisplay, beatDisplay);
 
-  // Right-side HUD buttons
   const hudRight = document.createElement('div');
   hudRight.style.cssText = `display:flex;align-items:center;gap:0.5rem;`;
 
-  // Mute button
   const muteBtn = document.createElement('button');
   muteBtn.textContent = '🔊';
   muteBtn.title = 'Mute / Unmute audio';
@@ -634,15 +695,27 @@ export function enterLevel(levelId: number): void {
   canvasWrapper.append(canvas);
 
   const hint = document.createElement('div');
-  hint.textContent = 'Scroll to zoom · Drag to pan';
+  hint.textContent = 'Scroll to zoom · Drag to pan · Click tower to select · R to rotate';
   hint.style.cssText = `
     font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
     font-size:0.58rem;color:#2a4055;letter-spacing:0.08em;
   `;
 
+  // ── Pre-game objects needed by rack callbacks ──────────────────────────────
+  const trackSet = new Set(level.trackTiles.map(([x, y]) => `${x},${y}`));
+  const tower = new OutputTower();
+  const placement: PlacementState = { active: false, previewTile: null };
+
   // ── Rack Panel ────────────────────────────────────────────────────────────
   const channel = new SynthChannel(1);
-  const { panel: rackPanel, updatePanel, wiring } = buildRackPanel(channel);
+  const { panel: rackPanel, updatePanel, updateOutputCard, wiring } = buildRackPanel(channel, {
+    onEnterPlacement: () => {
+      placement.active = !placement.active;
+      if (!placement.active) placement.previewTile = null;
+      canvas.style.cursor = placement.active ? 'crosshair' : 'grab';
+    },
+    onRotate: () => { tower.rotateClockwise(); },
+  });
 
   root.append(hud, canvasWrapper, hint, rackPanel);
   app.append(root);
@@ -655,10 +728,7 @@ export function enterLevel(levelId: number): void {
   };
   resizeCanvas();
 
-  const view: ViewState = {
-    zoom: 1, panX: 0, panY: 0,
-    isPanning: false, lastPanX: 0, lastPanY: 0,
-  };
+  const view: ViewState = { zoom: 1, panX: 0, panY: 0 };
 
   const centerView = () => {
     const rect = canvasWrapper.getBoundingClientRect();
@@ -681,40 +751,118 @@ export function enterLevel(levelId: number): void {
     view.zoom = newZoom;
   }, { passive: false });
 
+  let pointerDown = false;
+  let pointerDownClientX = 0, pointerDownClientY = 0;
+  let lastPanClientX = 0, lastPanClientY = 0;
+  let didPan = false;
+
   canvas.addEventListener('pointerdown', (e: PointerEvent) => {
     canvas.setPointerCapture(e.pointerId);
-    view.isPanning = true;
-    view.lastPanX = e.clientX;
-    view.lastPanY = e.clientY;
-    canvas.style.cursor = 'grabbing';
+    pointerDown = true;
+    pointerDownClientX = e.clientX;
+    pointerDownClientY = e.clientY;
+    lastPanClientX = e.clientX;
+    lastPanClientY = e.clientY;
+    didPan = false;
+    canvas.style.cursor = placement.active ? 'crosshair' : 'grabbing';
   });
 
   canvas.addEventListener('pointermove', (e: PointerEvent) => {
-    if (!view.isPanning) return;
-    const rect = canvas.getBoundingClientRect();
-    view.panX += (e.clientX - view.lastPanX) * (canvas.width / rect.width) / devicePixelRatio;
-    view.panY += (e.clientY - view.lastPanY) * (canvas.height / rect.height) / devicePixelRatio;
-    view.lastPanX = e.clientX;
-    view.lastPanY = e.clientY;
+    // Update placement preview tile under cursor
+    if (placement.active) {
+      const pos = clientToCanvas(canvas, e.clientX, e.clientY);
+      const tile = screenToTile(pos, view);
+      placement.previewTile = { x: tile.x, y: tile.y };
+    }
+
+    if (!pointerDown || placement.active) {
+      lastPanClientX = e.clientX;
+      lastPanClientY = e.clientY;
+      return;
+    }
+
+    const dx = e.clientX - pointerDownClientX;
+    const dy = e.clientY - pointerDownClientY;
+    if (Math.sqrt(dx * dx + dy * dy) > 5) didPan = true;
+
+    if (didPan) {
+      const rect = canvas.getBoundingClientRect();
+      const scale = (canvas.width / rect.width) / devicePixelRatio;
+      view.panX += (e.clientX - lastPanClientX) * scale;
+      view.panY += (e.clientY - lastPanClientY) * scale;
+      canvas.style.cursor = 'grabbing';
+    }
+    lastPanClientX = e.clientX;
+    lastPanClientY = e.clientY;
   });
 
-  canvas.addEventListener('pointerup', () => { view.isPanning = false; canvas.style.cursor = 'grab'; });
-  canvas.addEventListener('pointercancel', () => { view.isPanning = false; canvas.style.cursor = 'grab'; });
+  const endPointer = (e: PointerEvent) => {
+    if (!pointerDown) return;
+    pointerDown = false;
+    canvas.style.cursor = placement.active ? 'crosshair' : 'grab';
+
+    if (!didPan) {
+      const pos = clientToCanvas(canvas, e.clientX, e.clientY);
+      const tile = screenToTile(pos, view);
+
+      if (placement.active) {
+        if (isValidTowerTile(tile.x, tile.y, level, trackSet)) {
+          tower.tileX = tile.x;
+          tower.tileY = tile.y;
+        }
+        placement.active = false;
+        placement.previewTile = null;
+        canvas.style.cursor = 'grab';
+      } else {
+        if (tile.x === tower.tileX && tile.y === tower.tileY) {
+          tower.selected = !tower.selected;
+        } else {
+          tower.selected = false;
+        }
+      }
+    }
+  };
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', () => {
+    pointerDown = false;
+    placement.active = false;
+    placement.previewTile = null;
+    canvas.style.cursor = 'grab';
+  });
+  canvas.addEventListener('contextmenu', (e: MouseEvent) => {
+    e.preventDefault();
+    if (placement.active) {
+      placement.active = false;
+      placement.previewTile = null;
+      canvas.style.cursor = 'grab';
+    }
+  });
+
+  // ── Keyboard ──────────────────────────────────────────────────────────────
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      placement.active = false;
+      placement.previewTile = null;
+      tower.selected = false;
+      canvas.style.cursor = 'grab';
+    } else if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey) {
+      tower.rotateClockwise();
+    }
+  };
+  window.addEventListener('keydown', onKey);
 
   const ro = new ResizeObserver(() => { resizeCanvas(); centerView(); });
   ro.observe(canvasWrapper);
-  levelCleanup = () => ro.disconnect();
+  levelCleanup = () => { ro.disconnect(); window.removeEventListener('keydown', onKey); };
 
   // ── Game State ─────────────────────────────────────────────────────────────
   const clock = new BeatClock(level.bpm);
   const enemies = createEnemies(level.trackTiles);
-  const tower = new OutputTower();
   const projectiles: SignalProjectile[] = [];
   const delayMod = new DelayModule();
   const scheduler = new SignalScheduler();
   const transport = new SubdivisionTransport();
 
-  // Initialize audio from this user-gesture-triggered path
   audio.init().then(updateMuteBtn);
 
   // Default patch: CH1 → WAVE → DELAY → SPLIT → OUTPUT
@@ -761,17 +909,12 @@ export function enterLevel(levelId: number): void {
     const hatPeriod = computeFastestHatPeriod(enemies);
 
     for (const { subdivIdx, audioTime } of subdivEvents) {
-      // Enemy movement
       for (const enemy of enemies) {
         enemy.processSubdiv(subdivIdx);
       }
-
-      // Kick on integer beats
       if (subdivIdx % 4 === 0) {
         audio.playKick(subdivIdx / 4, audioTime);
       }
-
-      // Hi-hat on fastest active subdivision
       if (hatPeriod > 0 && subdivIdx % hatPeriod === 0) {
         audio.playHihat(audioTime);
       }
@@ -787,9 +930,10 @@ export function enterLevel(levelId: number): void {
 
     beatDisplay.textContent = `beat ${beat}`;
     updatePanel(dt, route, justFired, delayMod, scheduler);
+    updateOutputCard(tower, placement.active);
     wiring.update(now);
 
-    renderLevel(ctx, canvas, level, view, clock, channel, enemies, tower, projectiles, route);
+    renderLevel(ctx, canvas, level, view, clock, channel, enemies, tower, projectiles, route, placement, trackSet);
     rafId = requestAnimationFrame(tick);
   };
   rafId = requestAnimationFrame(tick);
@@ -809,6 +953,10 @@ const MODULE_FLASH_COLORS: Record<string, string> = {
   delay: '#44aaff',
   split: '#ff8800',
   out:   '#ffcc00',
+};
+
+const FACING_LABELS: Record<TowerOrientation, string> = {
+  north: '↑ N', east: '→ E', south: '↓ S', west: '← W',
 };
 
 function createPlugEl(type: RackPlugType): HTMLElement {
@@ -884,9 +1032,13 @@ function buildModuleCard(
   return { card, inPlugEl, outPlugEl };
 }
 
-function buildRackPanel(channel: SynthChannel): {
+function buildRackPanel(
+  channel: SynthChannel,
+  towerCallbacks: { onEnterPlacement: () => void; onRotate: () => void },
+): {
   panel: HTMLElement;
   updatePanel: (dt: number, route: EvaluatedRoute, justFired: boolean, delayMod: DelayModule, scheduler: SignalScheduler) => void;
+  updateOutputCard: (tower: OutputTower, placementActive: boolean) => void;
   wiring: RackWiringHandle;
 } {
   const ff = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
@@ -1076,6 +1228,7 @@ function buildRackPanel(channel: SynthChannel): {
   }, wiring);
   modulesRow.append(splitCard);
 
+  // ── OUTPUT card ────────────────────────────────────────────────────────────
   const outLed = document.createElement('div');
   outLed.style.cssText = `
     width:10px;height:10px;border-radius:50%;
@@ -1084,13 +1237,49 @@ function buildRackPanel(channel: SynthChannel): {
     transition:background 0.08s,box-shadow 0.08s;
   `;
 
+  const smallBtnCss = `
+    font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
+    font-size:0.46rem;font-weight:800;letter-spacing:0.04em;
+    padding:0.13rem 0.28rem;border-radius:4px;cursor:pointer;
+    background:#0a1020;border:1.5px solid #1e2e48;color:#334466;
+    transition:background 0.1s,border-color 0.1s,color 0.1s,box-shadow 0.1s;
+  `;
+
+  let outTileEl: HTMLElement;
+  let outFacingEl: HTMLElement;
+  let outPlaceBtn: HTMLButtonElement;
+
   const { card: outCard } = buildModuleCard({
     title: 'OUTPUT',
     titleColor: '#ffcc00',
     inputPlugId: 'out-in',
     inputPlugType: 'outputIn',
     buildContent: (card) => {
-      card.append(outLed);
+      outTileEl = document.createElement('div');
+      outTileEl.style.cssText = `color:#ffcc0077;font-size:0.46rem;text-align:center;letter-spacing:0.04em;`;
+      outTileEl.textContent = '8, 4';
+
+      outFacingEl = document.createElement('div');
+      outFacingEl.style.cssText = `color:#ffcc0055;font-size:0.46rem;text-align:center;`;
+      outFacingEl.textContent = '↑ N';
+
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = `display:flex;gap:0.2rem;justify-content:center;margin-top:0.1rem;`;
+
+      outPlaceBtn = document.createElement('button');
+      outPlaceBtn.textContent = 'MOVE';
+      outPlaceBtn.title = 'Place / Move tower on grid';
+      outPlaceBtn.style.cssText = smallBtnCss;
+      outPlaceBtn.addEventListener('click', () => towerCallbacks.onEnterPlacement());
+
+      const rotateBtn = document.createElement('button');
+      rotateBtn.textContent = '↻ R';
+      rotateBtn.title = 'Rotate tower clockwise (R)';
+      rotateBtn.style.cssText = smallBtnCss;
+      rotateBtn.addEventListener('click', () => towerCallbacks.onRotate());
+
+      btnRow.append(outPlaceBtn, rotateBtn);
+      card.append(outLed, outTileEl, outFacingEl, btnRow);
     },
   }, wiring);
   modulesRow.append(outCard);
@@ -1162,11 +1351,23 @@ function buildRackPanel(channel: SynthChannel): {
     }
   };
 
+  const updateOutputCard = (tower: OutputTower, placementActive: boolean) => {
+    if (outTileEl) outTileEl.textContent = `${tower.tileX}, ${tower.tileY}`;
+    if (outFacingEl) outFacingEl.textContent = FACING_LABELS[tower.orientation];
+    if (outPlaceBtn) {
+      outPlaceBtn.textContent = placementActive ? 'CANCEL' : 'MOVE';
+      outPlaceBtn.style.background = placementActive ? '#ffcc0022' : '#0a1020';
+      outPlaceBtn.style.borderColor = placementActive ? '#ffcc00' : '#1e2e48';
+      outPlaceBtn.style.color = placementActive ? '#ffcc00' : '#334466';
+      outPlaceBtn.style.boxShadow = placementActive ? '0 0 8px #ffcc0055' : '';
+    }
+  };
+
   const _emptyDelay = new DelayModule();
   const _emptyScheduler = new SignalScheduler();
   updatePanel(0, { signals: [], routeLabel: 'NO SIGNAL', activeModules: new Set(), hasDelay: false }, false, _emptyDelay, _emptyScheduler);
 
-  return { panel, updatePanel, wiring };
+  return { panel, updatePanel, updateOutputCard, wiring };
 }
 
 function drawWaveformPreview(canvas: HTMLCanvasElement, wf: Waveform): void {
@@ -1260,9 +1461,6 @@ function checkCollisions(
 
 // ── Rendering ──────────────────────────────────────────────────────────────
 
-const BASE_TILE_PX = 40;
-const SIGNAL_TAIL_BEATS = 3;
-
 function renderLevel(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
@@ -1274,6 +1472,8 @@ function renderLevel(
   tower: OutputTower,
   projectiles: SignalProjectile[],
   route: EvaluatedRoute,
+  placement: PlacementState,
+  trackSet: Set<string>,
 ): void {
   const W = canvas.width, H = canvas.height;
   const dpr = devicePixelRatio;
@@ -1288,7 +1488,6 @@ function renderLevel(
   ctx.save();
   ctx.translate(view.panX * dpr, view.panY * dpr);
 
-  const trackSet = new Set(level.trackTiles.map(([x, y]) => `${x},${y}`));
   const start = level.trackTiles[0];
   const finish = level.trackTiles[level.trackTiles.length - 1];
 
@@ -1382,11 +1581,58 @@ function renderLevel(
   if (start) drawMarker(ctx, start[0], start[1], tileZ, '#33ff88', '#00cc66', 'S', zDpr);
   if (finish) drawMarker(ctx, finish[0], finish[1], tileZ, '#ff3366', '#cc0044', 'F', zDpr);
 
+  // ── Placement ghost ────────────────────────────────────────────────────────
+  if (placement.active && placement.previewTile) {
+    const { x: ptx, y: pty } = placement.previewTile;
+    const valid = isValidTowerTile(ptx, pty, level, trackSet);
+    const px = ptx * tileZ + tileZ / 2;
+    const py = pty * tileZ + tileZ / 2;
+    const half = tileZ * 0.3;
+    const ghostColor = valid ? '#ffcc00' : '#ff3344';
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.globalAlpha = 0.55;
+
+    ctx.strokeStyle = ghostColor;
+    ctx.lineWidth = Math.max(1.5, 2 * zDpr);
+    ctx.shadowColor = ghostColor;
+    ctx.shadowBlur = 4 * zDpr;
+    ctx.rotate(Math.PI / 4);
+    ctx.strokeRect(-half * 0.8, -half * 0.8, half * 1.6, half * 1.6);
+    ctx.rotate(-Math.PI / 4);
+    ctx.shadowBlur = 0;
+
+    if (valid) {
+      const [arrowFX, arrowFY] = orientedDirToVector('north', tower.orientation);
+      const perpX = -arrowFY, perpY = arrowFX;
+      const tip = half * 0.65, base = half * 0.3, hw = half * 0.2;
+      ctx.fillStyle = ghostColor;
+      ctx.beginPath();
+      ctx.moveTo(arrowFX * tip, arrowFY * tip);
+      ctx.lineTo(arrowFX * base + perpX * hw, arrowFY * base + perpY * hw);
+      ctx.lineTo(arrowFX * base - perpX * hw, arrowFY * base - perpY * hw);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = ghostColor;
+      ctx.lineWidth = Math.max(1.2, 1.8 * zDpr);
+      const cross = half * 0.42;
+      ctx.beginPath();
+      ctx.moveTo(-cross, -cross); ctx.lineTo(cross, cross);
+      ctx.moveTo(cross, -cross); ctx.lineTo(-cross, cross);
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   // ── Tower ──────────────────────────────────────────────────────────────────
   const firstSig = route.signals[0];
   const towerWaveform: Waveform = firstSig ? firstSig.waveform : 'pulse';
   const isHigh = firstSig ? signalIsHighAt(firstSig, beatFloat) : false;
-  drawTower(ctx, tower.tileX, tower.tileY, tileZ, beatFrac, zDpr, towerWaveform, isHigh);
+  drawTower(ctx, tower.tileX, tower.tileY, tileZ, beatFrac, zDpr, towerWaveform, isHigh, tower.orientation, tower.selected);
 
   // ── Signal projectiles ─────────────────────────────────────────────────────
   for (const p of projectiles) {
@@ -1584,6 +1830,7 @@ function drawTower(
   tx: number, ty: number, tileZ: number,
   beatFrac: number, zoomDpr: number,
   waveform: Waveform, isHigh: boolean,
+  orientation: TowerOrientation, selected: boolean,
 ): void {
   const px = tx * tileZ + tileZ / 2, py = ty * tileZ + tileZ / 2;
   const half = tileZ * 0.3;
@@ -1592,6 +1839,18 @@ function drawTower(
 
   ctx.save();
   ctx.translate(px, py);
+
+  // Selection ring
+  if (selected) {
+    ctx.strokeStyle = hexAlpha('#ffcc00', 0.5);
+    ctx.lineWidth = Math.max(1.5, 2.5 * zoomDpr);
+    ctx.shadowColor = '#ffcc00';
+    ctx.shadowBlur = 6 * zoomDpr;
+    ctx.beginPath();
+    ctx.arc(0, 0, half * 1.35, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
 
   if (!isHigh) {
     ctx.fillStyle = hexAlpha(color, 0.04);
@@ -1628,6 +1887,21 @@ function drawTower(
     ctx.fillStyle = `rgba(255,255,255,${pulse * 0.8})`;
     ctx.beginPath(); ctx.arc(0, 0, cr * 0.5, 0, Math.PI * 2); ctx.fill();
   }
+
+  // Orientation arrow
+  const [arrowFX, arrowFY] = orientedDirToVector('north', orientation);
+  const perpX = -arrowFY, perpY = arrowFX;
+  const tip = half * 0.65, base = half * 0.3, hw = half * 0.2;
+  ctx.fillStyle = isHigh ? hexAlpha(color, 0.9 + pulse * 0.1) : hexAlpha(color, 0.5);
+  ctx.shadowColor = isHigh ? color : 'transparent';
+  ctx.shadowBlur = isHigh ? 4 * zoomDpr : 0;
+  ctx.beginPath();
+  ctx.moveTo(arrowFX * tip, arrowFY * tip);
+  ctx.lineTo(arrowFX * base + perpX * hw, arrowFY * base + perpY * hw);
+  ctx.lineTo(arrowFX * base - perpX * hw, arrowFY * base - perpY * hw);
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
 
   ctx.restore();
 }
