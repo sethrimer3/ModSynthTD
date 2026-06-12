@@ -23,6 +23,14 @@ module.exports = {
       {
         test: /\.(ttf|woff|woff2|eot|otf)$/i,
         type: 'asset/resource'
+      },
+      {
+        test: /\.(png|jpg|gif|svg|webp)$/i,
+        type: 'asset/resource'
+      },
+      {
+        test: /\.(mp3|wav|ogg|flac)$/i,
+        type: 'asset/resource'
       }
     ]
   },

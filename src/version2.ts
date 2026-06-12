@@ -4,6 +4,13 @@ import { createRackWiringSystem } from './version2-rack-wiring';
 import type { RackWiringHandle, RackWireConnection } from './version2-rack-wiring';
 import { rackPlugColor } from './version2-rack-wiring-types';
 import type { RackPlugType } from './version2-rack-wiring-types';
+import {
+  Enemy,
+  createEnemies,
+  drawEnemy,
+  preloadEnemySprites,
+} from './version2-enemies';
+import { SubdivisionTransport, getAudioSystem } from './version2-audio';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -151,36 +158,6 @@ class SignalScheduler {
   clear(): void { this.queue.length = 0; }
 }
 
-// ── Enemy ──────────────────────────────────────────────────────────────────
-
-class Enemy {
-  hp = 5;
-  maxHp = 5;
-  flashTimer = 0;
-
-  constructor(private track: [number, number][]) {}
-
-  getFloatPos(beatFloat: number): { x: number; y: number } {
-    const track = this.track;
-    if (track.length === 0) return { x: 0, y: 0 };
-    const progress = (beatFloat / 2) % track.length;
-    const idx = Math.floor(progress);
-    const t = progress - idx;
-    const from = track[idx];
-    const to = track[(idx + 1) % track.length];
-    return { x: from[0] + (to[0] - from[0]) * t, y: from[1] + (to[1] - from[1]) * t };
-  }
-
-  getTile(beatFloat: number): [number, number] {
-    const idx = Math.floor(beatFloat / 2) % this.track.length;
-    return this.track[idx];
-  }
-
-  hit(damage = 1): void { this.hp = Math.max(0, this.hp - damage); this.flashTimer = 0.25; }
-  update(dt: number): void { if (this.flashTimer > 0) this.flashTimer = Math.max(0, this.flashTimer - dt); }
-  get isFlashing(): boolean { return this.flashTimer > 0; }
-}
-
 // ── OutputTower ────────────────────────────────────────────────────────────
 
 class OutputTower {
@@ -215,7 +192,6 @@ class OutputTower {
     return fired;
   }
 
-  // Spawn echo projectiles directly, bypassing the shouldFireOnBeat check.
   spawnEchoes(signals: SynthSignal[], beat: number, projectiles: SignalProjectile[]): void {
     for (const sig of signals) {
       for (const dir of sig.directions) {
@@ -277,7 +253,6 @@ function evaluateSignalGraph(
   const afterCh1 = next('ch1-out');
   if (!afterCh1) return EMPTY;
 
-  // CH1 → OUT (direct, default pulse)
   if (afterCh1 === 'out-in') {
     return {
       signals: [{
@@ -290,7 +265,6 @@ function evaluateSignalGraph(
     };
   }
 
-  // CH1 → WAVE → ...
   if (afterCh1 === 'wf-in') {
     const afterWf = next('wf-out');
     if (!afterWf) return EMPTY;
@@ -303,7 +277,6 @@ function evaluateSignalGraph(
       color: channel.color,
     };
 
-    // CH1 → WAVE → OUT
     if (afterWf === 'out-in') {
       return {
         signals: [{ ...wfSig, directions: ['north'] as SignalDirection[] }],
@@ -313,7 +286,6 @@ function evaluateSignalGraph(
       };
     }
 
-    // CH1 → WAVE → SPLIT → OUT
     if (afterWf === 'split-in') {
       const afterSplit = next('split-out');
       if (afterSplit !== 'out-in') return EMPTY;
@@ -325,12 +297,10 @@ function evaluateSignalGraph(
       };
     }
 
-    // CH1 → WAVE → DELAY → ...
     if (afterWf === 'delay-in') {
       const afterDelay = next('delay-out');
       if (!afterDelay) return EMPTY;
 
-      // CH1 → WAVE → DELAY → OUT
       if (afterDelay === 'out-in') {
         return {
           signals: [{ ...wfSig, directions: ['north'] as SignalDirection[] }],
@@ -340,7 +310,6 @@ function evaluateSignalGraph(
         };
       }
 
-      // CH1 → WAVE → DELAY → SPLIT → OUT
       if (afterDelay === 'split-in') {
         const afterSplit = next('split-out');
         if (afterSplit !== 'out-in') return EMPTY;
@@ -423,6 +392,7 @@ function clearApp(): void {
 export function showWorldMap(): void {
   currentScreen = { kind: 'worldmap' };
   clearApp();
+  getAudioSystem().suspend();
 
   const app = getApp();
   app.style.cssText = `display:flex;align-items:center;justify-content:center;min-height:100vh;padding:1rem;`;
@@ -542,6 +512,24 @@ function seededRng(seed: number): () => number {
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 0xffffffff; };
 }
 
+// ── Fastest hi-hat subdiv period ────────────────────────────────────────────
+
+/**
+ * Returns the hi-hat subdivision period in subdiv units (1 = 0.25 beats, 2 = 0.5 beats).
+ * 0 means no hat.
+ */
+function computeFastestHatPeriod(enemies: Enemy[], beatFloat: number): number {
+  let fastest = 0;
+  for (const e of enemies) {
+    if (e.isDead) continue;
+    if (beatFloat < e.spawnSubdiv / 4) continue;
+    const p = e.typeConfig.moveEverySubdivs;
+    if (p === 1) return 1; // sixteenth — can't be faster
+    if (p === 2 && fastest !== 1) fastest = 2; // eighth
+  }
+  return fastest;
+}
+
 // ── Level View ─────────────────────────────────────────────────────────────
 
 export function enterLevel(levelId: number): void {
@@ -549,6 +537,9 @@ export function enterLevel(levelId: number): void {
   if (!level) return;
   currentScreen = { kind: 'level', levelId };
   clearApp();
+  preloadEnemySprites();
+
+  const audio = getAudioSystem();
 
   const app = getApp();
   app.style.cssText = `
@@ -587,6 +578,30 @@ export function enterLevel(levelId: number): void {
 
   levelInfo.append(levelName, bpmDisplay, beatDisplay);
 
+  // Right-side HUD buttons
+  const hudRight = document.createElement('div');
+  hudRight.style.cssText = `display:flex;align-items:center;gap:0.5rem;`;
+
+  // Mute button
+  const muteBtn = document.createElement('button');
+  muteBtn.textContent = '🔊';
+  muteBtn.title = 'Mute / Unmute audio';
+  muteBtn.style.cssText = `
+    font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
+    font-size:0.75rem;background:rgba(8,15,28,0.8);
+    border:1px solid #2a3d65;border-radius:6px;
+    padding:0.35rem 0.55rem;cursor:pointer;
+    transition:color 0.12s,border-color 0.12s;
+  `;
+  const updateMuteBtn = () => {
+    muteBtn.textContent = audio.muted ? '🔇' : '🔊';
+    muteBtn.style.borderColor = audio.muted ? '#663333' : '#2a3d65';
+  };
+  muteBtn.addEventListener('click', () => {
+    audio.setMuted(!audio.muted);
+    updateMuteBtn();
+  });
+
   const exitBtn = document.createElement('button');
   exitBtn.textContent = '↩ World Map';
   exitBtn.style.cssText = `
@@ -600,7 +615,8 @@ export function enterLevel(levelId: number): void {
   exitBtn.addEventListener('mouseleave', () => { exitBtn.style.color = '#5577aa'; exitBtn.style.borderColor = '#2a3d65'; });
   exitBtn.addEventListener('click', () => showWorldMap());
 
-  hud.append(levelInfo, exitBtn);
+  hudRight.append(muteBtn, exitBtn);
+  hud.append(levelInfo, hudRight);
 
   // ── Canvas ─────────────────────────────────────────────────────────────────
   const canvasWrapper = document.createElement('div');
@@ -689,11 +705,15 @@ export function enterLevel(levelId: number): void {
 
   // ── Game State ─────────────────────────────────────────────────────────────
   const clock = new BeatClock(level.bpm);
-  const enemy = new Enemy(level.trackTiles);
+  const enemies = createEnemies(level.trackTiles);
   const tower = new OutputTower();
   const projectiles: SignalProjectile[] = [];
   const delayMod = new DelayModule();
   const scheduler = new SignalScheduler();
+  const transport = new SubdivisionTransport();
+
+  // Initialize audio from this user-gesture-triggered path
+  audio.init().then(updateMuteBtn);
 
   // Default patch: CH1 → WAVE → DELAY → SPLIT → OUTPUT
   wiring.connectPlugs('ch1-out', 'wf-in');
@@ -715,7 +735,6 @@ export function enterLevel(levelId: number): void {
 
     delayMod.update(dt);
 
-    // Release queued echoes (beat-safe: each echo only released once)
     const echoSignals = scheduler.releaseAt(beat);
     if (echoSignals.length > 0) {
       tower.spawnEchoes(echoSignals, beat, projectiles);
@@ -725,7 +744,6 @@ export function enterLevel(levelId: number): void {
     const route = evaluateSignalGraph(wiring.getConnections(), channel);
     const justFired = tower.update(beat, route.signals, projectiles);
 
-    // Schedule one echo when delay is in the route and we fired
     if (justFired && route.hasDelay) {
       scheduler.schedule(
         beat + delayMod.delayBeats,
@@ -734,15 +752,41 @@ export function enterLevel(levelId: number): void {
       delayMod.onReceive();
     }
 
-    enemy.update(dt);
+    // ── Subdivision transport: movement + audio ──────────────────────────────
+    const subdivEvents = transport.tick(beatFloat);
+    const hatPeriod = computeFastestHatPeriod(enemies, beatFloat);
+
+    for (const subdivIdx of subdivEvents) {
+      // Enemy movement
+      for (const enemy of enemies) {
+        enemy.processSubdiv(subdivIdx);
+      }
+
+      // Kick on integer beats
+      if (subdivIdx % 4 === 0) {
+        audio.playKick(subdivIdx / 4);
+      }
+
+      // Hi-hat on fastest active subdivision
+      if (hatPeriod > 0 && subdivIdx % hatPeriod === 0) {
+        audio.playHihat();
+      }
+    }
+
+    // ── Per-frame enemy animation + respawn ─────────────────────────────────
+    for (const enemy of enemies) {
+      enemy.updateAnimation(dt);
+      if (enemy.isDead) enemy.respawn();
+    }
+
     cullProjectiles(projectiles, level, beatFloat);
-    checkCollisions(enemy, projectiles, level, beatFloat);
+    checkCollisions(enemies, projectiles, level, beatFloat);
 
     beatDisplay.textContent = `beat ${beat}`;
     updatePanel(dt, route, justFired, delayMod, scheduler);
     wiring.update(now);
 
-    renderLevel(ctx, canvas, level, view, clock, channel, enemy, tower, projectiles, route);
+    renderLevel(ctx, canvas, level, view, clock, channel, enemies, tower, projectiles, route);
     rafId = requestAnimationFrame(tick);
   };
   rafId = requestAnimationFrame(tick);
@@ -837,8 +881,6 @@ function buildModuleCard(
   return { card, inPlugEl, outPlugEl };
 }
 
-// ── Main rack panel builder ───────────────────────────────────────────────
-
 function buildRackPanel(channel: SynthChannel): {
   panel: HTMLElement;
   updatePanel: (dt: number, route: EvaluatedRoute, justFired: boolean, delayMod: DelayModule, scheduler: SignalScheduler) => void;
@@ -856,7 +898,6 @@ function buildRackPanel(channel: SynthChannel): {
 
   const wiring = createRackWiringSystem(panel);
 
-  // ── Labels row ────────────────────────────────────────────────────────────
   const labelsRow = document.createElement('div');
   labelsRow.style.cssText = `
     display:flex;align-items:center;justify-content:space-between;
@@ -871,12 +912,10 @@ function buildRackPanel(channel: SynthChannel): {
   labelsRow.append(rackLabel, routeIndicator);
   panel.append(labelsRow);
 
-  // ── Modules row ───────────────────────────────────────────────────────────
   const modulesRow = document.createElement('div');
   modulesRow.style.cssText = `display:flex;gap:0.4rem;align-items:stretch;overflow-x:auto;`;
   panel.append(modulesRow);
 
-  // Waveform button state — shared, now lives in WAVE card
   const waveforms: Waveform[] = ['pulse', 'sine', 'square'];
   const wfButtons: Record<Waveform, HTMLButtonElement> = {} as Record<Waveform, HTMLButtonElement>;
   let previewCanvas: HTMLCanvasElement;
@@ -902,7 +941,6 @@ function buildRackPanel(channel: SynthChannel): {
     if (previewCanvas) drawWaveformPreview(previewCanvas, channel.waveform);
   };
 
-  // ── CH 1 card — timing source ─────────────────────────────────────────────
   let ch1PeriodEl: HTMLElement;
   let ch1PhaseEl: HTMLElement;
 
@@ -921,7 +959,6 @@ function buildRackPanel(channel: SynthChannel): {
   }, wiring);
   modulesRow.append(ch1Card);
 
-  // ── Waveform module — owns waveform selection ─────────────────────────────
   let wfIndicatorEl: HTMLElement;
 
   const { card: wfCard } = buildModuleCard({
@@ -960,9 +997,7 @@ function buildRackPanel(channel: SynthChannel): {
   }, wiring);
   modulesRow.append(wfCard);
 
-  // ── Delay module ──────────────────────────────────────────────────────────
   let delayLedEl: HTMLElement;
-  // delayBtns keyed by beat count; populated inside buildContent closure
   const delayBtnMap = new Map<number, HTMLButtonElement>();
   let _delayModRef: DelayModule | null = null;
 
@@ -1018,7 +1053,6 @@ function buildRackPanel(channel: SynthChannel): {
   }, wiring);
   modulesRow.append(delayCard);
 
-  // ── Splitter module — N/S fixed split ─────────────────────────────────────
   let splitAmpEl: HTMLElement;
 
   const { card: splitCard } = buildModuleCard({
@@ -1039,7 +1073,6 @@ function buildRackPanel(channel: SynthChannel): {
   }, wiring);
   modulesRow.append(splitCard);
 
-  // ── Output module ─────────────────────────────────────────────────────────
   const outLed = document.createElement('div');
   outLed.style.cssText = `
     width:10px;height:10px;border-radius:50%;
@@ -1059,37 +1092,28 @@ function buildRackPanel(channel: SynthChannel): {
   }, wiring);
   modulesRow.append(outCard);
 
-  // Module card references for flash
   const moduleCards: Record<string, HTMLElement> = { ch1: ch1Card, wave: wfCard, delay: delayCard, split: splitCard, out: outCard };
   const flashTimers: Record<string, number> = { ch1: 0, wave: 0, delay: 0, split: 0, out: 0 };
 
-  // Initial state
   refreshButtons();
 
-  // ── updatePanel ───────────────────────────────────────────────────────────
   const updatePanel = (dt: number, route: EvaluatedRoute, justFired: boolean, delayMod: DelayModule, scheduler: SignalScheduler) => {
-    // Wire the delay mod ref so buttons work
     _delayModRef = delayMod;
     refreshDelayButtons();
-    // CH1 timing info
     ch1PeriodEl.textContent = `${channel.periodBeats}♩`;
     ch1PhaseEl.textContent = `φ ${channel.phaseBeats}`;
 
-    // WAVE indicator
     if (wfIndicatorEl) wfIndicatorEl.textContent = channel.waveform.toUpperCase();
 
-    // SPLIT amplitude display
     const splitAmp = (channel.amplitude / 2).toFixed(2);
     if (splitAmpEl) splitAmpEl.textContent = `1→2  ×${splitAmp}`;
 
-    // Route label
     const active = route.signals.length > 0;
     routeIndicator.textContent = route.routeLabel;
     routeIndicator.style.color = active ? '#00ffee' : '#2a4060';
 
-    // Module card flash timers (delay card handled separately via delayMod timers)
     for (const key of Object.keys(flashTimers)) {
-      if (key === 'delay') continue; // handled below
+      if (key === 'delay') continue;
       if (justFired && route.activeModules.has(key)) {
         flashTimers[key] = 0.35;
       } else {
@@ -1101,7 +1125,6 @@ function buildRackPanel(channel: SynthChannel): {
       moduleCards[key].style.boxShadow = flashing ? `0 0 10px ${fc}55` : '';
     }
 
-    // Delay card: receive flash (blue) → send flash (bright blue)
     const drecv = delayMod.receiveFlashTimer > 0;
     const dsend = delayMod.sendFlashTimer > 0;
     if (dsend) {
@@ -1115,13 +1138,11 @@ function buildRackPanel(channel: SynthChannel): {
       delayCard.style.boxShadow   = '';
     }
 
-    // Delay LED — lit while echoes are queued
     const queued = scheduler.queue.length > 0;
     delayLedEl.style.background  = queued ? '#44aaff' : '#102030';
     delayLedEl.style.boxShadow   = queued ? '0 0 6px #44aaff99' : '';
     delayLedEl.style.borderColor = queued ? '#44aaff' : '#224466';
 
-    // Output LED
     const ledFlashing = flashTimers['out'] > 0;
     if (ledFlashing) {
       outLed.style.background = '#ffffff';
@@ -1203,7 +1224,7 @@ function cullProjectiles(
       p.dead = true;
     }
   }
-  if (projectiles.length > 80) {
+  if (projectiles.length > 120) {
     const alive = projectiles.filter(p => !p.dead);
     projectiles.length = 0;
     projectiles.push(...alive);
@@ -1211,21 +1232,25 @@ function cullProjectiles(
 }
 
 function checkCollisions(
-  enemy: Enemy,
+  enemies: Enemy[],
   projectiles: SignalProjectile[],
   level: SynthLevelConfig,
   beatFloat: number,
 ): void {
   if (level.trackTiles.length === 0) return;
-  const [etx, ety] = enemy.getTile(beatFloat);
-  for (const p of projectiles) {
-    if (p.dead) continue;
-    const age = beatFloat - p.spawnBeat;
-    const ptx = Math.round(p.originX + age * p.dirX);
-    const pty = Math.round(p.originY + age * p.dirY);
-    if (ptx === etx && pty === ety) {
-      p.dead = true;
-      enemy.hit(p.amplitude);
+
+  for (const enemy of enemies) {
+    if (enemy.isDead) continue;
+    const [etx, ety] = enemy.getLogicalTile();
+    for (const p of projectiles) {
+      if (p.dead) continue;
+      const age = beatFloat - p.spawnBeat;
+      const ptx = Math.round(p.originX + age * p.dirX);
+      const pty = Math.round(p.originY + age * p.dirY);
+      if (ptx === etx && pty === ety) {
+        p.dead = true;
+        enemy.hit(p.amplitude);
+      }
     }
   }
 }
@@ -1242,7 +1267,7 @@ function renderLevel(
   view: ViewState,
   clock: BeatClock,
   channel: SynthChannel,
-  enemy: Enemy,
+  enemies: Enemy[],
   tower: OutputTower,
   projectiles: SignalProjectile[],
   route: EvaluatedRoute,
@@ -1366,11 +1391,11 @@ function renderLevel(
     drawSignalWithTail(ctx, p, beatFloat, tileZ, zDpr);
   }
 
-  // ── Enemy ──────────────────────────────────────────────────────────────────
+  // ── Enemies ────────────────────────────────────────────────────────────────
   if (level.trackTiles.length > 0) {
-    const pos = enemy.getFloatPos(beatFloat);
-    drawEnemy(ctx, pos.x * tileZ + tileZ / 2, pos.y * tileZ + tileZ / 2,
-      tileZ, enemy, beatFrac, zDpr);
+    for (const enemy of enemies) {
+      drawEnemy(ctx, enemy, tileZ, zDpr);
+    }
   }
 
   ctx.restore();
@@ -1463,7 +1488,6 @@ function drawSignalWithTail(
 
   ctx.restore();
 
-  // Amplitude scales core radius mildly (visible range: 0.5–1.0 → 0.85–1.0)
   const ampScale = 0.8 + p.amplitude * 0.2;
   const r = Math.max(2.5, tileZ * 0.11) * ampScale;
   ctx.save();
@@ -1600,58 +1624,6 @@ function drawTower(
   if (isHigh && pulse > 0.1) {
     ctx.fillStyle = `rgba(255,255,255,${pulse * 0.8})`;
     ctx.beginPath(); ctx.arc(0, 0, cr * 0.5, 0, Math.PI * 2); ctx.fill();
-  }
-
-  ctx.restore();
-}
-
-function drawEnemy(
-  ctx: CanvasRenderingContext2D,
-  px: number, py: number, tileZ: number,
-  enemy: Enemy, beatFrac: number, zoomDpr: number,
-): void {
-  const size = tileZ * 0.32;
-  const isFlash = enemy.isFlashing;
-  const hpFrac = enemy.hp / enemy.maxHp;
-
-  ctx.save();
-  ctx.translate(px, py);
-
-  const fillColor = isFlash ? '#ffffff' : `hsl(${30 + hpFrac * 10},100%,62%)`;
-  const glowColor = isFlash ? '#ffffff' : '#ff8800';
-
-  ctx.shadowColor = glowColor;
-  ctx.shadowBlur = (isFlash ? 24 : 10) * zoomDpr;
-  ctx.strokeStyle = fillColor;
-  ctx.fillStyle = `${fillColor}22`;
-  ctx.lineWidth = Math.max(1.2, 1.8 * zoomDpr);
-  ctx.rotate(Math.PI / 4);
-  ctx.strokeRect(-size, -size, size * 2, size * 2);
-  ctx.fillRect(-size, -size, size * 2, size * 2);
-  ctx.rotate(-Math.PI / 4);
-
-  if (tileZ > 22 && enemy.maxHp > 0) {
-    const pipW = Math.max(2, tileZ * 0.07);
-    const pipH = Math.max(1.5, tileZ * 0.045);
-    const totalW = pipW * enemy.maxHp + (pipW * 0.3) * (enemy.maxHp - 1);
-    let startX = -totalW / 2;
-    const pipY = size + pipH * 1.5;
-    ctx.shadowBlur = 0;
-    for (let i = 0; i < enemy.maxHp; i++) {
-      const pipFill = Math.max(0, Math.min(1, enemy.hp - i));
-      if (pipFill > 0) {
-        ctx.fillStyle = '#ff8800';
-        ctx.fillRect(startX, pipY, pipW * pipFill, pipH);
-        if (pipFill < 1) {
-          ctx.fillStyle = '#331100';
-          ctx.fillRect(startX + pipW * pipFill, pipY, pipW * (1 - pipFill), pipH);
-        }
-      } else {
-        ctx.fillStyle = '#331100';
-        ctx.fillRect(startX, pipY, pipW, pipH);
-      }
-      startX += pipW + pipW * 0.3;
-    }
   }
 
   ctx.restore();
