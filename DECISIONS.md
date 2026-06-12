@@ -212,7 +212,7 @@ After the breach event, a smaller worm also spawns from the second entrance ever
 
 **Reason**: The game remains browser-first while gaining a local desktop path. Keeping Electron separate from the TypeScript game code avoids changing gameplay state flow, rendering, input, or persistence.
 
-**Tradeoff**: `run-desktop-dev.bat` starts the Webpack dev server in a separate command window and waits briefly before launching Electron. If the dev server takes longer than expected or uses a different port, set `TINY_BASE_IDLE_DEV_SERVER_URL` before running `npm run desktop:dev`.
+**Tradeoff**: `run-desktop-dev.bat` starts the Webpack dev server in a separate command window and waits briefly before launching Electron. If the dev server takes longer than expected or uses a different port, set `MODSYNTH_TD_DEV_SERVER_URL` before running `npm run desktop:dev`.
 
 ---
 
@@ -255,11 +255,11 @@ The global `turretFireCooldownSec` is retained to throttle the fire cadence; the
 
 ---
 
-## D-025: V2 Direct Boot and V1 Legacy Extraction
+## D-025: ModSynth TD Is the Sole Game Implementation
 
-**Decision**: ModSynth TD boots directly into V2. The former `game.ts` V1 implementation and version selector are preserved as `legacy-v1.ts` and `legacy-version-select.ts`.
+**Decision**: ModSynth TD boots directly into the synth-defense implementation. The former prototype implementation and version selector were removed after the projects split into separate repositories.
 
-**Reason**: V2 is now the active game direction. Keeping V1 behind an explicitly legacy launcher preserves access without making players choose a version on every startup.
+**Reason**: Keeping the old game in this repository created misleading UI, maintenance overhead, and stale product references.
 
 ---
 

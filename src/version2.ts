@@ -524,7 +524,7 @@ export function showWorldMap(): void {
   `;
 
   const sub = document.createElement('div');
-  sub.textContent = 'VERSION 2 · SELECT PLANET';
+  sub.textContent = 'SELECT PLANET';
   sub.style.cssText = `
     font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
     font-size:0.7rem;color:#5577aa;letter-spacing:0.14em;
@@ -535,22 +535,7 @@ export function showWorldMap(): void {
   grid.style.cssText = `display:flex;flex-wrap:wrap;gap:1rem;justify-content:center;`;
   for (const level of LEVELS) grid.append(makeLevelCard(level));
 
-  const backBtn = document.createElement('button');
-  backBtn.textContent = '← Version Select';
-  backBtn.style.cssText = `
-    font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
-    font-size:0.72rem;color:#5577aa;background:transparent;
-    border:1px solid #2a3d65;border-radius:6px;
-    padding:0.4rem 1rem;cursor:pointer;letter-spacing:0.06em;
-    transition:color 0.12s,border-color 0.12s;
-  `;
-  backBtn.addEventListener('mouseenter', () => { backBtn.style.color = '#dff6ff'; backBtn.style.borderColor = '#4a8fff'; });
-  backBtn.addEventListener('mouseleave', () => { backBtn.style.color = '#5577aa'; backBtn.style.borderColor = '#2a3d65'; });
-  backBtn.addEventListener('click', () => {
-    import('./legacy-version-select').then(m => { clearApp(); m.showVersionSelect(); });
-  });
-
-  root.append(header, grid, backBtn);
+  root.append(header, grid);
   app.append(root);
 }
 

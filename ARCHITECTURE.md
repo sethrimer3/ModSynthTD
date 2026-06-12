@@ -29,15 +29,13 @@ Commands:
 
 ## 2. Module Structure
 
-The application boots directly into the V2 synth-defense implementation. V1 is preserved as legacy code and is only loaded through the legacy version screen.
+The application boots directly into the ModSynth TD synth-defense implementation.
 
 ```
 src/
-  main.ts                    — entry point, starts V2 directly
+  main.ts                    — entry point
   version2.ts                — current ModSynth TD game
-  version2-*.ts              — V2 audio, enemies, waves, and rack wiring
-  legacy-v1.ts               — archived V1 monolithic prototype
-  legacy-version-select.ts   — legacy version launcher
+  version2-*.ts              — audio, enemies, waves, and rack wiring
   styles.css                 — shared UI styles
 ```
 
@@ -53,7 +51,7 @@ Desktop runtime:
 
 ### 3.1 Constants and Configuration
 
-V2 tuning and state live in `version2.ts` and its focused support modules. The following sections document the archived V1 implementation in `legacy-v1.ts` until the architecture guide is fully rewritten for V2.
+Game tuning and state live in `version2.ts` and its focused support modules.
 
 Key constants:
 - `tileSizePx` — native pixel size of one build tile (12)

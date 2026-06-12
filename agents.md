@@ -1,6 +1,6 @@
-# AI Agent Guidelines for TinyBaseIdle Repository
+# AI Agent Guidelines for ModSynthTD Repository
 
-This repository is being adapted from a space-ship prototype into the game described in `design.md`, working title **Neon Mote Defense**. The current codebase, README, architecture notes, and test checklist may still contain legacy ship-game assumptions. When legacy behavior conflicts with the new design direction, treat `design.md` as the product blueprint and update supporting docs as the implementation changes.
+This repository contains the game described in `design.md`, titled **ModSynth TD**. Treat `design.md` as the product blueprint and update supporting docs as the implementation changes.
 
 The goals for AI agents are **clarity**, **performance**, **stable gameplay behavior**, and **faithfulness to the design pillars**.
 

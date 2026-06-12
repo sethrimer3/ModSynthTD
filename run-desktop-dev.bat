@@ -11,7 +11,7 @@ if not exist "node_modules\" (
   if errorlevel 1 goto error
 )
 echo Starting Webpack dev server for Electron...
-start "Tiny Base Idle Webpack Dev Server" cmd /k "cd /d %CD% && call npm run dev"
+start "ModSynth TD Webpack Dev Server" cmd /k "cd /d %CD% && call npm run dev"
 timeout /t 4 /nobreak >nul
 call npm run desktop:dev
 if errorlevel 1 goto error

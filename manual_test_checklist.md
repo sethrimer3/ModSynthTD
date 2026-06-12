@@ -7,8 +7,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 ## 1. First Load / Cold Start
 
 - [ ] App title and Electron window title show `ModSynth TD`
-- [ ] App enters V2 directly without showing a version chooser
-- [ ] V2 back control opens the legacy version launcher, where archived V1 remains playable
+- [ ] App enters ModSynth TD directly without showing a version chooser
 - [ ] Game canvas renders as a square playing field
 - [ ] HUD appears inside the playing field at the top edge and shows `HP 100/100`, `Ore 0`, `Wave 0`, `Radar 1`, a `Meta <n>` button, and `Next 8.0s`
 - [ ] Deposit tile is visible (upper-left area)

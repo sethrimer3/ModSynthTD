@@ -102,7 +102,7 @@ AI agents should maintain this file as part of normal implementation work.
 
 ## Maintenance
 
-- [x] Boot directly into V2 and extract V1 into explicitly named legacy files.
+- [x] Remove the old prototype and keep ModSynth TD as the sole game implementation.
 - [ ] Move checklist-style progress tracking out of `design.md` over time.
 - [ ] Keep this file ordered by implementation priority.
 - [ ] When a feature is implemented, mark it here and update `design.md` only if the actual design changed.
