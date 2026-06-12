@@ -5,6 +5,7 @@ import quarterNoteUrl from '../ASSETS/SPRITES/ENEMIES/enemy_quarterNote.png';
 import halfNoteUrl from '../ASSETS/SPRITES/ENEMIES/enemy_halfNote.png';
 import wholeNoteUrl from '../ASSETS/SPRITES/ENEMIES/enemy_wholeNote.png';
 import eighthNoteUrl from '../ASSETS/SPRITES/ENEMIES/enemy_eighthNoteStemUp.png';
+import eighthNoteDownUrl from '../ASSETS/SPRITES/ENEMIES/enemy_eighthNoteStemDown.png';
 import sixteenthNoteUrl from '../ASSETS/SPRITES/ENEMIES/enemy_sixteenthNote.png';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -13,6 +14,8 @@ export interface EnemyTypeConfig {
   id: string;
   label: string;
   spriteUrl: string;
+  /** Optional second sprite; alternated per tile position. */
+  altSpriteUrl?: string;
   /** quarter-note beats between moves (0.25 = sixteenth, 0.5 = eighth, 1 = quarter, etc.) */
   moveEveryBeats: number;
   /** moveEveryBeats expressed in 0.25-beat subdiv units (integer) */
@@ -37,6 +40,7 @@ export const ENEMY_TYPES: Record<string, EnemyTypeConfig> = {
     id: 'eighth',
     label: '♪',
     spriteUrl: eighthNoteUrl,
+    altSpriteUrl: eighthNoteDownUrl,
     moveEveryBeats: 0.5,
     moveEverySubdivs: 2,
     maxHp: 4,
@@ -89,7 +93,10 @@ function loadSprite(url: string): HTMLImageElement {
 
 // Pre-load all enemy sprites.
 export function preloadEnemySprites(): void {
-  for (const cfg of Object.values(ENEMY_TYPES)) loadSprite(cfg.spriteUrl);
+  for (const cfg of Object.values(ENEMY_TYPES)) {
+    loadSprite(cfg.spriteUrl);
+    if (cfg.altSpriteUrl) loadSprite(cfg.altSpriteUrl);
+  }
 }
 
 // ── Enemy class ────────────────────────────────────────────────────────────
@@ -101,13 +108,21 @@ export class Enemy {
   readonly maxHp: number;
   flashTimer = 0;
 
-  /** Subdiv index (0.25-beat units) at which this enemy starts moving. */
+  /** Subdiv index (0.25-beat units) at which this enemy was first created. */
   readonly spawnSubdiv: number;
+  /** Effective spawn subdiv — reset to current subdiv on each respawn. */
+  private _effectiveSpawnSubdiv: number;
 
   private currentTileIdx = 0;
   private prevTileIdx = 0;
   private hopTimer = 0;
-  private readonly HOP_DURATION = 0.1; // seconds
+  private readonly HOP_DURATION = 0.1;
+
+  private _spawned = false;
+  private _alive = true;
+  private _respawnAtSubdiv = -1;
+  private _lastStepTaken = -1;
+  private _lastSubdivIdx = -1;
 
   constructor(
     public readonly typeConfig: EnemyTypeConfig,
@@ -115,27 +130,63 @@ export class Enemy {
     spawnBeat: number,
   ) {
     this.spawnSubdiv = Math.round(spawnBeat * 4);
+    this._effectiveSpawnSubdiv = this.spawnSubdiv;
     this.hp = typeConfig.maxHp;
     this.maxHp = typeConfig.maxHp;
   }
 
   /**
    * Called once per subdivision event. Returns true if the enemy moved.
-   * subdivIdx: global subdiv counter (beatFloat * 4, floored).
+   * Handles initial spawn, respawn, and tab-suspension snap.
    */
   processSubdiv(subdivIdx: number): boolean {
+    this._lastSubdivIdx = subdivIdx;
     if (this.track.length === 0) return false;
-    if (subdivIdx < this.spawnSubdiv) return false;
-    const delta = subdivIdx - this.spawnSubdiv;
+
+    // While dead: check if it's time to respawn.
+    if (!this._alive) {
+      if (this._respawnAtSubdiv >= 0 && subdivIdx >= this._respawnAtSubdiv) {
+        this._alive = true;
+        this.hp = this.maxHp;
+        this._effectiveSpawnSubdiv = subdivIdx;
+        this.currentTileIdx = 0;
+        this.prevTileIdx = 0;
+        this.hopTimer = this.HOP_DURATION; // snap to start tile without animation
+        this._lastStepTaken = 0;
+        this._respawnAtSubdiv = -1;
+        this.flashTimer = 0;
+      }
+      return false;
+    }
+
+    // Before initial spawn time: invisible and inactive.
+    if (subdivIdx < this._effectiveSpawnSubdiv) return false;
+
+    // First frame at or past spawn: place on tile 0.
+    if (!this._spawned) {
+      this._spawned = true;
+      this.hopTimer = this.HOP_DURATION; // snap to tile 0
+      this._lastStepTaken = 0;
+      return false;
+    }
+
+    const delta = subdivIdx - this._effectiveSpawnSubdiv;
     if (delta % this.typeConfig.moveEverySubdivs !== 0) return false;
 
-    const stepsTaken = delta / this.typeConfig.moveEverySubdivs;
+    const stepsTaken = Math.floor(delta / this.typeConfig.moveEverySubdivs);
     const nextIdx = stepsTaken % this.track.length;
-    if (nextIdx === this.currentTileIdx && stepsTaken !== 0) return false; // no change
 
-    this.prevTileIdx = this.currentTileIdx;
+    if (nextIdx === this.currentTileIdx) {
+      this._lastStepTaken = stepsTaken;
+      return false;
+    }
+
+    // Snap without hop animation if steps were skipped (e.g. tab suspension).
+    const skipped = this._lastStepTaken >= 0 && stepsTaken > this._lastStepTaken + 1;
+    this.prevTileIdx = skipped ? nextIdx : this.currentTileIdx;
     this.currentTileIdx = nextIdx;
-    this.hopTimer = 0;
+    this._lastStepTaken = stepsTaken;
+    this.hopTimer = skipped ? this.HOP_DURATION : 0;
     return true;
   }
 
@@ -153,7 +204,6 @@ export class Enemy {
     const from = this.track[this.prevTileIdx] ?? this.track[0];
     const to = this.track[this.currentTileIdx] ?? this.track[0];
     const t = smoothstep(Math.min(1, this.hopTimer / this.HOP_DURATION));
-    // Slight vertical hop arc
     const arc = Math.sin(t * Math.PI) * 0.18;
     return {
       x: from[0] + (to[0] - from[0]) * t,
@@ -162,18 +212,20 @@ export class Enemy {
   }
 
   hit(damage: number): void {
+    if (!this._alive) return;
     this.hp = Math.max(0, this.hp - damage);
     this.flashTimer = 0.25;
+    if (this.hp <= 0) {
+      this._alive = false;
+      // Respawn after 4 beats (16 sixteenth-note subdivisions).
+      this._respawnAtSubdiv = (this._lastSubdivIdx >= 0 ? this._lastSubdivIdx : 0) + 16;
+    }
   }
 
-  respawn(): void {
-    this.hp = this.maxHp;
-    this.flashTimer = 0;
-  }
-
-  get isDead(): boolean { return this.hp <= 0; }
+  get isDead(): boolean { return !this._alive; }
+  get isSpawned(): boolean { return this._spawned && this._alive; }
   get isFlashing(): boolean { return this.flashTimer > 0; }
-  get isSpawned(): boolean { return true; } // always visible once created
+  get tileIndex(): number { return this.currentTileIdx; }
 }
 
 // ── Factory ────────────────────────────────────────────────────────────────
@@ -224,7 +276,8 @@ export function drawEnemy(
   ctx.shadowColor = glowColor;
   ctx.shadowBlur = (isFlash ? 22 : 6) * zoomDpr;
 
-  const sprite = loadSprite(cfg.spriteUrl);
+  const spriteUrl = cfg.altSpriteUrl && enemy.tileIndex % 2 === 1 ? cfg.altSpriteUrl : cfg.spriteUrl;
+  const sprite = loadSprite(spriteUrl);
   const spriteSize = tileZ * 0.72;
 
   if (sprite.complete && sprite.naturalWidth > 0) {

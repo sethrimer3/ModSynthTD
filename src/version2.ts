@@ -376,12 +376,14 @@ function buildUTrack(w: number, h: number): [number, number][] {
 type Screen = { kind: 'worldmap' } | { kind: 'level'; levelId: number };
 let currentScreen: Screen = { kind: 'worldmap' };
 let rafId = 0;
+let levelCleanup: (() => void) | null = null;
 
 function getApp(): HTMLElement { return document.getElementById('app')!; }
 
 function clearApp(): void {
   cancelAnimationFrame(rafId);
   rafId = 0;
+  if (levelCleanup) { levelCleanup(); levelCleanup = null; }
   const app = getApp();
   app.innerHTML = '';
   app.style.cssText = '';
@@ -516,13 +518,12 @@ function seededRng(seed: number): () => number {
 
 /**
  * Returns the hi-hat subdivision period in subdiv units (1 = 0.25 beats, 2 = 0.5 beats).
- * 0 means no hat.
+ * 0 means no hat. Only counts alive, spawned enemies.
  */
-function computeFastestHatPeriod(enemies: Enemy[], beatFloat: number): number {
+function computeFastestHatPeriod(enemies: Enemy[]): number {
   let fastest = 0;
   for (const e of enemies) {
-    if (e.isDead) continue;
-    if (beatFloat < e.spawnSubdiv / 4) continue;
+    if (!e.isSpawned) continue;
     const p = e.typeConfig.moveEverySubdivs;
     if (p === 1) return 1; // sixteenth — can't be faster
     if (p === 2 && fastest !== 1) fastest = 2; // eighth
@@ -702,6 +703,7 @@ export function enterLevel(levelId: number): void {
 
   const ro = new ResizeObserver(() => { resizeCanvas(); centerView(); });
   ro.observe(canvasWrapper);
+  levelCleanup = () => ro.disconnect();
 
   // ── Game State ─────────────────────────────────────────────────────────────
   const clock = new BeatClock(level.bpm);
@@ -753,10 +755,12 @@ export function enterLevel(levelId: number): void {
     }
 
     // ── Subdivision transport: movement + audio ──────────────────────────────
-    const subdivEvents = transport.tick(beatFloat);
-    const hatPeriod = computeFastestHatPeriod(enemies, beatFloat);
+    const secsPerSubdiv = 60 / level.bpm / 4;
+    const audioCtxTime = audio.currentTime;
+    const subdivEvents = transport.tick(beatFloat, audioCtxTime, secsPerSubdiv);
+    const hatPeriod = computeFastestHatPeriod(enemies);
 
-    for (const subdivIdx of subdivEvents) {
+    for (const { subdivIdx, audioTime } of subdivEvents) {
       // Enemy movement
       for (const enemy of enemies) {
         enemy.processSubdiv(subdivIdx);
@@ -764,19 +768,18 @@ export function enterLevel(levelId: number): void {
 
       // Kick on integer beats
       if (subdivIdx % 4 === 0) {
-        audio.playKick(subdivIdx / 4);
+        audio.playKick(subdivIdx / 4, audioTime);
       }
 
       // Hi-hat on fastest active subdivision
       if (hatPeriod > 0 && subdivIdx % hatPeriod === 0) {
-        audio.playHihat();
+        audio.playHihat(audioTime);
       }
     }
 
-    // ── Per-frame enemy animation + respawn ─────────────────────────────────
+    // ── Per-frame enemy animation ────────────────────────────────────────────
     for (const enemy of enemies) {
       enemy.updateAnimation(dt);
-      if (enemy.isDead) enemy.respawn();
     }
 
     cullProjectiles(projectiles, level, beatFloat);
@@ -1240,7 +1243,7 @@ function checkCollisions(
   if (level.trackTiles.length === 0) return;
 
   for (const enemy of enemies) {
-    if (enemy.isDead) continue;
+    if (!enemy.isSpawned) continue;
     const [etx, ety] = enemy.getLogicalTile();
     for (const p of projectiles) {
       if (p.dead) continue;
@@ -1394,7 +1397,7 @@ function renderLevel(
   // ── Enemies ────────────────────────────────────────────────────────────────
   if (level.trackTiles.length > 0) {
     for (const enemy of enemies) {
-      drawEnemy(ctx, enemy, tileZ, zDpr);
+      if (enemy.isSpawned) drawEnemy(ctx, enemy, tileZ, zDpr);
     }
   }
 

@@ -11,21 +11,30 @@ import kick2Url from '../ASSETS/sfx/kick/kick_2.mp3';
  * events. Each subdivision (0.25 beats) is processed exactly once.
  * Handles tab suspension by re-syncing when the gap is too large.
  */
+export interface SubdivEvent {
+  subdivIdx: number;
+  /** Ideal AudioContext start time for this subdivision. May be in the past; Web Audio plays it immediately. */
+  audioTime: number;
+}
+
 export class SubdivisionTransport {
   private lastSubdivIdx = -1;
   /** Max subdivisions to catch up on in one tick (≈4 beats = 16 subdivs). */
   private readonly MAX_CATCHUP = 20;
 
   /**
-   * Call every frame. Returns the list of newly crossed subdiv indices
-   * (each index i represents beat i * 0.25).
+   * Call every frame.
+   * audioCtxTime: AudioContext.currentTime at this frame.
+   * secsPerSubdiv: seconds per sixteenth note (60 / bpm / 4).
+   * Returns newly crossed subdivision events with their ideal audio schedule time.
+   * Emits subdiv 0 on the first call so beat 0 always fires.
    */
-  tick(beatFloat: number): number[] {
+  tick(beatFloat: number, audioCtxTime: number, secsPerSubdiv: number): SubdivEvent[] {
     const currentIdx = Math.floor(beatFloat * 4);
 
     if (this.lastSubdivIdx === -1) {
-      this.lastSubdivIdx = currentIdx;
-      return [];
+      // Set one behind current so the loop below emits currentIdx (including 0).
+      this.lastSubdivIdx = currentIdx - 1;
     }
 
     const gap = currentIdx - this.lastSubdivIdx;
@@ -36,9 +45,11 @@ export class SubdivisionTransport {
       return [];
     }
 
-    const crossed: number[] = [];
+    const crossed: SubdivEvent[] = [];
     for (let i = this.lastSubdivIdx + 1; i <= currentIdx; i++) {
-      crossed.push(i);
+      // Schedule each event at its ideal time relative to the current frame.
+      const behindCurrent = currentIdx - i;
+      crossed.push({ subdivIdx: i, audioTime: audioCtxTime - behindCurrent * secsPerSubdiv });
     }
     this.lastSubdivIdx = currentIdx;
     return crossed;
@@ -92,24 +103,27 @@ export class AudioSystem {
    * beat: integer beat index (0, 1, 2, 3, …)
    * kick_1 plays on 0, 4, 8, … (beat % 4 === 0)
    * kick_2 plays on 1, 2, 3, 5, 6, 7, …
+   * startTime: AudioContext schedule time (past times play immediately).
    */
-  playKick(beat: number): void {
+  playKick(beat: number, startTime: number): void {
     if (this._muted || !this.ctx) return;
     const buf = beat % 4 === 0 ? this.kick1Buf : this.kick2Buf;
     if (!buf) return;
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     src.connect(this.ctx.destination);
-    src.start(this.ctx.currentTime);
+    src.start(Math.max(0, startTime));
   }
 
   /**
    * Play a synthesized hi-hat: white-noise burst through a high-pass filter
    * with a short decay envelope.
+   * startTime: AudioContext schedule time (past times play immediately).
    */
-  playHihat(): void {
+  playHihat(startTime: number): void {
     if (this._muted || !this.ctx || !this.noiseBuffer) return;
     const ctx = this.ctx;
+    const t = Math.max(0, startTime);
 
     const src = ctx.createBufferSource();
     src.buffer = this.noiseBuffer;
@@ -124,13 +138,14 @@ export class AudioSystem {
     bpf.Q.value = 0.7;
 
     const gain = ctx.createGain();
-    const now = ctx.currentTime;
-    gain.gain.setValueAtTime(0.07, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.055);
+    gain.gain.setValueAtTime(0.07, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
 
     src.connect(hpf).connect(bpf).connect(gain).connect(ctx.destination);
-    src.start(now);
+    src.start(t);
   }
+
+  get currentTime(): number { return this.ctx?.currentTime ?? 0; }
 
   suspend(): void { this.ctx?.suspend(); }
   resume():  void { this.ctx?.resume(); }
