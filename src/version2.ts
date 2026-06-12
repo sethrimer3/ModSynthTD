@@ -25,6 +25,12 @@ interface EvaluatedRoute {
   signals: SynthSignal[];
   routeLabel: string;
   activeModules: Set<string>;
+  hasDelay: boolean;
+}
+
+interface ScheduledEcho {
+  dueBeat: number;
+  signals: SynthSignal[];
 }
 
 interface SynthLevelConfig {
@@ -105,6 +111,46 @@ class BeatClock {
   get beatFrac(): number { return this.beatFloat % 1; }
 }
 
+// ── DelayModule ────────────────────────────────────────────────────────────
+
+class DelayModule {
+  delayBeats: 1 | 2 | 4 = 2;
+  readonly echoAmplitude = 0.5;
+  receiveFlashTimer = 0;
+  sendFlashTimer = 0;
+
+  update(dt: number): void {
+    if (this.receiveFlashTimer > 0) this.receiveFlashTimer = Math.max(0, this.receiveFlashTimer - dt);
+    if (this.sendFlashTimer > 0)    this.sendFlashTimer    = Math.max(0, this.sendFlashTimer    - dt);
+  }
+
+  onReceive(): void { this.receiveFlashTimer = 0.35; }
+  onSend():    void { this.sendFlashTimer    = 0.35; }
+}
+
+// ── SignalScheduler ────────────────────────────────────────────────────────
+
+class SignalScheduler {
+  readonly queue: ScheduledEcho[] = [];
+
+  schedule(dueBeat: number, signals: SynthSignal[]): void {
+    this.queue.push({ dueBeat, signals: signals.map(s => ({ ...s })) });
+  }
+
+  releaseAt(beat: number): SynthSignal[] {
+    const out: SynthSignal[] = [];
+    for (let i = this.queue.length - 1; i >= 0; i--) {
+      if (beat >= this.queue[i].dueBeat) {
+        out.push(...this.queue[i].signals);
+        this.queue.splice(i, 1);
+      }
+    }
+    return out;
+  }
+
+  clear(): void { this.queue.length = 0; }
+}
+
 // ── Enemy ──────────────────────────────────────────────────────────────────
 
 class Enemy {
@@ -168,6 +214,26 @@ class OutputTower {
     }
     return fired;
   }
+
+  // Spawn echo projectiles directly, bypassing the shouldFireOnBeat check.
+  spawnEchoes(signals: SynthSignal[], beat: number, projectiles: SignalProjectile[]): void {
+    for (const sig of signals) {
+      for (const dir of sig.directions) {
+        const [dx, dy] = dirToVector(dir);
+        projectiles.push({
+          spawnBeat: beat,
+          originX: this.tileX,
+          originY: this.tileY,
+          dirX: dx, dirY: dy,
+          waveform: sig.waveform,
+          periodBeats: sig.periodBeats,
+          amplitude: sig.amplitude,
+          color: sig.color,
+          dead: false,
+        });
+      }
+    }
+  }
 }
 
 // ── Signal graph helpers ───────────────────────────────────────────────────
@@ -201,7 +267,7 @@ function evaluateSignalGraph(
   connections: readonly RackWireConnection[],
   channel: SynthChannel,
 ): EvaluatedRoute {
-  const EMPTY: EvaluatedRoute = { signals: [], routeLabel: 'NO SIGNAL', activeModules: new Set() };
+  const EMPTY: EvaluatedRoute = { signals: [], routeLabel: 'NO SIGNAL', activeModules: new Set(), hasDelay: false };
 
   function next(fromId: string): string | null {
     const c = connections.find(conn => conn.fromPlugId === fromId);
@@ -220,6 +286,7 @@ function evaluateSignalGraph(
       }],
       routeLabel: 'CH1 → OUT',
       activeModules: new Set(['ch1', 'out']),
+      hasDelay: false,
     };
   }
 
@@ -228,19 +295,21 @@ function evaluateSignalGraph(
     const afterWf = next('wf-out');
     if (!afterWf) return EMPTY;
 
+    const wfSig = {
+      waveform: channel.waveform,
+      amplitude: channel.amplitude,
+      periodBeats: channel.periodBeats,
+      phaseBeats: channel.phaseBeats,
+      color: channel.color,
+    };
+
     // CH1 → WAVE → OUT
     if (afterWf === 'out-in') {
       return {
-        signals: [{
-          waveform: channel.waveform,
-          amplitude: channel.amplitude,
-          periodBeats: channel.periodBeats,
-          phaseBeats: channel.phaseBeats,
-          color: channel.color,
-          directions: ['north'],
-        }],
+        signals: [{ ...wfSig, directions: ['north'] as SignalDirection[] }],
         routeLabel: 'CH1 → WAVE → OUT',
         activeModules: new Set(['ch1', 'wave', 'out']),
+        hasDelay: false,
       };
     }
 
@@ -248,19 +317,42 @@ function evaluateSignalGraph(
     if (afterWf === 'split-in') {
       const afterSplit = next('split-out');
       if (afterSplit !== 'out-in') return EMPTY;
-      const splitAmp = channel.amplitude / 2;
       return {
-        signals: [{
-          waveform: channel.waveform,
-          amplitude: splitAmp,
-          periodBeats: channel.periodBeats,
-          phaseBeats: channel.phaseBeats,
-          color: channel.color,
-          directions: ['north', 'south'],
-        }],
+        signals: [{ ...wfSig, amplitude: channel.amplitude / 2, directions: ['north', 'south'] as SignalDirection[] }],
         routeLabel: 'CH1 → WAVE → SPLIT → OUT',
         activeModules: new Set(['ch1', 'wave', 'split', 'out']),
+        hasDelay: false,
       };
+    }
+
+    // CH1 → WAVE → DELAY → ...
+    if (afterWf === 'delay-in') {
+      const afterDelay = next('delay-out');
+      if (!afterDelay) return EMPTY;
+
+      // CH1 → WAVE → DELAY → OUT
+      if (afterDelay === 'out-in') {
+        return {
+          signals: [{ ...wfSig, directions: ['north'] as SignalDirection[] }],
+          routeLabel: 'CH1 → WAVE → DELAY → OUT',
+          activeModules: new Set(['ch1', 'wave', 'delay', 'out']),
+          hasDelay: true,
+        };
+      }
+
+      // CH1 → WAVE → DELAY → SPLIT → OUT
+      if (afterDelay === 'split-in') {
+        const afterSplit = next('split-out');
+        if (afterSplit !== 'out-in') return EMPTY;
+        return {
+          signals: [{ ...wfSig, amplitude: channel.amplitude / 2, directions: ['north', 'south'] as SignalDirection[] }],
+          routeLabel: 'CH1 → WAVE → DELAY → SPLIT → OUT',
+          activeModules: new Set(['ch1', 'wave', 'delay', 'split', 'out']),
+          hasDelay: true,
+        };
+      }
+
+      return EMPTY;
     }
 
     return EMPTY;
@@ -600,10 +692,13 @@ export function enterLevel(levelId: number): void {
   const enemy = new Enemy(level.trackTiles);
   const tower = new OutputTower();
   const projectiles: SignalProjectile[] = [];
+  const delayMod = new DelayModule();
+  const scheduler = new SignalScheduler();
 
-  // Default patch: CH1 → WAVE → SPLIT → OUTPUT
+  // Default patch: CH1 → WAVE → DELAY → SPLIT → OUTPUT
   wiring.connectPlugs('ch1-out', 'wf-in');
-  wiring.connectPlugs('wf-out', 'split-in');
+  wiring.connectPlugs('wf-out', 'delay-in');
+  wiring.connectPlugs('delay-out', 'split-in');
   wiring.connectPlugs('split-out', 'out-in');
 
   let lastNow = performance.now();
@@ -618,15 +713,33 @@ export function enterLevel(levelId: number): void {
     const beatFloat = clock.beatFloat;
     const beat = clock.beat;
 
+    delayMod.update(dt);
+
+    // Release queued echoes (beat-safe: each echo only released once)
+    const echoSignals = scheduler.releaseAt(beat);
+    if (echoSignals.length > 0) {
+      tower.spawnEchoes(echoSignals, beat, projectiles);
+      delayMod.onSend();
+    }
+
     const route = evaluateSignalGraph(wiring.getConnections(), channel);
     const justFired = tower.update(beat, route.signals, projectiles);
+
+    // Schedule one echo when delay is in the route and we fired
+    if (justFired && route.hasDelay) {
+      scheduler.schedule(
+        beat + delayMod.delayBeats,
+        route.signals.map(s => ({ ...s, amplitude: s.amplitude * delayMod.echoAmplitude })),
+      );
+      delayMod.onReceive();
+    }
 
     enemy.update(dt);
     cullProjectiles(projectiles, level, beatFloat);
     checkCollisions(enemy, projectiles, level, beatFloat);
 
     beatDisplay.textContent = `beat ${beat}`;
-    updatePanel(dt, route, justFired);
+    updatePanel(dt, route, justFired, delayMod, scheduler);
     wiring.update(now);
 
     renderLevel(ctx, canvas, level, view, clock, channel, enemy, tower, projectiles, route);
@@ -646,6 +759,7 @@ const WAVEFORM_COLORS: Record<Waveform, string> = {
 const MODULE_FLASH_COLORS: Record<string, string> = {
   ch1:   '#00ffee',
   wave:  '#cc44ff',
+  delay: '#44aaff',
   split: '#ff8800',
   out:   '#ffcc00',
 };
@@ -727,7 +841,7 @@ function buildModuleCard(
 
 function buildRackPanel(channel: SynthChannel): {
   panel: HTMLElement;
-  updatePanel: (dt: number, route: EvaluatedRoute, justFired: boolean) => void;
+  updatePanel: (dt: number, route: EvaluatedRoute, justFired: boolean, delayMod: DelayModule, scheduler: SignalScheduler) => void;
   wiring: RackWiringHandle;
 } {
   const ff = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
@@ -846,6 +960,64 @@ function buildRackPanel(channel: SynthChannel): {
   }, wiring);
   modulesRow.append(wfCard);
 
+  // ── Delay module ──────────────────────────────────────────────────────────
+  let delayLedEl: HTMLElement;
+  // delayBtns keyed by beat count; populated inside buildContent closure
+  const delayBtnMap = new Map<number, HTMLButtonElement>();
+  let _delayModRef: DelayModule | null = null;
+
+  const refreshDelayButtons = () => {
+    if (!_delayModRef) return;
+    for (const [b, btn] of delayBtnMap) {
+      const active = _delayModRef.delayBeats === b;
+      btn.style.background = active ? '#44aaff22' : '#0a1020';
+      btn.style.border     = active ? '1.5px solid #44aaff' : '1.5px solid #1e2e48';
+      btn.style.color      = active ? '#44aaff' : '#334466';
+      btn.style.boxShadow  = active ? '0 0 8px #44aaff55' : '';
+    }
+  };
+
+  const { card: delayCard } = buildModuleCard({
+    title: 'DELAY',
+    titleColor: '#44aaff',
+    inputPlugId: 'delay-in',
+    inputPlugType: 'delayIn',
+    outputPlugId: 'delay-out',
+    outputPlugType: 'delayOut',
+    buildContent: (card) => {
+      const beats: Array<1 | 2 | 4> = [1, 2, 4];
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = `display:flex;gap:0.2rem;justify-content:center;`;
+      for (const b of beats) {
+        const btn = document.createElement('button');
+        btn.textContent = `${b}♩`;
+        btn.style.cssText = `
+          font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
+          font-size:0.5rem;font-weight:800;letter-spacing:0.04em;
+          padding:0.15rem 0.3rem;border-radius:4px;cursor:pointer;
+          transition:background 0.1s,border-color 0.1s,color 0.1s,box-shadow 0.1s;
+        `;
+        delayBtnMap.set(b, btn);
+        btn.addEventListener('click', () => {
+          if (_delayModRef) { _delayModRef.delayBeats = b as 1|2|4; refreshDelayButtons(); }
+        });
+        btnRow.append(btn);
+      }
+      const echoLabel = document.createElement('div');
+      echoLabel.style.cssText = `color:#224466;font-size:0.48rem;letter-spacing:0.07em;text-align:center;margin-top:0.12rem;`;
+      echoLabel.textContent = 'ECHO 50%';
+      delayLedEl = document.createElement('div');
+      delayLedEl.style.cssText = `
+        width:7px;height:7px;border-radius:50%;
+        background:#102030;border:1.5px solid #224466;
+        margin:0.2rem auto 0;
+        transition:background 0.1s,box-shadow 0.1s;
+      `;
+      card.append(btnRow, echoLabel, delayLedEl);
+    },
+  }, wiring);
+  modulesRow.append(delayCard);
+
   // ── Splitter module — N/S fixed split ─────────────────────────────────────
   let splitAmpEl: HTMLElement;
 
@@ -888,14 +1060,17 @@ function buildRackPanel(channel: SynthChannel): {
   modulesRow.append(outCard);
 
   // Module card references for flash
-  const moduleCards: Record<string, HTMLElement> = { ch1: ch1Card, wave: wfCard, split: splitCard, out: outCard };
-  const flashTimers: Record<string, number> = { ch1: 0, wave: 0, split: 0, out: 0 };
+  const moduleCards: Record<string, HTMLElement> = { ch1: ch1Card, wave: wfCard, delay: delayCard, split: splitCard, out: outCard };
+  const flashTimers: Record<string, number> = { ch1: 0, wave: 0, delay: 0, split: 0, out: 0 };
 
   // Initial state
   refreshButtons();
 
   // ── updatePanel ───────────────────────────────────────────────────────────
-  const updatePanel = (dt: number, route: EvaluatedRoute, justFired: boolean) => {
+  const updatePanel = (dt: number, route: EvaluatedRoute, justFired: boolean, delayMod: DelayModule, scheduler: SignalScheduler) => {
+    // Wire the delay mod ref so buttons work
+    _delayModRef = delayMod;
+    refreshDelayButtons();
     // CH1 timing info
     ch1PeriodEl.textContent = `${channel.periodBeats}♩`;
     ch1PhaseEl.textContent = `φ ${channel.phaseBeats}`;
@@ -912,8 +1087,9 @@ function buildRackPanel(channel: SynthChannel): {
     routeIndicator.textContent = route.routeLabel;
     routeIndicator.style.color = active ? '#00ffee' : '#2a4060';
 
-    // Module card flash timers
+    // Module card flash timers (delay card handled separately via delayMod timers)
     for (const key of Object.keys(flashTimers)) {
+      if (key === 'delay') continue; // handled below
       if (justFired && route.activeModules.has(key)) {
         flashTimers[key] = 0.35;
       } else {
@@ -924,6 +1100,26 @@ function buildRackPanel(channel: SynthChannel): {
       moduleCards[key].style.borderColor = flashing ? fc : '#1a2a44';
       moduleCards[key].style.boxShadow = flashing ? `0 0 10px ${fc}55` : '';
     }
+
+    // Delay card: receive flash (blue) → send flash (bright blue)
+    const drecv = delayMod.receiveFlashTimer > 0;
+    const dsend = delayMod.sendFlashTimer > 0;
+    if (dsend) {
+      delayCard.style.borderColor = '#88ccff';
+      delayCard.style.boxShadow   = '0 0 14px #44aaff99';
+    } else if (drecv) {
+      delayCard.style.borderColor = '#44aaff';
+      delayCard.style.boxShadow   = '0 0 8px #44aaff55';
+    } else {
+      delayCard.style.borderColor = '#1a2a44';
+      delayCard.style.boxShadow   = '';
+    }
+
+    // Delay LED — lit while echoes are queued
+    const queued = scheduler.queue.length > 0;
+    delayLedEl.style.background  = queued ? '#44aaff' : '#102030';
+    delayLedEl.style.boxShadow   = queued ? '0 0 6px #44aaff99' : '';
+    delayLedEl.style.borderColor = queued ? '#44aaff' : '#224466';
 
     // Output LED
     const ledFlashing = flashTimers['out'] > 0;
@@ -942,7 +1138,9 @@ function buildRackPanel(channel: SynthChannel): {
     }
   };
 
-  updatePanel(0, { signals: [], routeLabel: 'NO SIGNAL', activeModules: new Set() }, false);
+  const _emptyDelay = new DelayModule();
+  const _emptyScheduler = new SignalScheduler();
+  updatePanel(0, { signals: [], routeLabel: 'NO SIGNAL', activeModules: new Set(), hasDelay: false }, false, _emptyDelay, _emptyScheduler);
 
   return { panel, updatePanel, wiring };
 }
