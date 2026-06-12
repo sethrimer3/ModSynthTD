@@ -2,6 +2,7 @@
 // Wave definitions and manager for scheduled enemy spawning.
 
 import { Enemy, ENEMY_TYPES } from './version2-enemies';
+import type { FrequencyBand } from './version2-enemies';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -13,6 +14,12 @@ export interface WaveSpawn {
 
 export interface WaveDefinition {
   spawns: WaveSpawn[];
+}
+
+export interface WavePreviewEntry {
+  enemyTypeId: string;
+  count: number;
+  resonance: FrequencyBand;
 }
 
 // ── Seeded RNG ─────────────────────────────────────────────────────────────
@@ -191,6 +198,20 @@ export class WaveManager {
     this.waveStartSubdiv = -1;
     this.pending = [];
     this._allSpawned = false;
+  }
+
+  /** Returns a preview of upcoming enemy types and counts for the current wave. */
+  getWavePreview(): WavePreviewEntry[] {
+    const def = this.getWave(this.waveIndex);
+    const counts = new Map<string, number>();
+    for (const s of def.spawns) {
+      counts.set(s.enemyTypeId, (counts.get(s.enemyTypeId) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).map(([id, count]) => ({
+      enemyTypeId: id,
+      count,
+      resonance: ENEMY_TYPES[id]?.resonance ?? 'mid',
+    }));
   }
 
   private getWave(index: number): WaveDefinition {

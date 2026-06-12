@@ -10,6 +10,14 @@ import sixteenthNoteUrl from '../ASSETS/SPRITES/ENEMIES/enemy_sixteenthNote.png'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+export type FrequencyBand = 'low' | 'mid' | 'high';
+
+export const FREQ_BAND_COLORS: Record<FrequencyBand, string> = {
+  low:  '#ff6633',
+  mid:  '#00ddcc',
+  high: '#cc88ff',
+};
+
 export type SubdivResult = 'none' | 'moved' | 'escaped';
 
 export interface EnemyTypeConfig {
@@ -25,6 +33,7 @@ export interface EnemyTypeConfig {
   maxHp: number;
   color: string;
   fallbackSymbol: string;
+  resonance: FrequencyBand;
 }
 
 export const ENEMY_TYPES: Record<string, EnemyTypeConfig> = {
@@ -37,6 +46,7 @@ export const ENEMY_TYPES: Record<string, EnemyTypeConfig> = {
     maxHp: 3,
     color: '#ff3366',
     fallbackSymbol: '♬',
+    resonance: 'high',
   },
   eighth: {
     id: 'eighth',
@@ -48,6 +58,7 @@ export const ENEMY_TYPES: Record<string, EnemyTypeConfig> = {
     maxHp: 4,
     color: '#ff8800',
     fallbackSymbol: '♪',
+    resonance: 'high',
   },
   quarter: {
     id: 'quarter',
@@ -58,6 +69,7 @@ export const ENEMY_TYPES: Record<string, EnemyTypeConfig> = {
     maxHp: 5,
     color: '#ffcc00',
     fallbackSymbol: '♩',
+    resonance: 'mid',
   },
   half: {
     id: 'half',
@@ -68,6 +80,7 @@ export const ENEMY_TYPES: Record<string, EnemyTypeConfig> = {
     maxHp: 7,
     color: '#44ddff',
     fallbackSymbol: '𝅗',
+    resonance: 'low',
   },
   whole: {
     id: 'whole',
@@ -78,6 +91,7 @@ export const ENEMY_TYPES: Record<string, EnemyTypeConfig> = {
     maxHp: 10,
     color: '#aa55ff',
     fallbackSymbol: '○',
+    resonance: 'low',
   },
 };
 
@@ -109,6 +123,8 @@ export class Enemy {
   hp: number;
   readonly maxHp: number;
   flashTimer = 0;
+  resonanceFlash = 0;
+  resonanceFlashIsMatch = false;
 
   /** Subdiv index at which this enemy becomes active. */
   readonly spawnSubdiv: number;
@@ -183,6 +199,7 @@ export class Enemy {
   updateAnimation(dt: number): void {
     if (this.hopTimer < this.HOP_DURATION) this.hopTimer = Math.min(this.HOP_DURATION, this.hopTimer + dt);
     if (this.flashTimer > 0) this.flashTimer = Math.max(0, this.flashTimer - dt);
+    if (this.resonanceFlash > 0) this.resonanceFlash = Math.max(0, this.resonanceFlash - dt);
   }
 
   getLogicalTile(): [number, number] {
@@ -201,10 +218,12 @@ export class Enemy {
     };
   }
 
-  hit(damage: number): void {
+  hit(damage: number, isMatch?: boolean): void {
     if (!this._alive) return;
     this.hp = Math.max(0, this.hp - damage);
-    this.flashTimer = 0.25;
+    this.flashTimer = isMatch === true ? 0.4 : 0.22;
+    this.resonanceFlash = isMatch === true ? 0.5 : 0.28;
+    this.resonanceFlashIsMatch = isMatch ?? false;
     if (this.hp <= 0) {
       this._alive = false;
     }
@@ -239,9 +258,40 @@ export function drawEnemy(
   const py = pos.y * tileZ + tileZ / 2;
   const cfg = enemy.typeConfig;
   const isFlash = enemy.isFlashing;
+  const bandColor = FREQ_BAND_COLORS[cfg.resonance];
 
   ctx.save();
   ctx.translate(px, py);
+
+  // Resonance ring (always visible, thin arc)
+  ctx.save();
+  ctx.strokeStyle = hexAlpha(bandColor, 0.55);
+  ctx.lineWidth = Math.max(1, 1.5 * zoomDpr);
+  ctx.shadowColor = bandColor;
+  ctx.shadowBlur = 3 * zoomDpr;
+  const ringR = tileZ * 0.42;
+  ctx.beginPath();
+  ctx.arc(0, 0, ringR, -Math.PI * 0.75, Math.PI * 0.75);
+  ctx.stroke();
+  ctx.restore();
+
+  // Resonance burst ring on hit
+  if (enemy.resonanceFlash > 0) {
+    const rf = enemy.resonanceFlash;
+    const burstColor = enemy.resonanceFlashIsMatch ? bandColor : '#667788';
+    const burstProgress = 1 - rf / 0.5;
+    const burstR = ringR * (1 + burstProgress * 1.2);
+    const burstAlpha = rf * (enemy.resonanceFlashIsMatch ? 1.4 : 0.7);
+    ctx.save();
+    ctx.strokeStyle = hexAlpha(burstColor, Math.min(0.9, burstAlpha));
+    ctx.lineWidth = Math.max(0.8, 1.2 * zoomDpr);
+    ctx.shadowColor = burstColor;
+    ctx.shadowBlur = (enemy.resonanceFlashIsMatch ? 10 : 4) * zoomDpr;
+    ctx.beginPath();
+    ctx.arc(0, 0, burstR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // Glow
   const glowColor = isFlash ? '#ffffff' : cfg.color;
@@ -275,6 +325,20 @@ export function drawEnemy(
   }
 
   ctx.shadowBlur = 0;
+
+  // Band label (L/M/H) at sufficient zoom
+  if (tileZ > 30) {
+    const bandLabel = cfg.resonance === 'low' ? 'L' : cfg.resonance === 'mid' ? 'M' : 'H';
+    const labelSize = Math.max(7, tileZ * 0.16);
+    ctx.font = `bold ${labelSize}px 'Pixelify Sans',sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = hexAlpha(bandColor, 0.85);
+    ctx.shadowColor = bandColor;
+    ctx.shadowBlur = 3 * zoomDpr;
+    ctx.fillText(bandLabel, ringR * 0.72, -ringR * 0.72);
+    ctx.shadowBlur = 0;
+  }
 
   // HP pips below
   if (tileZ > 20 && enemy.maxHp > 0) {

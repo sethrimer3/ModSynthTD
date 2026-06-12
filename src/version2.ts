@@ -8,7 +8,10 @@ import {
   Enemy,
   drawEnemy,
   preloadEnemySprites,
+  ENEMY_TYPES,
+  FREQ_BAND_COLORS,
 } from './version2-enemies';
+import type { FrequencyBand } from './version2-enemies';
 import { SubdivisionTransport, getAudioSystem } from './version2-audio';
 import { WaveManager } from './version2-waves';
 
@@ -29,6 +32,7 @@ interface SynthSignal {
   phaseBeats: number;
   color: string;
   directions: SignalDirection[];
+  frequencyBand: FrequencyBand;
 }
 
 interface EvaluatedRoute {
@@ -69,7 +73,18 @@ interface SignalProjectile {
   periodBeats: number;
   amplitude: number;
   color: string;
+  frequencyBand: FrequencyBand;
   dead: boolean;
+}
+
+interface FloatingText {
+  tileX: number;
+  tileY: number;
+  text: string;
+  color: string;
+  timer: number;
+  duration: number;
+  offsetX: number;
 }
 
 interface PlacementState {
@@ -121,6 +136,23 @@ class BeatClock {
 
   get beat(): number { return Math.floor(this.beatFloat); }
   get beatFrac(): number { return this.beatFloat % 1; }
+}
+
+// ── FrequencyModule ────────────────────────────────────────────────────────
+
+class FrequencyModule {
+  band: FrequencyBand = 'mid';
+  flashTimer = 0;
+  flashIsMatch = false;
+
+  update(dt: number): void {
+    if (this.flashTimer > 0) this.flashTimer = Math.max(0, this.flashTimer - dt);
+  }
+
+  onHit(isMatch: boolean): void {
+    this.flashTimer = 0.35;
+    this.flashIsMatch = isMatch;
+  }
 }
 
 // ── DelayModule ────────────────────────────────────────────────────────────
@@ -201,6 +233,7 @@ class OutputTower {
           periodBeats: sig.periodBeats,
           amplitude: sig.amplitude,
           color: sig.color,
+          frequencyBand: sig.frequencyBand,
           dead: false,
         });
         fired = true;
@@ -222,6 +255,7 @@ class OutputTower {
           periodBeats: sig.periodBeats,
           amplitude: sig.amplitude,
           color: sig.color,
+          frequencyBand: sig.frequencyBand,
           dead: false,
         });
       }
@@ -267,89 +301,77 @@ function signalIsHighAt(sig: SynthSignal, beatFloat: number): boolean {
 function evaluateSignalGraph(
   connections: readonly RackWireConnection[],
   channel: SynthChannel,
+  freqMod: FrequencyModule,
 ): EvaluatedRoute {
   const EMPTY: EvaluatedRoute = { signals: [], routeLabel: 'NO SIGNAL', activeModules: new Set(), hasDelay: false };
 
-  function next(fromId: string): string | null {
-    const c = connections.find(conn => conn.fromPlugId === fromId);
-    return c ? c.toPlugId : null;
-  }
+  const connMap = new Map<string, string>();
+  for (const c of connections) connMap.set(c.fromPlugId, c.toPlugId);
 
-  const afterCh1 = next('ch1-out');
-  if (!afterCh1) return EMPTY;
+  let waveform: Waveform = 'pulse';
+  let amplitude = 1;
+  let periodBeats = 1;
+  let phaseBeats = 0;
+  let frequencyBand: FrequencyBand = 'mid';
+  let hasDelay = false;
+  let hasSplit = false;
+  const activeModules = new Set<string>(['ch1']);
+  const pathLabels: string[] = ['CH1'];
+  let cursor = 'ch1-out';
+  const visited = new Set<string>();
 
-  if (afterCh1 === 'out-in') {
-    return {
-      signals: [{
-        waveform: 'pulse', amplitude: 1, periodBeats: 1, phaseBeats: 0,
-        color: channel.color, directions: ['north'],
-      }],
-      routeLabel: 'CH1 → OUT',
-      activeModules: new Set(['ch1', 'out']),
-      hasDelay: false,
-    };
-  }
+  for (let hop = 0; hop < 12; hop++) {
+    visited.add(cursor);
+    const next = connMap.get(cursor);
+    if (!next || visited.has(next)) return EMPTY;
+    visited.add(next);
 
-  if (afterCh1 === 'wf-in') {
-    const afterWf = next('wf-out');
-    if (!afterWf) return EMPTY;
-
-    const wfSig = {
-      waveform: channel.waveform,
-      amplitude: channel.amplitude,
-      periodBeats: channel.periodBeats,
-      phaseBeats: channel.phaseBeats,
-      color: channel.color,
-    };
-
-    if (afterWf === 'out-in') {
+    if (next === 'out-in') {
+      activeModules.add('out');
+      pathLabels.push('OUT');
+      const amp = hasSplit ? amplitude / 2 : amplitude;
+      const dirs: SignalDirection[] = hasSplit ? ['north', 'south'] : ['north'];
       return {
-        signals: [{ ...wfSig, directions: ['north'] as SignalDirection[] }],
-        routeLabel: 'CH1 → WAVE → OUT',
-        activeModules: new Set(['ch1', 'wave', 'out']),
-        hasDelay: false,
+        signals: [{ waveform, amplitude: amp, periodBeats, phaseBeats, color: channel.color, frequencyBand, directions: dirs }],
+        routeLabel: pathLabels.join(' → '),
+        activeModules,
+        hasDelay,
       };
     }
 
-    if (afterWf === 'split-in') {
-      const afterSplit = next('split-out');
-      if (afterSplit !== 'out-in') return EMPTY;
-      return {
-        signals: [{ ...wfSig, amplitude: channel.amplitude / 2, directions: ['north', 'south'] as SignalDirection[] }],
-        routeLabel: 'CH1 → WAVE → SPLIT → OUT',
-        activeModules: new Set(['ch1', 'wave', 'split', 'out']),
-        hasDelay: false,
-      };
+    switch (next) {
+      case 'wf-in':
+        waveform = channel.waveform;
+        amplitude = channel.amplitude;
+        periodBeats = channel.periodBeats;
+        phaseBeats = channel.phaseBeats;
+        activeModules.add('wave');
+        pathLabels.push('WAVE');
+        cursor = 'wf-out';
+        break;
+      case 'freq-in':
+        frequencyBand = freqMod.band;
+        activeModules.add('freq');
+        pathLabels.push('FREQ');
+        cursor = 'freq-out';
+        break;
+      case 'delay-in':
+        hasDelay = true;
+        activeModules.add('delay');
+        pathLabels.push('DELAY');
+        cursor = 'delay-out';
+        break;
+      case 'split-in':
+        hasSplit = true;
+        activeModules.add('split');
+        pathLabels.push('SPLIT');
+        cursor = 'split-out';
+        break;
+      default:
+        return EMPTY;
     }
 
-    if (afterWf === 'delay-in') {
-      const afterDelay = next('delay-out');
-      if (!afterDelay) return EMPTY;
-
-      if (afterDelay === 'out-in') {
-        return {
-          signals: [{ ...wfSig, directions: ['north'] as SignalDirection[] }],
-          routeLabel: 'CH1 → WAVE → DELAY → OUT',
-          activeModules: new Set(['ch1', 'wave', 'delay', 'out']),
-          hasDelay: true,
-        };
-      }
-
-      if (afterDelay === 'split-in') {
-        const afterSplit = next('split-out');
-        if (afterSplit !== 'out-in') return EMPTY;
-        return {
-          signals: [{ ...wfSig, amplitude: channel.amplitude / 2, directions: ['north', 'south'] as SignalDirection[] }],
-          routeLabel: 'CH1 → WAVE → DELAY → SPLIT → OUT',
-          activeModules: new Set(['ch1', 'wave', 'delay', 'split', 'out']),
-          hasDelay: true,
-        };
-      }
-
-      return EMPTY;
-    }
-
-    return EMPTY;
+    if (visited.has(cursor)) return EMPTY;
   }
 
   return EMPTY;
@@ -796,7 +818,9 @@ export function enterLevel(levelId: number): void {
 
   // ── Rack Panel ────────────────────────────────────────────────────────────
   const channel = new SynthChannel(1);
-  const { panel: rackPanel, updatePanel, updateOutputCard, wiring } = buildRackPanel(channel, {
+  const freqMod = new FrequencyModule();
+
+  const { panel: rackPanel, updatePanel, updateOutputCard, wiring } = buildRackPanel(channel, freqMod, {
     onEnterPlacement: () => {
       placement.active = !placement.active;
       if (!placement.active) placement.previewTile = null;
@@ -805,7 +829,15 @@ export function enterLevel(levelId: number): void {
     onRotate: () => { tower.rotateClockwise(); },
   });
 
-  root.append(hud, actionRow, canvasWrapper, hint, rackPanel);
+  // ── Wave preview row ──────────────────────────────────────────────────────
+  const wavePreviewRow = document.createElement('div');
+  wavePreviewRow.style.cssText = `
+    display:flex;align-items:center;justify-content:center;
+    width:100%;min-height:20px;gap:0.5rem;flex-wrap:wrap;
+    transition:opacity 0.3s;
+  `;
+
+  root.append(hud, actionRow, wavePreviewRow, canvasWrapper, hint, rackPanel);
   app.append(root);
 
   // ── Canvas sizing ─────────────────────────────────────────────────────────
@@ -955,15 +987,18 @@ export function enterLevel(levelId: number): void {
   const waveManager = new WaveManager();
 
   const projectiles: SignalProjectile[] = [];
+  const floatingTexts: FloatingText[] = [];
   const delayMod = new DelayModule();
   const scheduler = new SignalScheduler();
   const transport = new SubdivisionTransport();
+  let lastPreviewWave = -1;
 
   audio.init().then(updateMuteBtn);
 
-  // Default patch: CH1 → WAVE → DELAY → SPLIT → OUTPUT
+  // Default patch: CH1 → WAVE → FREQ → DELAY → SPLIT → OUTPUT
   wiring.connectPlugs('ch1-out', 'wf-in');
-  wiring.connectPlugs('wf-out', 'delay-in');
+  wiring.connectPlugs('wf-out', 'freq-in');
+  wiring.connectPlugs('freq-out', 'delay-in');
   wiring.connectPlugs('delay-out', 'split-in');
   wiring.connectPlugs('split-out', 'out-in');
 
@@ -1018,6 +1053,71 @@ export function enterLevel(levelId: number): void {
     } else {
       failureOverlay.style.display = 'none';
     }
+
+    // Wave preview opacity
+    if (runState === 'ready' || runState === 'countin') {
+      wavePreviewRow.style.opacity = '1';
+    } else if (runState === 'wave') {
+      wavePreviewRow.style.opacity = '0.3';
+    } else {
+      wavePreviewRow.style.opacity = '0';
+    }
+
+    // Rebuild preview only when wave number changes
+    const waveNum = waveManager.currentWaveNumber;
+    if (waveNum !== lastPreviewWave) {
+      lastPreviewWave = waveNum;
+      wavePreviewRow.innerHTML = '';
+      const preview = waveManager.getWavePreview();
+      if (preview.length > 0) {
+        const bandCounts: Record<string, number> = { low: 0, mid: 0, high: 0 };
+        for (const entry of preview) {
+          const cfg = ENEMY_TYPES[entry.enemyTypeId];
+          if (!cfg) continue;
+          bandCounts[entry.resonance] += entry.count;
+
+          const chip = document.createElement('div');
+          chip.style.cssText = `
+            display:inline-flex;align-items:center;gap:0.2rem;
+            background:#060c18;border:1px solid ${FREQ_BAND_COLORS[entry.resonance]}44;
+            border-radius:5px;padding:0.1rem 0.35rem;
+            ${ff}font-size:0.55rem;
+          `;
+          const sym = document.createElement('span');
+          sym.textContent = cfg.fallbackSymbol;
+          sym.style.color = cfg.color;
+          const cnt = document.createElement('span');
+          cnt.textContent = `×${entry.count}`;
+          cnt.style.color = '#5577aa';
+          const badge = document.createElement('span');
+          badge.textContent = entry.resonance === 'low' ? 'L' : entry.resonance === 'mid' ? 'M' : 'H';
+          badge.style.cssText = `color:${FREQ_BAND_COLORS[entry.resonance]};font-weight:800;`;
+          chip.append(sym, cnt, badge);
+          wavePreviewRow.append(chip);
+        }
+
+        // Aggregate band counts
+        const agg = document.createElement('div');
+        agg.style.cssText = `${ff}font-size:0.52rem;color:#2a4060;display:inline-flex;align-items:center;gap:0.2rem;`;
+        const bands: Array<'low'|'mid'|'high'> = ['low', 'mid', 'high'];
+        let first = true;
+        for (const b of bands) {
+          if (bandCounts[b] <= 0) continue;
+          if (!first) {
+            const dot = document.createElement('span');
+            dot.textContent = '·';
+            dot.style.color = '#2a4060';
+            agg.append(dot);
+          }
+          first = false;
+          const s = document.createElement('span');
+          s.textContent = `${b === 'low' ? 'L' : b === 'mid' ? 'M' : 'H'}:${bandCounts[b]}`;
+          s.style.color = FREQ_BAND_COLORS[b];
+          agg.append(s);
+        }
+        wavePreviewRow.append(agg);
+      }
+    }
   };
 
   let lastNow = performance.now();
@@ -1033,10 +1133,17 @@ export function enterLevel(levelId: number): void {
     const beat = clock.beat;
 
     delayMod.update(dt);
+    freqMod.update(dt);
     finishFlashTimer = Math.max(0, finishFlashTimer - dt);
 
+    // Tick floating texts
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+      floatingTexts[i].timer -= dt;
+      if (floatingTexts[i].timer <= 0) floatingTexts.splice(i, 1);
+    }
+
     // Signal processing (disabled when failed)
-    const route = evaluateSignalGraph(wiring.getConnections(), channel);
+    const route = evaluateSignalGraph(wiring.getConnections(), channel, freqMod);
     let justFired = false;
 
     if (runState !== 'failed') {
@@ -1106,7 +1213,7 @@ export function enterLevel(levelId: number): void {
     // Collision and projectile culling (skip when failed)
     if (runState !== 'failed') {
       cullProjectiles(projectiles, level, beatFloat);
-      checkCollisions(waveEnemies, projectiles, level, beatFloat);
+      checkCollisions(waveEnemies, projectiles, level, beatFloat, floatingTexts, freqMod);
     }
 
     // Remove enemies killed by projectiles this frame.
@@ -1120,11 +1227,11 @@ export function enterLevel(levelId: number): void {
 
     beatDisplay.textContent = `beat ${beat}`;
     updateHud();
-    updatePanel(dt, route, justFired, delayMod, scheduler);
+    updatePanel(dt, route, justFired, delayMod, scheduler, freqMod);
     updateOutputCard(tower, placement.active);
     wiring.update(now);
 
-    renderLevel(ctx, canvas, level, view, clock, channel, waveEnemies, tower, projectiles, route, placement, trackSet, finishFlashTimer);
+    renderLevel(ctx, canvas, level, view, clock, channel, waveEnemies, tower, projectiles, route, placement, trackSet, finishFlashTimer, floatingTexts);
     rafId = requestAnimationFrame(tick);
   };
 
@@ -1228,10 +1335,11 @@ function buildModuleCard(
 
 function buildRackPanel(
   channel: SynthChannel,
+  freqModArg: FrequencyModule,
   towerCallbacks: { onEnterPlacement: () => void; onRotate: () => void },
 ): {
   panel: HTMLElement;
-  updatePanel: (dt: number, route: EvaluatedRoute, justFired: boolean, delayMod: DelayModule, scheduler: SignalScheduler) => void;
+  updatePanel: (dt: number, route: EvaluatedRoute, justFired: boolean, delayMod: DelayModule, scheduler: SignalScheduler, freqMod: FrequencyModule) => void;
   updateOutputCard: (tower: OutputTower, placementActive: boolean) => void;
   wiring: RackWiringHandle;
 } {
@@ -1345,6 +1453,66 @@ function buildRackPanel(
     },
   }, wiring);
   modulesRow.append(wfCard);
+
+  // ── FREQ card ──────────────────────────────────────────────────────────────
+  const freqBands: FrequencyBand[] = ['low', 'mid', 'high'];
+  const freqBtnMap = new Map<FrequencyBand, HTMLButtonElement>();
+  let freqLedEl: HTMLElement;
+
+  const refreshFreqButtons = () => {
+    for (const b of freqBands) {
+      const btn = freqBtnMap.get(b);
+      if (!btn) continue;
+      const active = freqModArg.band === b;
+      const fc = FREQ_BAND_COLORS[b];
+      if (active) {
+        btn.style.background = `${fc}22`;
+        btn.style.border = `1.5px solid ${fc}`;
+        btn.style.color = fc;
+        btn.style.boxShadow = `0 0 8px ${fc}55`;
+      } else {
+        btn.style.background = '#0a1020';
+        btn.style.border = `1.5px solid #1e2e48`;
+        btn.style.color = '#334466';
+        btn.style.boxShadow = '';
+      }
+    }
+  };
+
+  const { card: freqCard } = buildModuleCard({
+    title: 'FREQ',
+    titleColor: '#88aacc',
+    inputPlugId: 'freq-in',
+    inputPlugType: 'frequencyIn',
+    outputPlugId: 'freq-out',
+    outputPlugType: 'frequencyOut',
+    buildContent: (card) => {
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = `display:flex;gap:0.2rem;justify-content:center;`;
+      for (const b of freqBands) {
+        const btn = document.createElement('button');
+        btn.textContent = b === 'low' ? 'LO' : b === 'mid' ? 'MI' : 'HI';
+        btn.style.cssText = `
+          font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
+          font-size:0.5rem;font-weight:800;letter-spacing:0.04em;
+          padding:0.15rem 0.28rem;border-radius:4px;cursor:pointer;
+          transition:background 0.1s,border-color 0.1s,color 0.1s,box-shadow 0.1s;
+        `;
+        freqBtnMap.set(b, btn);
+        btn.addEventListener('click', () => { freqModArg.band = b; refreshFreqButtons(); });
+        btnRow.append(btn);
+      }
+      freqLedEl = document.createElement('div');
+      freqLedEl.style.cssText = `
+        width:7px;height:7px;border-radius:50%;
+        background:#102030;border:1.5px solid #224466;
+        margin:0.2rem auto 0;
+        transition:background 0.1s,box-shadow 0.1s;
+      `;
+      card.append(btnRow, freqLedEl);
+    },
+  }, wiring);
+  modulesRow.append(freqCard);
 
   let delayLedEl: HTMLElement;
   const delayBtnMap = new Map<number, HTMLButtonElement>();
@@ -1479,14 +1647,16 @@ function buildRackPanel(
   }, wiring);
   modulesRow.append(outCard);
 
-  const moduleCards: Record<string, HTMLElement> = { ch1: ch1Card, wave: wfCard, delay: delayCard, split: splitCard, out: outCard };
-  const flashTimers: Record<string, number> = { ch1: 0, wave: 0, delay: 0, split: 0, out: 0 };
+  const moduleCards: Record<string, HTMLElement> = { ch1: ch1Card, wave: wfCard, freq: freqCard, delay: delayCard, split: splitCard, out: outCard };
+  const flashTimers: Record<string, number> = { ch1: 0, wave: 0, freq: 0, delay: 0, split: 0, out: 0 };
 
   refreshButtons();
+  refreshFreqButtons();
 
-  const updatePanel = (dt: number, route: EvaluatedRoute, justFired: boolean, delayMod: DelayModule, scheduler: SignalScheduler) => {
+  const updatePanel = (dt: number, route: EvaluatedRoute, justFired: boolean, delayMod: DelayModule, scheduler: SignalScheduler, freqMod: FrequencyModule) => {
     _delayModRef = delayMod;
     refreshDelayButtons();
+    refreshFreqButtons();
     ch1PeriodEl.textContent = `${channel.periodBeats}♩`;
     ch1PhaseEl.textContent = `φ ${channel.phaseBeats}`;
 
@@ -1500,7 +1670,7 @@ function buildRackPanel(
     routeIndicator.style.color = active ? '#00ffee' : '#2a4060';
 
     for (const key of Object.keys(flashTimers)) {
-      if (key === 'delay') continue;
+      if (key === 'delay' || key === 'freq') continue;
       if (justFired && route.activeModules.has(key)) {
         flashTimers[key] = 0.35;
       } else {
@@ -1510,6 +1680,23 @@ function buildRackPanel(
       const fc = MODULE_FLASH_COLORS[key] ?? '#ffffff';
       moduleCards[key].style.borderColor = flashing ? fc : '#1a2a44';
       moduleCards[key].style.boxShadow = flashing ? `0 0 10px ${fc}55` : '';
+    }
+
+    // FREQ card flash — driven by freqMod.flashTimer
+    {
+      const fc = FREQ_BAND_COLORS[freqMod.band];
+      const flashing = freqMod.flashTimer > 0;
+      if (flashing) {
+        const flashColor = freqMod.flashIsMatch ? fc : '#667788';
+        freqCard.style.borderColor = flashColor;
+        freqCard.style.boxShadow = `0 0 12px ${flashColor}88`;
+      } else {
+        freqCard.style.borderColor = `${fc}55`;
+        freqCard.style.boxShadow = '';
+      }
+      freqLedEl.style.background = route.activeModules.has('freq') ? fc : '#102030';
+      freqLedEl.style.boxShadow = route.activeModules.has('freq') ? `0 0 6px ${fc}99` : '';
+      freqLedEl.style.borderColor = route.activeModules.has('freq') ? fc : '#224466';
     }
 
     const drecv = delayMod.receiveFlashTimer > 0;
@@ -1560,7 +1747,8 @@ function buildRackPanel(
 
   const _emptyDelay = new DelayModule();
   const _emptyScheduler = new SignalScheduler();
-  updatePanel(0, { signals: [], routeLabel: 'NO SIGNAL', activeModules: new Set(), hasDelay: false }, false, _emptyDelay, _emptyScheduler);
+  const _emptyFreq = new FrequencyModule();
+  updatePanel(0, { signals: [], routeLabel: 'NO SIGNAL', activeModules: new Set(), hasDelay: false }, false, _emptyDelay, _emptyScheduler, _emptyFreq);
 
   return { panel, updatePanel, updateOutputCard, wiring };
 }
@@ -1635,6 +1823,8 @@ function checkCollisions(
   projectiles: SignalProjectile[],
   level: SynthLevelConfig,
   beatFloat: number,
+  floatingTexts: FloatingText[],
+  freqMod: FrequencyModule,
 ): void {
   if (level.trackTiles.length === 0) return;
 
@@ -1648,7 +1838,19 @@ function checkCollisions(
       const pty = Math.round(p.originY + age * p.dirY);
       if (ptx === etx && pty === ety) {
         p.dead = true;
-        enemy.hit(p.amplitude);
+        const isMatch = p.frequencyBand === enemy.typeConfig.resonance;
+        const multiplier = isMatch ? 2 : 0.5;
+        enemy.hit(p.amplitude * multiplier, isMatch);
+        if (isMatch) freqMod.onHit(true);
+        floatingTexts.push({
+          tileX: etx + 0.5,
+          tileY: ety,
+          text: isMatch ? 'CANCEL ×2' : 'RESIST ×½',
+          color: isMatch ? FREQ_BAND_COLORS[p.frequencyBand] : '#667788',
+          timer: 1.0,
+          duration: 1.0,
+          offsetX: Math.random() * 0.6 - 0.3,
+        });
       }
     }
   }
@@ -1670,6 +1872,7 @@ function renderLevel(
   placement: PlacementState,
   trackSet: Set<string>,
   finishFlashTimer: number,
+  floatingTexts: FloatingText[],
 ): void {
   const W = canvas.width, H = canvas.height;
   const dpr = devicePixelRatio;
@@ -1860,6 +2063,30 @@ function renderLevel(
     }
   }
 
+  // ── Floating combat text ───────────────────────────────────────────────────
+  if (floatingTexts.length > 0) {
+    ctx.save();
+    const fontSize = Math.max(8, tileZ * 0.22);
+    ctx.font = `bold ${fontSize}px 'Pixelify Sans',sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const ft of floatingTexts) {
+      const progress = 1 - ft.timer / ft.duration;
+      const alpha = ft.timer / ft.duration;
+      const rise = progress * tileZ * 1.2;
+      const fx = (ft.tileX + ft.offsetX) * tileZ;
+      const fy = ft.tileY * tileZ - rise;
+      ctx.globalAlpha = alpha;
+      ctx.shadowColor = ft.color;
+      ctx.shadowBlur = 6 * zDpr;
+      ctx.fillStyle = ft.color;
+      ctx.fillText(ft.text, fx, fy);
+    }
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
   ctx.restore();
 }
 
@@ -2005,6 +2232,38 @@ function drawSignalWithTail(
     }
   }
 
+  // Frequency band visual cue
+  const bandColor = FREQ_BAND_COLORS[p.frequencyBand];
+  ctx.save();
+  switch (p.frequencyBand) {
+    case 'low': {
+      const pulse = 0.5 + 0.5 * Math.sin(beatFloat * Math.PI * 2);
+      const haloR = r * (2.4 + pulse * 0.6);
+      ctx.strokeStyle = hexAlpha(bandColor, 0.2 + pulse * 0.15);
+      ctx.lineWidth = Math.max(1, 1.8 * zoomDpr);
+      ctx.shadowColor = bandColor;
+      ctx.shadowBlur = 4 * zoomDpr;
+      ctx.beginPath(); ctx.arc(hpx, hpy, haloR, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'mid': {
+      ctx.strokeStyle = hexAlpha(bandColor, 0.55);
+      ctx.lineWidth = Math.max(0.8, 1.2 * zoomDpr);
+      ctx.shadowColor = bandColor;
+      ctx.shadowBlur = 3 * zoomDpr;
+      ctx.beginPath(); ctx.arc(hpx, hpy, r * 1.8, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+    case 'high': {
+      ctx.strokeStyle = hexAlpha(bandColor, 0.5);
+      ctx.lineWidth = Math.max(0.7, 1 * zoomDpr);
+      ctx.shadowColor = bandColor;
+      ctx.shadowBlur = 3 * zoomDpr;
+      ctx.beginPath(); ctx.arc(hpx, hpy, r * 1.4, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(hpx, hpy, r * 1.85, 0, Math.PI * 2); ctx.stroke();
+      break;
+    }
+  }
   ctx.restore();
 }
 
