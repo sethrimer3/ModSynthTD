@@ -28,8 +28,11 @@ const MAX_BASE_HP = 10;
 interface SynthSignal {
   waveform: Waveform;
   amplitude: number;
-  periodBeats: number;
-  phaseBeats: number;
+  /** How many 1/16-note subdivisions between triggers (1=16th,2=8th,4=4th,8=half,16=whole). */
+  triggerEverySubdivs: 1 | 2 | 4 | 8 | 16;
+  phaseSubdivs: number;
+  /** Visual cycle length for sine/square animation only — not related to trigger rate. */
+  waveCycleBeats: number;
   color: string;
   directions: SignalDirection[];
   frequencyBand: FrequencyBand;
@@ -42,8 +45,8 @@ interface EvaluatedRoute {
   hasDelay: boolean;
 }
 
-interface ScheduledEcho {
-  dueBeat: number;
+interface ScheduledSignal {
+  dueSubdiv: number;
   signals: SynthSignal[];
 }
 
@@ -70,7 +73,7 @@ interface SignalProjectile {
   dirX: number;
   dirY: number;
   waveform: Waveform;
-  periodBeats: number;
+  waveCycleBeats: number;
   amplitude: number;
   color: string;
   frequencyBand: FrequencyBand;
@@ -97,25 +100,24 @@ interface PlacementState {
 class SynthChannel {
   id: number;
   waveform: Waveform;
-  periodBeats: number;
+  /** Visual cycle length for sine/square animation — independent of trigger rate. */
+  waveCycleBeats: number;
   amplitude: number;
-  phaseBeats: number;
   readonly color: string;
 
   constructor(id: number) {
     this.id = id;
     this.color = CHANNEL_COLORS[(id - 1) % CHANNEL_COLORS.length];
     this.waveform = 'pulse';
-    this.periodBeats = 1;
+    this.waveCycleBeats = 1;
     this.amplitude = 1;
-    this.phaseBeats = 0;
   }
 
   setWaveform(w: Waveform): void {
     this.waveform = w;
-    if (w === 'pulse') this.periodBeats = 1;
-    else if (w === 'square') this.periodBeats = 4;
-    else if (w === 'sine') this.periodBeats = 4;
+    if (w === 'pulse') this.waveCycleBeats = 1;
+    else if (w === 'square') this.waveCycleBeats = 4;
+    else if (w === 'sine') this.waveCycleBeats = 4;
   }
 }
 
@@ -155,10 +157,34 @@ class FrequencyModule {
   }
 }
 
+// ── ClockModule ────────────────────────────────────────────────────────────
+
+class ClockModule {
+  rate: 1 | 2 | 4 | 8 | 16 = 4;
+  phaseSubdivs = 0;
+  flashTimer = 0;
+
+  update(dt: number): void {
+    if (this.flashTimer > 0) this.flashTimer = Math.max(0, this.flashTimer - dt);
+  }
+
+  onTrigger(): void { this.flashTimer = 0.12; }
+
+  advancePhase(): void {
+    this.phaseSubdivs = (this.phaseSubdivs + 1) % this.rate;
+  }
+
+  get rateLabel(): string {
+    const map: Record<number, string> = { 1: '1/16', 2: '1/8', 4: '1/4', 8: '1/2', 16: '1/1' };
+    return map[this.rate] ?? '1/4';
+  }
+}
+
 // ── DelayModule ────────────────────────────────────────────────────────────
 
 class DelayModule {
   delayBeats: 1 | 2 | 4 = 2;
+  get delaySubdivs(): number { return this.delayBeats * 4; }
   readonly echoAmplitude = 0.5;
   receiveFlashTimer = 0;
   sendFlashTimer = 0;
@@ -175,16 +201,16 @@ class DelayModule {
 // ── SignalScheduler ────────────────────────────────────────────────────────
 
 class SignalScheduler {
-  readonly queue: ScheduledEcho[] = [];
+  readonly queue: ScheduledSignal[] = [];
 
-  schedule(dueBeat: number, signals: SynthSignal[]): void {
-    this.queue.push({ dueBeat, signals: signals.map(s => ({ ...s })) });
+  schedule(dueSubdiv: number, signals: SynthSignal[]): void {
+    this.queue.push({ dueSubdiv, signals: signals.map(s => ({ ...s })) });
   }
 
-  releaseAt(beat: number): SynthSignal[] {
+  releaseAt(subdivIdx: number): SynthSignal[] {
     const out: SynthSignal[] = [];
     for (let i = this.queue.length - 1; i >= 0; i--) {
-      if (beat >= this.queue[i].dueBeat) {
+      if (subdivIdx >= this.queue[i].dueSubdiv) {
         out.push(...this.queue[i].signals);
         this.queue.splice(i, 1);
       }
@@ -202,7 +228,6 @@ class OutputTower {
   tileY: number;
   orientation: TowerOrientation = 'north';
   selected = false;
-  private lastCheckedBeat = -1;
 
   constructor(tileX = 8, tileY = 4) {
     this.tileX = tileX;
@@ -214,23 +239,22 @@ class OutputTower {
     this.orientation = seq[(seq.indexOf(this.orientation) + 1) % 4];
   }
 
-  update(beat: number, signals: SynthSignal[], projectiles: SignalProjectile[]): boolean {
-    if (beat <= this.lastCheckedBeat) return false;
-    this.lastCheckedBeat = beat;
+  /** Called once per subdivision. Returns true if any projectile was fired. */
+  processSubdiv(subdivIdx: number, signals: SynthSignal[], projectiles: SignalProjectile[]): boolean {
     if (signals.length === 0) return false;
-
     let fired = false;
     for (const sig of signals) {
-      if (!signalShouldFireOnBeat(sig, beat)) continue;
+      const offset = ((subdivIdx - sig.phaseSubdivs) % sig.triggerEverySubdivs + sig.triggerEverySubdivs) % sig.triggerEverySubdivs;
+      if (offset !== 0) continue;
       for (const relDir of sig.directions) {
         const [dx, dy] = orientedDirToVector(relDir, this.orientation);
         projectiles.push({
-          spawnBeat: beat,
+          spawnBeat: subdivIdx / 4,
           originX: this.tileX,
           originY: this.tileY,
           dirX: dx, dirY: dy,
           waveform: sig.waveform,
-          periodBeats: sig.periodBeats,
+          waveCycleBeats: sig.waveCycleBeats,
           amplitude: sig.amplitude,
           color: sig.color,
           frequencyBand: sig.frequencyBand,
@@ -242,17 +266,18 @@ class OutputTower {
     return fired;
   }
 
-  spawnEchoes(signals: SynthSignal[], beat: number, projectiles: SignalProjectile[]): void {
+  /** Unconditionally spawn signals (used for delay echoes). */
+  spawnSignals(signals: SynthSignal[], subdivIdx: number, projectiles: SignalProjectile[]): void {
     for (const sig of signals) {
       for (const relDir of sig.directions) {
         const [dx, dy] = orientedDirToVector(relDir, this.orientation);
         projectiles.push({
-          spawnBeat: beat,
+          spawnBeat: subdivIdx / 4,
           originX: this.tileX,
           originY: this.tileY,
           dirX: dx, dirY: dy,
           waveform: sig.waveform,
-          periodBeats: sig.periodBeats,
+          waveCycleBeats: sig.waveCycleBeats,
           amplitude: sig.amplitude,
           color: sig.color,
           frequencyBand: sig.frequencyBand,
@@ -282,19 +307,9 @@ function orientedDirToVector(relDir: SignalDirection, orientation: TowerOrientat
   }
 }
 
-function signalShouldFireOnBeat(sig: SynthSignal, beat: number): boolean {
-  const p = sig.periodBeats;
-  const beatInCycle = ((beat - sig.phaseBeats) % p + p) % p;
-  switch (sig.waveform) {
-    case 'pulse':  return beatInCycle === 0;
-    case 'square': return beatInCycle < p / 2;
-    case 'sine':   return true;
-  }
-}
-
 function signalIsHighAt(sig: SynthSignal, beatFloat: number): boolean {
-  const p = sig.periodBeats;
-  const phase = ((beatFloat - sig.phaseBeats) % p + p) % p;
+  const p = sig.waveCycleBeats;
+  const phase = (beatFloat % p + p) % p;
   return sig.waveform !== 'square' || phase < p / 2;
 }
 
@@ -302,6 +317,7 @@ function evaluateSignalGraph(
   connections: readonly RackWireConnection[],
   channel: SynthChannel,
   freqMod: FrequencyModule,
+  clockMod: ClockModule,
 ): EvaluatedRoute {
   const EMPTY: EvaluatedRoute = { signals: [], routeLabel: 'NO SIGNAL', activeModules: new Set(), hasDelay: false };
 
@@ -310,8 +326,9 @@ function evaluateSignalGraph(
 
   let waveform: Waveform = 'pulse';
   let amplitude = 1;
-  let periodBeats = 1;
-  let phaseBeats = 0;
+  let triggerEverySubdivs: 1 | 2 | 4 | 8 | 16 = 4;  // default quarter note
+  let phaseSubdivs = 0;
+  let waveCycleBeats = 1;
   let frequencyBand: FrequencyBand = 'mid';
   let hasDelay = false;
   let hasSplit = false;
@@ -320,7 +337,7 @@ function evaluateSignalGraph(
   let cursor = 'ch1-out';
   const visited = new Set<string>();
 
-  for (let hop = 0; hop < 12; hop++) {
+  for (let hop = 0; hop < 14; hop++) {
     visited.add(cursor);
     const next = connMap.get(cursor);
     if (!next || visited.has(next)) return EMPTY;
@@ -332,7 +349,7 @@ function evaluateSignalGraph(
       const amp = hasSplit ? amplitude / 2 : amplitude;
       const dirs: SignalDirection[] = hasSplit ? ['north', 'south'] : ['north'];
       return {
-        signals: [{ waveform, amplitude: amp, periodBeats, phaseBeats, color: channel.color, frequencyBand, directions: dirs }],
+        signals: [{ waveform, amplitude: amp, triggerEverySubdivs, phaseSubdivs, waveCycleBeats, color: channel.color, frequencyBand, directions: dirs }],
         routeLabel: pathLabels.join(' → '),
         activeModules,
         hasDelay,
@@ -340,11 +357,17 @@ function evaluateSignalGraph(
     }
 
     switch (next) {
+      case 'clock-in':
+        triggerEverySubdivs = clockMod.rate;
+        phaseSubdivs = clockMod.phaseSubdivs;
+        activeModules.add('clock');
+        pathLabels.push('CLOCK');
+        cursor = 'clock-out';
+        break;
       case 'wf-in':
         waveform = channel.waveform;
         amplitude = channel.amplitude;
-        periodBeats = channel.periodBeats;
-        phaseBeats = channel.phaseBeats;
+        waveCycleBeats = channel.waveCycleBeats;
         activeModules.add('wave');
         pathLabels.push('WAVE');
         cursor = 'wf-out';
@@ -819,8 +842,9 @@ export function enterLevel(levelId: number): void {
   // ── Rack Panel ────────────────────────────────────────────────────────────
   const channel = new SynthChannel(1);
   const freqMod = new FrequencyModule();
+  const clockMod = new ClockModule();
 
-  const { panel: rackPanel, updatePanel, updateOutputCard, wiring } = buildRackPanel(channel, freqMod, {
+  const { panel: rackPanel, updatePanel, updateOutputCard, wiring } = buildRackPanel(channel, freqMod, clockMod, {
     onEnterPlacement: () => {
       placement.active = !placement.active;
       if (!placement.active) placement.previewTile = null;
@@ -992,11 +1016,13 @@ export function enterLevel(levelId: number): void {
   const scheduler = new SignalScheduler();
   const transport = new SubdivisionTransport();
   let lastPreviewWave = -1;
+  let lastSubdivIdx = -1;
 
   audio.init().then(updateMuteBtn);
 
-  // Default patch: CH1 → WAVE → FREQ → DELAY → SPLIT → OUTPUT
-  wiring.connectPlugs('ch1-out', 'wf-in');
+  // Default patch: CH1 → CLOCK → WAVE → FREQ → DELAY → SPLIT → OUTPUT
+  wiring.connectPlugs('ch1-out', 'clock-in');
+  wiring.connectPlugs('clock-out', 'wf-in');
   wiring.connectPlugs('wf-out', 'freq-in');
   wiring.connectPlugs('freq-out', 'delay-in');
   wiring.connectPlugs('delay-out', 'split-in');
@@ -1134,6 +1160,7 @@ export function enterLevel(levelId: number): void {
 
     delayMod.update(dt);
     freqMod.update(dt);
+    clockMod.update(dt);
     finishFlashTimer = Math.max(0, finishFlashTimer - dt);
 
     // Tick floating texts
@@ -1142,25 +1169,8 @@ export function enterLevel(levelId: number): void {
       if (floatingTexts[i].timer <= 0) floatingTexts.splice(i, 1);
     }
 
-    // Signal processing (disabled when failed)
-    const route = evaluateSignalGraph(wiring.getConnections(), channel, freqMod);
-    let justFired = false;
-
-    if (runState !== 'failed') {
-      const echoSignals = scheduler.releaseAt(beat);
-      if (echoSignals.length > 0) {
-        tower.spawnEchoes(echoSignals, beat, projectiles);
-        delayMod.onSend();
-      }
-      justFired = tower.update(beat, route.signals, projectiles);
-      if (justFired && route.hasDelay) {
-        scheduler.schedule(
-          beat + delayMod.delayBeats,
-          route.signals.map(s => ({ ...s, amplitude: s.amplitude * delayMod.echoAmplitude })),
-        );
-        delayMod.onReceive();
-      }
-    }
+    const route = evaluateSignalGraph(wiring.getConnections(), channel, freqMod, clockMod);
+    let firedThisFrame = false;
 
     // ── Subdivision transport ──────────────────────────────────────────────
     const secsPerSubdiv = 60 / level.bpm / 4;
@@ -1168,6 +1178,8 @@ export function enterLevel(levelId: number): void {
     const subdivEvents = transport.tick(beatFloat, audioCtxTime, secsPerSubdiv);
 
     for (const { subdivIdx, audioTime } of subdivEvents) {
+      lastSubdivIdx = subdivIdx;
+
       // Count-in → wave transition at the scheduled downbeat.
       if (runState === 'countin' && subdivIdx >= waveStartSubdiv) {
         runState = 'wave';
@@ -1192,6 +1204,30 @@ export function enterLevel(levelId: number): void {
               scheduler.clear();
               projectiles.length = 0;
             }
+          }
+        }
+      }
+
+      // Signal firing (subdivision-accurate, disabled when failed)
+      if (runState !== 'failed') {
+        // Release delayed echoes scheduled for this subdivision
+        const echoSignals = scheduler.releaseAt(subdivIdx);
+        if (echoSignals.length > 0) {
+          tower.spawnSignals(echoSignals, subdivIdx, projectiles);
+          delayMod.onSend();
+        }
+
+        // Fire direct signals
+        const fired = tower.processSubdiv(subdivIdx, route.signals, projectiles);
+        if (fired) {
+          firedThisFrame = true;
+          clockMod.onTrigger();
+          if (route.hasDelay) {
+            scheduler.schedule(
+              subdivIdx + delayMod.delaySubdivs,
+              route.signals.map(s => ({ ...s, amplitude: s.amplitude * delayMod.echoAmplitude })),
+            );
+            delayMod.onReceive();
           }
         }
       }
@@ -1227,7 +1263,7 @@ export function enterLevel(levelId: number): void {
 
     beatDisplay.textContent = `beat ${beat}`;
     updateHud();
-    updatePanel(dt, route, justFired, delayMod, scheduler, freqMod);
+    updatePanel(dt, route, firedThisFrame, delayMod, scheduler, freqMod, clockMod, lastSubdivIdx);
     updateOutputCard(tower, placement.active);
     wiring.update(now);
 
@@ -1336,10 +1372,11 @@ function buildModuleCard(
 function buildRackPanel(
   channel: SynthChannel,
   freqModArg: FrequencyModule,
+  clockModArg: ClockModule,
   towerCallbacks: { onEnterPlacement: () => void; onRotate: () => void },
 ): {
   panel: HTMLElement;
-  updatePanel: (dt: number, route: EvaluatedRoute, justFired: boolean, delayMod: DelayModule, scheduler: SignalScheduler, freqMod: FrequencyModule) => void;
+  updatePanel: (dt: number, route: EvaluatedRoute, firedThisFrame: boolean, delayMod: DelayModule, scheduler: SignalScheduler, freqMod: FrequencyModule, clockMod: ClockModule, currentSubdivIdx: number) => void;
   updateOutputCard: (tower: OutputTower, placementActive: boolean) => void;
   wiring: RackWiringHandle;
 } {
@@ -1415,6 +1452,106 @@ function buildRackPanel(
     },
   }, wiring);
   modulesRow.append(ch1Card);
+
+  // ── CLOCK card ─────────────────────────────────────────────────────────────
+  const clockRates: Array<1 | 2 | 4 | 8 | 16> = [1, 2, 4, 8, 16];
+  const clockRateLabels: Record<number, string> = { 1: '1/16', 2: '1/8', 4: '1/4', 8: '1/2', 16: '1/1' };
+  const clockBtnMap = new Map<number, HTMLButtonElement>();
+  let clockSubdivDotsEls: HTMLElement[] = [];
+  let clockInfoEl: HTMLElement;
+
+  const refreshClockButtons = () => {
+    for (const r of clockRates) {
+      const btn = clockBtnMap.get(r);
+      if (!btn) continue;
+      const active = clockModArg.rate === r;
+      if (active) {
+        btn.style.background = '#33dd8822';
+        btn.style.border = '1.5px solid #33dd88';
+        btn.style.color = '#33dd88';
+        btn.style.boxShadow = '0 0 8px #33dd8855';
+      } else {
+        btn.style.background = '#0a1020';
+        btn.style.border = '1.5px solid #1e2e48';
+        btn.style.color = '#334466';
+        btn.style.boxShadow = '';
+      }
+    }
+    if (clockInfoEl) {
+      clockInfoEl.textContent = `${clockModArg.rateLabel}  φ${clockModArg.phaseSubdivs}`;
+    }
+  };
+
+  const { card: clockCard } = buildModuleCard({
+    title: 'CLOCK',
+    titleColor: '#33dd88',
+    inputPlugId: 'clock-in',
+    inputPlugType: 'clockIn',
+    outputPlugId: 'clock-out',
+    outputPlugType: 'clockOut',
+    buildContent: (card) => {
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = `display:flex;gap:0.15rem;justify-content:center;flex-wrap:wrap;`;
+      for (const r of clockRates) {
+        const btn = document.createElement('button');
+        btn.textContent = clockRateLabels[r];
+        btn.style.cssText = `
+          font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
+          font-size:0.46rem;font-weight:800;letter-spacing:0.03em;
+          padding:0.12rem 0.22rem;border-radius:4px;cursor:pointer;
+          transition:background 0.1s,border-color 0.1s,color 0.1s,box-shadow 0.1s;
+        `;
+        clockBtnMap.set(r, btn);
+        btn.addEventListener('click', () => {
+          clockModArg.rate = r;
+          clockModArg.phaseSubdivs = 0;
+          refreshClockButtons();
+        });
+        btnRow.append(btn);
+      }
+
+      const phaseRow = document.createElement('div');
+      phaseRow.style.cssText = `display:flex;align-items:center;justify-content:space-between;gap:0.3rem;margin-top:0.18rem;`;
+
+      clockInfoEl = document.createElement('div');
+      clockInfoEl.style.cssText = `color:#33dd8899;font-size:0.5rem;letter-spacing:0.05em;flex:1;text-align:center;`;
+
+      const phaseBtn = document.createElement('button');
+      phaseBtn.textContent = 'φ+';
+      phaseBtn.title = 'Advance phase by one subdivision';
+      phaseBtn.style.cssText = `
+        font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
+        font-size:0.46rem;font-weight:800;letter-spacing:0.04em;
+        padding:0.1rem 0.22rem;border-radius:4px;cursor:pointer;
+        background:#0a1020;border:1.5px solid #1e2e48;color:#334466;
+        transition:background 0.1s,border-color 0.1s,color 0.1s;
+      `;
+      phaseBtn.addEventListener('click', () => {
+        clockModArg.advancePhase();
+        refreshClockButtons();
+      });
+
+      phaseRow.append(clockInfoEl, phaseBtn);
+
+      // Subdivision position indicator (4 dots = one beat)
+      const dotsRow = document.createElement('div');
+      dotsRow.style.cssText = `display:flex;gap:0.25rem;justify-content:center;margin-top:0.15rem;`;
+      clockSubdivDotsEls = [];
+      for (let i = 0; i < 4; i++) {
+        const dot = document.createElement('div');
+        dot.style.cssText = `
+          width:5px;height:5px;border-radius:50%;
+          background:#102030;border:1px solid #1e3044;
+          transition:background 0.06s,box-shadow 0.06s;
+        `;
+        clockSubdivDotsEls.push(dot);
+        dotsRow.append(dot);
+      }
+
+      card.append(btnRow, phaseRow, dotsRow);
+    },
+  }, wiring);
+  modulesRow.append(clockCard);
 
   let wfIndicatorEl: HTMLElement;
 
@@ -1647,18 +1784,20 @@ function buildRackPanel(
   }, wiring);
   modulesRow.append(outCard);
 
-  const moduleCards: Record<string, HTMLElement> = { ch1: ch1Card, wave: wfCard, freq: freqCard, delay: delayCard, split: splitCard, out: outCard };
+  const moduleCards: Record<string, HTMLElement> = { ch1: ch1Card, clock: clockCard, wave: wfCard, freq: freqCard, delay: delayCard, split: splitCard, out: outCard };
   const flashTimers: Record<string, number> = { ch1: 0, wave: 0, freq: 0, delay: 0, split: 0, out: 0 };
 
   refreshButtons();
   refreshFreqButtons();
+  refreshClockButtons();
 
-  const updatePanel = (dt: number, route: EvaluatedRoute, justFired: boolean, delayMod: DelayModule, scheduler: SignalScheduler, freqMod: FrequencyModule) => {
+  const updatePanel = (dt: number, route: EvaluatedRoute, firedThisFrame: boolean, delayMod: DelayModule, scheduler: SignalScheduler, freqMod: FrequencyModule, clockMod: ClockModule, currentSubdivIdx: number) => {
     _delayModRef = delayMod;
     refreshDelayButtons();
     refreshFreqButtons();
-    ch1PeriodEl.textContent = `${channel.periodBeats}♩`;
-    ch1PhaseEl.textContent = `φ ${channel.phaseBeats}`;
+    refreshClockButtons();
+    ch1PeriodEl.textContent = `AMP ${channel.amplitude.toFixed(1)}`;
+    ch1PhaseEl.textContent = '';
 
     if (wfIndicatorEl) wfIndicatorEl.textContent = channel.waveform.toUpperCase();
 
@@ -1671,7 +1810,7 @@ function buildRackPanel(
 
     for (const key of Object.keys(flashTimers)) {
       if (key === 'delay' || key === 'freq') continue;
-      if (justFired && route.activeModules.has(key)) {
+      if (firedThisFrame && route.activeModules.has(key)) {
         flashTimers[key] = 0.35;
       } else {
         flashTimers[key] = Math.max(0, flashTimers[key] - dt);
@@ -1680,6 +1819,26 @@ function buildRackPanel(
       const fc = MODULE_FLASH_COLORS[key] ?? '#ffffff';
       moduleCards[key].style.borderColor = flashing ? fc : '#1a2a44';
       moduleCards[key].style.boxShadow = flashing ? `0 0 10px ${fc}55` : '';
+    }
+
+    // CLOCK card flash + subdiv indicator
+    {
+      const clocking = clockMod.flashTimer > 0;
+      if (clocking) {
+        clockCard.style.borderColor = '#33dd88';
+        clockCard.style.boxShadow = '0 0 14px #33dd8899';
+      } else {
+        clockCard.style.borderColor = route.activeModules.has('clock') ? '#33dd8833' : '#1a2a44';
+        clockCard.style.boxShadow = '';
+      }
+      // Subdiv position dots (4 per beat, show beat-local position)
+      const beatPos = ((currentSubdivIdx % 4) + 4) % 4;
+      for (let i = 0; i < clockSubdivDotsEls.length; i++) {
+        const active = route.activeModules.has('clock') && i === beatPos;
+        clockSubdivDotsEls[i].style.background = active ? '#33dd88' : '#102030';
+        clockSubdivDotsEls[i].style.boxShadow = active ? '0 0 5px #33dd8888' : '';
+        clockSubdivDotsEls[i].style.borderColor = active ? '#33dd88' : '#1e3044';
+      }
     }
 
     // FREQ card flash — driven by freqMod.flashTimer
@@ -1748,7 +1907,8 @@ function buildRackPanel(
   const _emptyDelay = new DelayModule();
   const _emptyScheduler = new SignalScheduler();
   const _emptyFreq = new FrequencyModule();
-  updatePanel(0, { signals: [], routeLabel: 'NO SIGNAL', activeModules: new Set(), hasDelay: false }, false, _emptyDelay, _emptyScheduler, _emptyFreq);
+  const _emptyClock = new ClockModule();
+  updatePanel(0, { signals: [], routeLabel: 'NO SIGNAL', activeModules: new Set(), hasDelay: false }, false, _emptyDelay, _emptyScheduler, _emptyFreq, _emptyClock, -1);
 
   return { panel, updatePanel, updateOutputCard, wiring };
 }
@@ -2105,7 +2265,7 @@ function signalVizPos(p: SignalProjectile, age: number): { x: number; y: number 
 
   if (p.waveform === 'sine') {
     const perpX = -p.dirY, perpY = p.dirX;
-    const sineOff = Math.sin(age / p.periodBeats * Math.PI * 2) * 0.38;
+    const sineOff = Math.sin(age / p.waveCycleBeats * Math.PI * 2) * 0.38;
     vx += perpX * sineOff;
     vy += perpY * sineOff;
   }

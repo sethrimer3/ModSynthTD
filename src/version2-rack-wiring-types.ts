@@ -8,21 +8,24 @@ import type { SoftWireData } from './version2-soft-wire';
 
 export type RackPlugType =
   | 'channelOut'
-  | 'waveformIn'
-  | 'waveformOut'
-  | 'frequencyIn'
-  | 'frequencyOut'
-  | 'delayIn'
-  | 'delayOut'
-  | 'splitterIn'
-  | 'splitterOut'
+  | 'clockIn'    | 'clockOut'
+  | 'waveformIn' | 'waveformOut'
+  | 'frequencyIn'| 'frequencyOut'
+  | 'delayIn'    | 'delayOut'
+  | 'splitterIn' | 'splitterOut'
   | 'outputIn';
 
 // ── Compatibility ─────────────────────────────────────────────────────────────
 
 export function isRackCompatible(from: RackPlugType, to: RackPlugType): boolean {
+  if (from === 'channelOut'    && to === 'clockIn')      return true;
   if (from === 'channelOut'    && to === 'waveformIn')   return true;
   if (from === 'channelOut'    && to === 'outputIn')     return true;
+  if (from === 'clockOut'      && to === 'waveformIn')   return true;
+  if (from === 'clockOut'      && to === 'frequencyIn')  return true;
+  if (from === 'clockOut'      && to === 'delayIn')      return true;
+  if (from === 'clockOut'      && to === 'splitterIn')   return true;
+  if (from === 'clockOut'      && to === 'outputIn')     return true;
   if (from === 'waveformOut'   && to === 'frequencyIn')  return true;
   if (from === 'waveformOut'   && to === 'delayIn')      return true;
   if (from === 'waveformOut'   && to === 'splitterIn')   return true;
@@ -38,7 +41,8 @@ export function isRackCompatible(from: RackPlugType, to: RackPlugType): boolean 
 }
 
 export function isRackOutputPlug(type: RackPlugType): boolean {
-  return type === 'channelOut' || type === 'waveformOut' || type === 'frequencyOut'
+  return type === 'channelOut' || type === 'clockOut'
+      || type === 'waveformOut' || type === 'frequencyOut'
       || type === 'delayOut'   || type === 'splitterOut';
 }
 
@@ -49,6 +53,7 @@ export function rackMaxIncoming(_type: RackPlugType): number { return 1; }
 
 export function rackWireColor(from: RackPlugType): string {
   if (from === 'channelOut')   return '#00ffee';
+  if (from === 'clockOut')     return '#33dd88';
   if (from === 'waveformOut')  return '#cc44ff';
   if (from === 'frequencyOut') return '#88aacc';
   if (from === 'delayOut')     return '#44aaff';
@@ -57,6 +62,7 @@ export function rackWireColor(from: RackPlugType): string {
 }
 
 export function rackWireDstColor(to: RackPlugType): string {
+  if (to === 'clockIn')      return '#33dd88';
   if (to === 'waveformIn')   return '#cc44ff';
   if (to === 'frequencyIn')  return '#88aacc';
   if (to === 'delayIn')      return '#44aaff';
@@ -67,6 +73,8 @@ export function rackWireDstColor(to: RackPlugType): string {
 
 export function rackPlugColor(type: RackPlugType): string {
   if (type === 'channelOut')   return '#00ffee';
+  if (type === 'clockIn')      return '#33dd88';
+  if (type === 'clockOut')     return '#33dd88';
   if (type === 'waveformIn')   return '#cc44ff';
   if (type === 'waveformOut')  return '#cc44ff';
   if (type === 'frequencyIn')  return '#88aacc';
