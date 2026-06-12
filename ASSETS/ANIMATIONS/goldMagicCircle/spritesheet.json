@@ -1,0 +1,1936 @@
+{
+    "frames": {
+        "goldMagicCircle_frame (01).png": {
+            "frame": {
+                "x": 2,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (02).png": {
+            "frame": {
+                "x": 518,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (03).png": {
+            "frame": {
+                "x": 1034,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (04).png": {
+            "frame": {
+                "x": 1550,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (05).png": {
+            "frame": {
+                "x": 2066,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (06).png": {
+            "frame": {
+                "x": 2582,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (07).png": {
+            "frame": {
+                "x": 3098,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (08).png": {
+            "frame": {
+                "x": 3614,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (09).png": {
+            "frame": {
+                "x": 4130,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (10).png": {
+            "frame": {
+                "x": 4646,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (11).png": {
+            "frame": {
+                "x": 5162,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (12).png": {
+            "frame": {
+                "x": 5678,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (13).png": {
+            "frame": {
+                "x": 6194,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (14).png": {
+            "frame": {
+                "x": 6710,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (15).png": {
+            "frame": {
+                "x": 7226,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (16).png": {
+            "frame": {
+                "x": 7742,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (17).png": {
+            "frame": {
+                "x": 8258,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (18).png": {
+            "frame": {
+                "x": 8774,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (19).png": {
+            "frame": {
+                "x": 9290,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (20).png": {
+            "frame": {
+                "x": 9806,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (21).png": {
+            "frame": {
+                "x": 10322,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (22).png": {
+            "frame": {
+                "x": 10838,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (23).png": {
+            "frame": {
+                "x": 11354,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (24).png": {
+            "frame": {
+                "x": 11870,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (25).png": {
+            "frame": {
+                "x": 12386,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (26).png": {
+            "frame": {
+                "x": 12902,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (27).png": {
+            "frame": {
+                "x": 13418,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (28).png": {
+            "frame": {
+                "x": 13934,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (29).png": {
+            "frame": {
+                "x": 14450,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (30).png": {
+            "frame": {
+                "x": 14966,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (31).png": {
+            "frame": {
+                "x": 15482,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (32).png": {
+            "frame": {
+                "x": 15998,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (33).png": {
+            "frame": {
+                "x": 16514,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (34).png": {
+            "frame": {
+                "x": 17030,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (35).png": {
+            "frame": {
+                "x": 17546,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (36).png": {
+            "frame": {
+                "x": 18062,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (37).png": {
+            "frame": {
+                "x": 18578,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (38).png": {
+            "frame": {
+                "x": 19094,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (39).png": {
+            "frame": {
+                "x": 19610,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (40).png": {
+            "frame": {
+                "x": 20126,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (41).png": {
+            "frame": {
+                "x": 20642,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (42).png": {
+            "frame": {
+                "x": 21158,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (43).png": {
+            "frame": {
+                "x": 21674,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (44).png": {
+            "frame": {
+                "x": 22190,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (45).png": {
+            "frame": {
+                "x": 22706,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (46).png": {
+            "frame": {
+                "x": 23222,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (47).png": {
+            "frame": {
+                "x": 23738,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (48).png": {
+            "frame": {
+                "x": 24254,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (49).png": {
+            "frame": {
+                "x": 24770,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (50).png": {
+            "frame": {
+                "x": 25286,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (51).png": {
+            "frame": {
+                "x": 25802,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (52).png": {
+            "frame": {
+                "x": 26318,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (53).png": {
+            "frame": {
+                "x": 26834,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (54).png": {
+            "frame": {
+                "x": 27350,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (55).png": {
+            "frame": {
+                "x": 27866,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (56).png": {
+            "frame": {
+                "x": 28382,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (57).png": {
+            "frame": {
+                "x": 28898,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (58).png": {
+            "frame": {
+                "x": 29414,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (59).png": {
+            "frame": {
+                "x": 29930,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (60).png": {
+            "frame": {
+                "x": 30446,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (61).png": {
+            "frame": {
+                "x": 30962,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (62).png": {
+            "frame": {
+                "x": 31478,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (63).png": {
+            "frame": {
+                "x": 31994,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (64).png": {
+            "frame": {
+                "x": 32510,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (65).png": {
+            "frame": {
+                "x": 33026,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (66).png": {
+            "frame": {
+                "x": 33542,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (67).png": {
+            "frame": {
+                "x": 34058,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (68).png": {
+            "frame": {
+                "x": 34574,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (69).png": {
+            "frame": {
+                "x": 35090,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (70).png": {
+            "frame": {
+                "x": 35606,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (71).png": {
+            "frame": {
+                "x": 36122,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (72).png": {
+            "frame": {
+                "x": 36638,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (73).png": {
+            "frame": {
+                "x": 37154,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (74).png": {
+            "frame": {
+                "x": 37670,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (75).png": {
+            "frame": {
+                "x": 38186,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (76).png": {
+            "frame": {
+                "x": 38702,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (77).png": {
+            "frame": {
+                "x": 39218,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (78).png": {
+            "frame": {
+                "x": 39734,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (79).png": {
+            "frame": {
+                "x": 40250,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (80).png": {
+            "frame": {
+                "x": 40766,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (81).png": {
+            "frame": {
+                "x": 41282,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (82).png": {
+            "frame": {
+                "x": 41798,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (83).png": {
+            "frame": {
+                "x": 42314,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (84).png": {
+            "frame": {
+                "x": 42830,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (85).png": {
+            "frame": {
+                "x": 43346,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (86).png": {
+            "frame": {
+                "x": 43862,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (87).png": {
+            "frame": {
+                "x": 44378,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (88).png": {
+            "frame": {
+                "x": 44894,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (89).png": {
+            "frame": {
+                "x": 45410,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (90).png": {
+            "frame": {
+                "x": 45926,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (91).png": {
+            "frame": {
+                "x": 46442,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (92).png": {
+            "frame": {
+                "x": 46958,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (93).png": {
+            "frame": {
+                "x": 47474,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (94).png": {
+            "frame": {
+                "x": 47990,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (95).png": {
+            "frame": {
+                "x": 48506,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldMagicCircle_frame (96).png": {
+            "frame": {
+                "x": 49022,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        }
+    },
+    "meta": {
+        "app": "https://www.codeandweb.com/texturepacker",
+        "version": "1.0",
+        "image": "spritesheet.png",
+        "format": "RGBA8888",
+        "size": {
+            "w": 49536,
+            "h": 516
+        },
+        "scale": "1",
+        "comment": "Created with TexturePacker Online (free version)\nhttps://www.codeandweb.com/texturepacker-online\n\nTexturePacker desktop offers better support for Pixi and Phaser with sprite trimming, better packing algorithms, hardware texture compression, and PNG optimization.\nTry TexturePacker desktop: https://www.codeandweb.com/texturepacker"
+    }
+}

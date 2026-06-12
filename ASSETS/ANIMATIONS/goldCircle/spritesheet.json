@@ -1,0 +1,636 @@
+{
+    "frames": {
+        "goldCircle_frame (01).png": {
+            "frame": {
+                "x": 2,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (02).png": {
+            "frame": {
+                "x": 518,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (03).png": {
+            "frame": {
+                "x": 1034,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (04).png": {
+            "frame": {
+                "x": 1550,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (05).png": {
+            "frame": {
+                "x": 2066,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (06).png": {
+            "frame": {
+                "x": 2582,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (07).png": {
+            "frame": {
+                "x": 3098,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (08).png": {
+            "frame": {
+                "x": 3614,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (09).png": {
+            "frame": {
+                "x": 4130,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (10).png": {
+            "frame": {
+                "x": 4646,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (11).png": {
+            "frame": {
+                "x": 5162,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (12).png": {
+            "frame": {
+                "x": 5678,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (13).png": {
+            "frame": {
+                "x": 6194,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (14).png": {
+            "frame": {
+                "x": 6710,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (15).png": {
+            "frame": {
+                "x": 7226,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (16).png": {
+            "frame": {
+                "x": 7742,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (17).png": {
+            "frame": {
+                "x": 8258,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (18).png": {
+            "frame": {
+                "x": 8774,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (19).png": {
+            "frame": {
+                "x": 9290,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (20).png": {
+            "frame": {
+                "x": 9806,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (21).png": {
+            "frame": {
+                "x": 10322,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (22).png": {
+            "frame": {
+                "x": 10838,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (23).png": {
+            "frame": {
+                "x": 11354,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (24).png": {
+            "frame": {
+                "x": 11870,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (25).png": {
+            "frame": {
+                "x": 12386,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (26).png": {
+            "frame": {
+                "x": 12902,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (27).png": {
+            "frame": {
+                "x": 13418,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (28).png": {
+            "frame": {
+                "x": 13934,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (29).png": {
+            "frame": {
+                "x": 14450,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (30).png": {
+            "frame": {
+                "x": 14966,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        },
+        "goldCircle_frame (31).png": {
+            "frame": {
+                "x": 15482,
+                "y": 2,
+                "w": 512,
+                "h": 512
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 512,
+                "h": 512
+            },
+            "sourceSize": {
+                "w": 512,
+                "h": 512
+            }
+        }
+    },
+    "meta": {
+        "app": "https://www.codeandweb.com/texturepacker",
+        "version": "1.0",
+        "image": "spritesheet.png",
+        "format": "RGBA8888",
+        "size": {
+            "w": 15996,
+            "h": 516
+        },
+        "scale": "1",
+        "comment": "Created with TexturePacker Online (free version)\nhttps://www.codeandweb.com/texturepacker-online\n\nTexturePacker desktop offers better support for Pixi and Phaser with sprite trimming, better packing algorithms, hardware texture compression, and PNG optimization.\nTry TexturePacker desktop: https://www.codeandweb.com/texturepacker"
+    }
+}

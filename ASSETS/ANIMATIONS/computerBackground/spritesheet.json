@@ -1,0 +1,1196 @@
+{
+    "frames": {
+        "computerBackground_00000.png": {
+            "frame": {
+                "x": 2,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00001.png": {
+            "frame": {
+                "x": 726,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00002.png": {
+            "frame": {
+                "x": 1450,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00003.png": {
+            "frame": {
+                "x": 2174,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00004.png": {
+            "frame": {
+                "x": 2898,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00005.png": {
+            "frame": {
+                "x": 3622,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00006.png": {
+            "frame": {
+                "x": 4346,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00007.png": {
+            "frame": {
+                "x": 5070,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00008.png": {
+            "frame": {
+                "x": 5794,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00009.png": {
+            "frame": {
+                "x": 6518,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00010.png": {
+            "frame": {
+                "x": 7242,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00011.png": {
+            "frame": {
+                "x": 7966,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00012.png": {
+            "frame": {
+                "x": 8690,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00013.png": {
+            "frame": {
+                "x": 9414,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00014.png": {
+            "frame": {
+                "x": 10138,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00015.png": {
+            "frame": {
+                "x": 10862,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00016.png": {
+            "frame": {
+                "x": 11586,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00017.png": {
+            "frame": {
+                "x": 12310,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00018.png": {
+            "frame": {
+                "x": 13034,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00019.png": {
+            "frame": {
+                "x": 13758,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00020.png": {
+            "frame": {
+                "x": 14482,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00021.png": {
+            "frame": {
+                "x": 15206,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00022.png": {
+            "frame": {
+                "x": 15930,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00023.png": {
+            "frame": {
+                "x": 16654,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00024.png": {
+            "frame": {
+                "x": 17378,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00025.png": {
+            "frame": {
+                "x": 18102,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00026.png": {
+            "frame": {
+                "x": 18826,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00027.png": {
+            "frame": {
+                "x": 19550,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00028.png": {
+            "frame": {
+                "x": 20274,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00029.png": {
+            "frame": {
+                "x": 20998,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00030.png": {
+            "frame": {
+                "x": 21722,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00031.png": {
+            "frame": {
+                "x": 22446,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00032.png": {
+            "frame": {
+                "x": 23170,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00033.png": {
+            "frame": {
+                "x": 23894,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00034.png": {
+            "frame": {
+                "x": 24618,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00035.png": {
+            "frame": {
+                "x": 25342,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00036.png": {
+            "frame": {
+                "x": 26066,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00037.png": {
+            "frame": {
+                "x": 26790,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00038.png": {
+            "frame": {
+                "x": 27514,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00039.png": {
+            "frame": {
+                "x": 28238,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00040.png": {
+            "frame": {
+                "x": 28962,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00041.png": {
+            "frame": {
+                "x": 29686,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00042.png": {
+            "frame": {
+                "x": 30410,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00043.png": {
+            "frame": {
+                "x": 31134,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00044.png": {
+            "frame": {
+                "x": 31858,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00045.png": {
+            "frame": {
+                "x": 32582,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00046.png": {
+            "frame": {
+                "x": 33306,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00047.png": {
+            "frame": {
+                "x": 34030,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00048.png": {
+            "frame": {
+                "x": 34754,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00049.png": {
+            "frame": {
+                "x": 35478,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00050.png": {
+            "frame": {
+                "x": 36202,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00051.png": {
+            "frame": {
+                "x": 36926,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00052.png": {
+            "frame": {
+                "x": 37650,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00053.png": {
+            "frame": {
+                "x": 38374,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00054.png": {
+            "frame": {
+                "x": 39098,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00055.png": {
+            "frame": {
+                "x": 39822,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00056.png": {
+            "frame": {
+                "x": 40546,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00057.png": {
+            "frame": {
+                "x": 41270,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        },
+        "computerBackground_00058.png": {
+            "frame": {
+                "x": 41994,
+                "y": 2,
+                "w": 720,
+                "h": 1280
+            },
+            "rotated": false,
+            "trimmed": false,
+            "spriteSourceSize": {
+                "x": 0,
+                "y": 0,
+                "w": 720,
+                "h": 1280
+            },
+            "sourceSize": {
+                "w": 720,
+                "h": 1280
+            }
+        }
+    },
+    "meta": {
+        "app": "https://www.codeandweb.com/texturepacker",
+        "version": "1.0",
+        "image": "spritesheet.png",
+        "format": "RGBA8888",
+        "size": {
+            "w": 42716,
+            "h": 1284
+        },
+        "scale": "1",
+        "comment": "Created with TexturePacker Online (free version)\nhttps://www.codeandweb.com/texturepacker-online\n\nTexturePacker desktop offers better support for Pixi and Phaser with sprite trimming, better packing algorithms, hardware texture compression, and PNG optimization.\nTry TexturePacker desktop: https://www.codeandweb.com/texturepacker"
+    }
+}
