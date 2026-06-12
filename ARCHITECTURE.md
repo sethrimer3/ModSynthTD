@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Working title: **Neon Mote Defense**
+Title: **ModSynth TD**
 
 This document describes the current system structure and data flow for the prototype. It should be updated whenever systems are significantly changed.
 
@@ -29,13 +29,16 @@ Commands:
 
 ## 2. Module Structure
 
-The prototype is currently a single-module design (one `game.ts` file). As complexity grows, systems should be separated into their own modules.
+The application boots directly into the V2 synth-defense implementation. V1 is preserved as legacy code and is only loaded through the legacy version screen.
 
 ```
 src/
-  main.ts         — entry point, imports game and CSS
-  game.ts         — all game systems (monolithic prototype)
-  styles.css      — all UI styles
+  main.ts                    — entry point, starts V2 directly
+  version2.ts                — current ModSynth TD game
+  version2-*.ts              — V2 audio, enemies, waves, and rack wiring
+  legacy-v1.ts               — archived V1 monolithic prototype
+  legacy-version-select.ts   — legacy version launcher
+  styles.css                 — shared UI styles
 ```
 
 Desktop runtime:
@@ -50,7 +53,7 @@ Desktop runtime:
 
 ### 3.1 Constants and Configuration
 
-All tuning values are `const` declarations at the top of `game.ts`. Structure costs, damage values, spawn rates, and radar thresholds are named constants so they can be changed without searching for magic numbers.
+V2 tuning and state live in `version2.ts` and its focused support modules. The following sections document the archived V1 implementation in `legacy-v1.ts` until the architecture guide is fully rewritten for V2.
 
 Key constants:
 - `tileSizePx` — native pixel size of one build tile (12)

@@ -2,13 +2,13 @@
 
 > **How to track implementation progress:** Items in this document marked `[x]` are implemented in the current build. Items marked `[ ]` are planned but not yet implemented. When completing a feature, change `[ ]` to `[x]` in the relevant checklist section.
 
-Working title: Neon Mote Defense
+Title: ModSynth TD
 
 This document is the main design blueprint for the project. It is intentionally written as a living plan rather than a fixed specification. The goal is to preserve the core picture of the game while leaving room for iteration, prototyping, and discovery.
 
 ## 1. High Concept
 
-Neon Mote Defense is a micro-scale idle tower defense and factory strategy game. The player builds compact bases on small planetary plots, routes resources through neon lines, conveyors, pipes, and modules, and defends a fragile core from enemies that eventually attack from every direction.
+ModSynth TD is a micro-scale idle tower defense and factory strategy game. The player builds compact bases on small planetary plots, routes resources through neon lines, conveyors, pipes, and modules, and defends a fragile core from enemies that eventually attack from every direction.
 
 At first, the game should feel extremely simple:
 
@@ -1012,7 +1012,7 @@ Different planets can have different logistics constraints. A tight crystal plan
 
 Enemies should be procedurally animated and rendered when practical, rather than relying only on sprite sheets. The goal is for enemies to feel physically present, readable, and reactive to damage.
 
-This should follow the spirit of the Equatoria Idle fish system, where fish were built from linked circles and rendered cleanly and naturally. Tiny Base Idle can use similar procedural body systems for worms, fish, centipedes, vine creatures, crystal serpents, burrowers, and bosses.
+This should follow the spirit of the Equatoria Idle fish system, where fish were built from linked circles and rendered cleanly and naturally. ModSynth TD can use similar procedural body systems for worms, fish, centipedes, vine creatures, crystal serpents, burrowers, and bosses.
 
 Procedural enemies can be built from:
 

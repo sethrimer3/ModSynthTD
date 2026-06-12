@@ -12,7 +12,7 @@ function createMainWindow() {
     minWidth: 960,
     minHeight: 540,
     backgroundColor: '#05070d',
-    title: 'Tiny Base Idle',
+    title: 'ModSynth TD',
     icon: windowIconPath,
     webPreferences: {
       contextIsolation: true,

@@ -45,7 +45,7 @@ module.exports = {
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="theme-color" content="#05070d" />
-    <title>Tiny Base Idle</title>
+    <title>ModSynth TD</title>
   </head>
   <body>
     <div id="app"></div>

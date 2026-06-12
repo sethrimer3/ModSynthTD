@@ -516,7 +516,7 @@ export function showWorldMap(): void {
   header.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:0.3rem;`;
 
   const title = document.createElement('div');
-  title.textContent = 'Tiny Base Idle';
+  title.textContent = 'ModSynth TD';
   title.style.cssText = `
     font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
     font-size:1.6rem;font-weight:800;color:#dff6ff;
@@ -547,7 +547,7 @@ export function showWorldMap(): void {
   backBtn.addEventListener('mouseenter', () => { backBtn.style.color = '#dff6ff'; backBtn.style.borderColor = '#4a8fff'; });
   backBtn.addEventListener('mouseleave', () => { backBtn.style.color = '#5577aa'; backBtn.style.borderColor = '#2a3d65'; });
   backBtn.addEventListener('click', () => {
-    import('./versionSelect').then(m => { clearApp(); m.showVersionSelect(); });
+    import('./legacy-version-select').then(m => { clearApp(); m.showVersionSelect(); });
   });
 
   root.append(header, grid, backBtn);

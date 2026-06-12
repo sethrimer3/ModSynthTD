@@ -255,6 +255,14 @@ The global `turretFireCooldownSec` is retained to throttle the fire cadence; the
 
 ---
 
+## D-025: V2 Direct Boot and V1 Legacy Extraction
+
+**Decision**: ModSynth TD boots directly into V2. The former `game.ts` V1 implementation and version selector are preserved as `legacy-v1.ts` and `legacy-version-select.ts`.
+
+**Reason**: V2 is now the active game direction. Keeping V1 behind an explicitly legacy launcher preserves access without making players choose a version on every startup.
+
+---
+
 ## D-024: Bounded Day/Night Lighting Pass
 
 **Decision**: The day/night cycle remains exactly 3600 seconds by default. The renderer computes one `SunState` per frame, draws bounded stepped shadows from visible debris/structures/core opposite the sun direction, applies daylight/sunset/night overlays to the board, then draws local building lights clipped to radar-visible tiles.

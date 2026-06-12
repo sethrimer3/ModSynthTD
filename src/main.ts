@@ -1,4 +1,4 @@
 import './styles.css';
-import { showVersionSelect } from './versionSelect';
+import { startVersion2 } from './version2';
 
-showVersionSelect();
+startVersion2();

@@ -1,4 +1,4 @@
-import { startGame } from './game';
+import { startGame } from './legacy-v1';
 import { startVersion2 } from './version2';
 
 const PREVIEW_SIZE = 200;
@@ -96,7 +96,7 @@ export function showVersionSelect(): void {
   `;
 
   const title = document.createElement('div');
-  title.textContent = 'Tiny Base Idle';
+  title.textContent = 'ModSynth TD Legacy';
   title.style.cssText = `
     font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
     font-size:1.6rem; font-weight:800; color:#dff6ff;
@@ -104,7 +104,7 @@ export function showVersionSelect(): void {
   `;
 
   const subtitle = document.createElement('div');
-  subtitle.textContent = 'Choose a version';
+  subtitle.textContent = 'Archived game versions';
   subtitle.style.cssText = `
     font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;
     font-size:0.8rem; color:#5577aa; letter-spacing:0.12em;
