@@ -52,6 +52,8 @@ export interface RackUIOpts {
   isLive(): boolean;
   themeColor: string;
   reducedMotion(): boolean;
+  wireLayer(): 'front' | 'behind';
+  wireOpacity(): number;
   onGraphChanged(): void;
   onSellModule(instanceId: string): void;
   onBuyShelf(): void;
@@ -78,6 +80,7 @@ export interface RackUI {
   flashModule(instanceId: string): void;
   highlightRoute(moduleIds: ReadonlySet<string> | null): void;
   refreshControls(): void;
+  refreshWireDisplay(): void;
   validation(): GraphValidation;
   destroy(): void;
 }
@@ -129,7 +132,6 @@ export function createRackUI(opts: RackUIOpts): RackUI {
 
   const soft = createSoftWireRenderer(root);
   root.appendChild(soft.svgEl);
-  soft.svgEl.style.zIndex = '18';
 
   // Full-cable hit paths stay below modules; endpoint handles remain above.
   const hitSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -144,6 +146,17 @@ export function createRackUI(opts: RackUIOpts): RackUI {
   const cableViews = new Map<string, CableView>();
   const slurping: Array<{ wire: SoftWireData; ax: number; ay: number }> = [];
   const pulses: PulseDot[] = [];
+
+  function refreshWireDisplay(): void {
+    const zIndex = opts.wireLayer() === 'front' ? '30' : '18';
+    const opacity = String(opts.wireOpacity());
+    soft.svgEl.style.zIndex = zIndex;
+    soft.svgEl.style.opacity = opacity;
+    hitSvg.style.zIndex = zIndex;
+    hitSvg.style.opacity = opacity;
+    pulseSvg.style.opacity = opacity;
+  }
+  refreshWireDisplay();
 
   let traffic = new Map<string, SignalEvent[]>();
   let activity = new Map<string, number>();
@@ -1115,6 +1128,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     refreshControls() {
       for (const mv of moduleViews.values()) mv.refreshSettings();
     },
+    refreshWireDisplay,
     validation: () => cachedValidation,
     destroy() {
       root.removeEventListener('pointermove', onRootMove);

@@ -178,6 +178,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     isLive: () => runState === 'countin' || runState === 'wave',
     themeColor: world.theme.primary,
     reducedMotion: () => save.settings.reducedMotion,
+    wireLayer: () => save.settings.wireLayer,
+    wireOpacity: () => save.settings.wireOpacity,
     onGraphChanged: () => { graphDirty = true; },
     onSellModule: (id) => {
       if (runState === 'wave' || runState === 'countin') return;
@@ -713,6 +715,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       save, storage: host.storage,
       onSaveChanged: () => host.persist(),
       onRackPositionChanged: () => { layoutScene(); camera.fitScene(); applyCamera(); },
+      onWireDisplayChanged: () => rack.refreshWireDisplay(),
       onReset: () => host.exitToMap(),
     });
   }

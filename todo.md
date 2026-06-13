@@ -139,6 +139,7 @@ kept only for history.
 - [ ] Add optional advanced overlays: heat, bottlenecks, purity, threat forecast.
 - [ ] Improve build previews for multi-tile buildings and routed structures.
 - [x] Add clearer tutorial prompts for the first route, first turret, first wall, first radar, and first breach.
+- [x] Add persisted graphics controls for wire front/behind layering and wire opacity.
 - [ ] Keep all visuals readable at the native pixel scale.
 - [x] Add conveyor direction preview ghost for conveyor/extractor tool (Q to rotate tooltip visible in place).
 

@@ -16,6 +16,7 @@ export const CURRENT_SCHEMA_VERSION = 1;
 // ── Schema ──────────────────────────────────────────────────────────────────
 
 export type RackPosition = 'auto' | 'left' | 'right' | 'below';
+export type WireLayer = 'front' | 'behind';
 export type TowerOrientation = 'north' | 'east' | 'south' | 'west';
 
 export interface TowerSave {
@@ -46,6 +47,8 @@ export interface SaveSettings {
   masterVolume: number;       // 0..1
   percussionVolume: number;   // 0..1 — legacy field kept for save compat
   reducedMotion: boolean;
+  wireLayer: WireLayer;
+  wireOpacity: number;
   // Audio mixer channels (added after v1 initial release):
   beatLoopVolume: number;     // 0..1
   bgLoopVolume: number;       // 0..1
@@ -105,6 +108,8 @@ export function defaultSave(): SaveData {
       masterVolume: 0.8,
       percussionVolume: 0.7,
       reducedMotion: false,
+      wireLayer: 'front',
+      wireOpacity: 1,
       beatLoopVolume: 0.70,
       bgLoopVolume: 0.50,
       enemyNotesVolume: 0.80,
@@ -167,6 +172,8 @@ export function normalizeSave(raw: unknown): { save: SaveData; repairs: string[]
     d.settings.masterVolume = clamp01(s.masterVolume, 0.8);
     d.settings.percussionVolume = clamp01(s.percussionVolume, 0.7);
     d.settings.reducedMotion = asBool(s.reducedMotion, false);
+    d.settings.wireLayer = s.wireLayer === 'behind' ? 'behind' : 'front';
+    d.settings.wireOpacity = clamp01(s.wireOpacity, 1);
     d.settings.beatLoopVolume = clamp01(s.beatLoopVolume, 0.70);
     d.settings.bgLoopVolume = clamp01(s.bgLoopVolume, 0.50);
     d.settings.enemyNotesVolume = clamp01(s.enemyNotesVolume, 0.80);

@@ -13,6 +13,7 @@ export interface SettingsUIOpts {
   storage: SaveStorage;
   onSaveChanged(): void;
   onRackPositionChanged(): void;
+  onWireDisplayChanged(): void;
   onReset(): void;
 }
 
@@ -149,6 +150,32 @@ export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
   });
   refreshRm();
   row('Motion', rmBtn);
+
+  sectionHeader('GRAPHICS');
+  const wireLayer = document.createElement('input');
+  wireLayer.type = 'range';
+  wireLayer.min = '0'; wireLayer.max = '1'; wireLayer.step = '1';
+  wireLayer.value = opts.save.settings.wireLayer === 'front' ? '1' : '0';
+  wireLayer.style.cssText = 'width:150px;accent-color:#00ddcc;';
+  const wireLayerValue = document.createElement('span');
+  wireLayerValue.style.cssText = 'min-width:46px;font-size:0.62rem;color:#00ddcc;text-align:right;';
+  const wireLayerWrap = document.createElement('div');
+  wireLayerWrap.style.cssText = 'display:flex;align-items:center;gap:8px;';
+  wireLayerWrap.append(wireLayer, wireLayerValue);
+  const refreshWireLayer = () => { wireLayerValue.textContent = opts.save.settings.wireLayer === 'front' ? 'FRONT' : 'BEHIND'; };
+  wireLayer.addEventListener('input', () => {
+    opts.save.settings.wireLayer = wireLayer.value === '1' ? 'front' : 'behind';
+    refreshWireLayer();
+    opts.onSaveChanged();
+    opts.onWireDisplayChanged();
+  });
+  refreshWireLayer();
+  row('Wires', wireLayerWrap);
+  row('Wire opacity', slider(opts.save.settings.wireOpacity, v => {
+    opts.save.settings.wireOpacity = v;
+    opts.onSaveChanged();
+    opts.onWireDisplayChanged();
+  }));
 
   // ── Save tools ───────────────────────────────────────────────────────────────
 

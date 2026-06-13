@@ -102,6 +102,10 @@ pinch, fit-scene, soft clamping. Rack placement (Auto/Left/Right/Below) only
 repositions the rack root; module coordinates are shelf/slot-local, so changing
 side never disturbs the patch.
 
+The rack cable SVG, cable hit paths, and pulse overlay share persisted graphics
+preferences for front/behind module layering and opacity. Settings apply live
+without rebuilding the rack graph.
+
 ---
 
 ## 5. Transport & wave lifecycle

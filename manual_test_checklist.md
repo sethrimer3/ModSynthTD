@@ -290,4 +290,6 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Dragging an OUT tower silhouette places or repositions only that output's tower
 - [ ] A contributing unplaced OUT blocks wave start; an unpatched extra OUT does not
 - [ ] Different patched OUT routes fire from their own placed tower locations
+- [ ] Wire layer defaults to FRONT; the graphics slider switches wires between front of and behind modules immediately
+- [ ] Wire opacity updates cables, cable glow, drag previews, hit paths, and cable pulses immediately and persists after reload
 

@@ -61,6 +61,7 @@ export function showWorldMap(app: HTMLElement, opts: WorldMapOpts): void {
       save, storage: opts.storage,
       onSaveChanged: opts.onSaveChanged,
       onRackPositionChanged: () => undefined,
+      onWireDisplayChanged: () => undefined,
       onReset: opts.onReset,
     });
   });
