@@ -25,7 +25,7 @@ import {
 import { Camera, attachCameraControls } from './camera';
 import { Combat, TowerState, rotateTower, TILE_PX, preloadSprites } from './combat';
 import { createRackUI, RackUI, rackWidthPx, rackHeightPx } from './rack-ui';
-import { renderNotation, NotationLayout } from './notation';
+import { renderNotation, NotationLayout, NotationNoteLayout } from './notation';
 import { getAudioEngine } from './audio-engine';
 import { LevelMusicManager } from './level-music';
 import { LEVEL_AUDIO_CONFIGS } from './level-audio-assets';
@@ -277,12 +277,35 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   `;
   const notationInner = document.createElement('div');
   notationInner.style.cssText = 'position:relative;';
+  const notationLabel = document.createElement('div');
+  notationLabel.textContent = 'NEXT WAVE  ·  NOTE LENGTH = ENEMY SPEED';
+  notationLabel.style.cssText = `position:absolute;left:8px;top:2px;font-size:7px;font-weight:800;letter-spacing:0.12em;color:${world.theme.glow};opacity:0.72;z-index:4;`;
+  const notationEffects = document.createElement('div');
+  notationEffects.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:3;';
   notationWrap.appendChild(notationInner);
   const playhead = document.createElement('div');
   playhead.style.cssText = `position:absolute;top:0;bottom:0;width:2px;background:${world.theme.glow};box-shadow:0 0 8px ${world.theme.glow};display:none;pointer-events:none;`;
-  notationInner.appendChild(playhead);
+  notationInner.append(notationLabel, notationEffects, playhead);
   notationWorld.appendChild(notationWrap);
   let notation: NotationLayout | null = null;
+  let effectiveCompiled = compileScore(currentWaveScore());
+  const noteEls: HTMLDivElement[] = [];
+  const reducedMotion = () => save.settings.reducedMotion;
+
+  function rebuildNotation(score: WaveScore): void {
+    notation?.canvas.remove();
+    notation = renderNotation(score, world.theme.glow);
+    notationInner.insertBefore(notation.canvas, notationLabel);
+    noteEls.length = 0;
+    notationEffects.replaceChildren();
+    for (const note of notation.notes) {
+      const el = document.createElement('div');
+      const size = note.durationTicks >= 192 ? 13 : note.durationTicks >= 96 ? 11 : note.durationTicks <= 12 ? 6 : note.durationTicks <= 24 ? 7 : 9;
+      el.style.cssText = `position:absolute;width:${size}px;height:${size}px;border:1px solid ${note.color};border-radius:50%;background:${note.color}44;box-shadow:0 0 5px ${note.color};transform:translate(-50%,-50%);will-change:transform,opacity;`;
+      notationEffects.appendChild(el);
+      noteEls.push(el);
+    }
+  }
 
   // ── Overlays ──────────────────────────────────────────────────────────────
   const overlay = document.createElement('div');
@@ -392,9 +415,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     // Notation render — prefer MIDI score if available, fall back to authored.
     const midiScore = levelMusic?.getMidiScore(waveIndex) ?? null;
     const notationScore = midiScore ?? score;
-    if (notation) notation.canvas.remove();
-    notation = renderNotation(notationScore, world.theme.glow);
-    notationInner.insertBefore(notation.canvas, playhead);
+    effectiveCompiled = compileScore(notationScore);
+    rebuildNotation(notationScore);
   }
 
   function markGraphDirty(): void { graphDirty = true; }
@@ -435,17 +457,16 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     // Resolve the wave score: prefer MIDI-derived, fall back to authored.
     const midiScore = levelMusic?.getMidiScore(waveIndex) ?? null;
     const effectiveScore = midiScore ?? currentWaveScore();
+    effectiveCompiled = compileScore(effectiveScore);
     waveTotalTicks = effectiveScore.measures * TICKS_PER_MEASURE;
 
     // Re-render notation with the MIDI score if available.
     if (midiScore) {
-      notation?.canvas.remove();
-      notation = renderNotation(midiScore, world.theme.glow);
-      notationInner.insertBefore(notation.canvas, playhead);
+      rebuildNotation(midiScore);
     }
 
     const localEvents = rebuildSignalsForWave();
-    combat.startWave(compileScore(effectiveScore), waveStartTick);
+    combat.startWave(effectiveCompiled, waveStartTick);
     combat.setSignalEvents(localEvents.map(e => ({ ...e, tick: e.tick + waveStartTick })));
 
     // Schedule synth audio for the whole wave.
@@ -717,6 +738,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
         if (runState === 'countin' && t >= waveStartTick) runState = 'wave';
         if (runState === 'wave') {
           const outcome = combat.processTick(t);
+          for (const spawned of outcome.spawnedEvents) flashResolvedNote(spawned.spawnIndex);
           if (outcome.escapes > 0) {
             baseHp = Math.max(0, baseHp - outcome.escapes);
             if (baseHp <= 0) { onFailed(); break; }
@@ -770,6 +792,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     } else if (notation) {
       playhead.style.display = 'none';
     }
+    updateNotationEffects(tickFloat);
 
     // Render battlefield.
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -793,6 +816,46 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
     refreshHud();
     rafId = requestAnimationFrame(frame);
+  }
+
+  function flashResolvedNote(spawnIndex: number): void {
+    const el = noteEls[spawnIndex];
+    if (!el) return;
+    el.style.transition = reducedMotion() ? 'none' : 'transform 120ms,opacity 220ms';
+    el.style.transform = 'translate(-50%,-50%) scale(2.2)';
+    el.style.opacity = '0';
+  }
+
+  function updateNotationEffects(tickFloat: number): void {
+    if (!notation) return;
+    const isCountin = runState === 'countin';
+    const localTick = tickFloat - waveStartTick;
+    const introProgress = isCountin
+      ? Math.min(1, Math.max(0, (tickFloat - countinStartTick) / (activeIntroBars * TICKS_PER_MEASURE)))
+      : 1;
+    const beatPhase = ((tickFloat % PPQ) + PPQ) % PPQ / PPQ;
+    notationWrap.style.boxShadow = isCountin
+      ? `0 0 ${8 + (1 - beatPhase) * 14}px ${world.theme.primary}44`
+      : `0 0 18px ${world.theme.primary}22`;
+    for (let i = 0; i < notation.notes.length; i++) {
+      const note: NotationNoteLayout = notation.notes[i];
+      const el = noteEls[i];
+      if (!el) continue;
+      const until = note.tick - localTick;
+      if (localTick > note.tick) {
+        if (el.style.opacity !== '0') el.style.opacity = '0';
+        continue;
+      }
+      const approach = Math.max(0, Math.min(1, 1 - until / PPQ));
+      const previewOffset = isCountin && !reducedMotion() ? (1 - introProgress) * Math.min(36, 8 + note.durationTicks * 0.12) : 0;
+      const pulse = until >= 0 && until <= PPQ / 2 ? 1 + approach * 0.75 : 1;
+      el.style.transition = 'none';
+      el.style.left = `${note.x + previewOffset}px`;
+      el.style.top = `${note.y}px`;
+      el.style.opacity = `${0.3 + approach * 0.7}`;
+      el.style.transform = `translate(-50%,-50%) scale(${reducedMotion() ? 1 : pulse})`;
+      el.style.boxShadow = `0 0 ${5 + approach * 10}px ${note.color}`;
+    }
   }
 
   // ── Dev overlay (add ?dev to the URL to enable) ───────────────────────────

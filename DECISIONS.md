@@ -4,6 +4,20 @@ This document records important implementation choices, tradeoffs, and design de
 
 ---
 
+## D-035: Compiled Spawn Schedule Drives Danger Preview
+
+**Decision**: The world-anchored notation overlay and battlefield spawn
+telegraphs consume the same `CompiledScore.spawns` entries that `Combat` uses
+to create enemies. Visual effects use absolute integer ticks and do not create
+a second spawn schedule.
+
+**Reason**: Note flashes, handoff beams, telegraphs, and enemy appearances must
+resolve together for the score to function as a trustworthy danger preview.
+The notation canvas remains cached; only bounded overlay elements and combat
+effects animate per frame.
+
+---
+
 ## D-000: Square Field and Separate Meta Menu
 
 **Decision**: The local board is a 20 x 20 tile square. The HUD is overlaid inside the square playing field, and the meta currency is shown as a button that opens a separate meta upgrades menu.

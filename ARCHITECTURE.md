@@ -84,6 +84,9 @@ the renderer or an AudioContext, so it is fully unit-tested.
 Authored timing is **integer ticks** at PPQ 48 (`core/ticks.ts`). Seconds are
 derived only at the transport/audio boundary. A `WaveScore` compiles into the
 enemy spawn schedule, the notation layout, and preview audio from one source.
+The notation overlay and battlefield spawn telegraphs consume that compiled
+spawn schedule directly; their pulses, handoffs, and enemy creation share the
+same absolute spawn tick.
 
 ---
 

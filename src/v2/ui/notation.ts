@@ -8,7 +8,7 @@
  * using tickToX().
  */
 
-import { WaveScore, ScoreNote } from '../core/score';
+import { compileScore, WaveScore, ScoreNote, SpawnEvent } from '../core/score';
 import { TICKS_PER_MEASURE, QUARTER_TICKS, EIGHTH_TICKS, SIXTEENTH_TICKS } from '../core/ticks';
 import { getEnemyDef } from '../core/enemy-defs';
 import { BAND_COLORS } from './combat';
@@ -18,7 +18,14 @@ export interface NotationLayout {
   canvas: HTMLCanvasElement;
   widthPx: number;
   heightPx: number;
+  notes: NotationNoteLayout[];
   tickToX(tick: number): number;
+}
+
+export interface NotationNoteLayout extends SpawnEvent {
+  x: number;
+  y: number;
+  color: string;
 }
 
 const STAFF_LINE_GAP = 6;
@@ -164,7 +171,16 @@ export function renderNotation(score: WaveScore, themeColor: string, dprScale = 
     ctx.restore();
   }
 
-  return { canvas, widthPx, heightPx, tickToX };
+  const notes: NotationNoteLayout[] = compileScore(score).spawns.map(spawn => {
+    const def = getEnemyDef(spawn.enemyTypeId);
+    return {
+      ...spawn,
+      x: tickToX(spawn.tick),
+      y: TOP_PAD + spawn.lane * (STAFF_H + LANE_GAP) + BAND_Y[spawn.band],
+      color: def?.color ?? themeColor,
+    };
+  });
+  return { canvas, widthPx, heightPx, notes, tickToX };
 }
 
 function drawNote(ctx: CanvasRenderingContext2D, p: PlacedNote, isBeamed: boolean): void {
@@ -172,7 +188,8 @@ function drawNote(ctx: CanvasRenderingContext2D, p: PlacedNote, isBeamed: boolea
   const def = getEnemyDef(p.note.enemyTypeId);
   const hollow = d >= 96; // half, whole, crescendo
   const hasStem = d < 192;
-  const rx = 4.6, ry = 3.4;
+  const durationScale = d >= 192 ? 1.35 : d >= 96 ? 1.18 : d <= 12 ? 0.78 : d <= 24 ? 0.9 : 1;
+  const rx = 4.6 * durationScale, ry = 3.4 * durationScale;
 
   ctx.save();
   ctx.fillStyle = p.color;

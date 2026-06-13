@@ -39,6 +39,7 @@ kept only for history.
 - [x] Combat, cable pulses, and Web Audio synthesis all derive from the same
   SignalEvents; limiter + polyphony cap + autoplay-safe activation + cleanup.
 - [x] Glowing sheet-music preview with playhead synced to spawning.
+- [x] Animate next-wave notes, count-in beats, spawn handoffs, and battlefield telegraphs from the compiled spawn schedule.
 - [x] World map, shop, settings, contextual tutorials, test pulse.
 - [x] Build passing, browser-verified: enter world, run wave, clear, reward.
 

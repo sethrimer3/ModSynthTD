@@ -10,7 +10,7 @@ import { WorldDef, Tile } from '../data/worlds';
 import { CompiledScore, SpawnEvent } from '../core/score';
 import { SignalEvent, FrequencyBand, Waveform, SignalDirection } from '../core/events';
 import { EnemyDef, getEnemyDef } from '../core/enemy-defs';
-import { QUARTER_TICKS, TICKS_PER_MEASURE } from '../core/ticks';
+import { PPQ, QUARTER_TICKS, TICKS_PER_MEASURE } from '../core/ticks';
 import { Camera } from './camera';
 
 import quarterNoteUrl from '../../../ASSETS/SPRITES/ENEMIES/enemy_quarterNote.png';
@@ -242,12 +242,17 @@ interface FloatingText {
   t: number;
 }
 
+interface SpawnEffect extends SpawnEvent {
+  absTick: number;
+}
+
 // ── Combat system ───────────────────────────────────────────────────────────
 
 export interface TickOutcome {
   escapes: number;
   fired: boolean;
   spawned: number;
+  spawnedEvents: SpawnEffect[];
 }
 
 export class Combat {
@@ -259,6 +264,7 @@ export class Combat {
   private signalCursor = 0;
   private projectiles: Projectile[] = [];
   private floaters: FloatingText[] = [];
+  private spawnEffects: SpawnEffect[] = [];
   finishFlash = 0;
   private trackSets: Set<string>[];
 
@@ -274,6 +280,7 @@ export class Combat {
 
   startWave(compiled: CompiledScore, waveStartTick: number): void {
     this.pendingSpawns = compiled.spawns.map(s => ({ ...s, absTick: waveStartTick + s.tick }));
+    this.spawnEffects = [];
     this.signalCursor = 0;
   }
 
@@ -303,7 +310,7 @@ export class Combat {
   get allSpawned(): boolean { return this.pendingSpawns.length === 0; }
 
   processTick(tick: number): TickOutcome {
-    const out: TickOutcome = { escapes: 0, fired: false, spawned: 0 };
+    const out: TickOutcome = { escapes: 0, fired: false, spawned: 0, spawnedEvents: [] };
 
     // Spawning (tied pairs share an HP pool).
     let pendingTie: HpPool | null = null;
@@ -319,6 +326,9 @@ export class Combat {
         else if (s.tiedToNext) { pool = { hp: def.maxHp, maxHp: def.maxHp }; pendingTie = pool; }
       }
       this.enemies.push(new EnemyRt(s, def, lane, s.lane, s.absTick, chordPeers % 3 - 1, pool));
+      this.spawnEffects.push(s);
+      if (this.spawnEffects.length > 24) this.spawnEffects.shift();
+      out.spawnedEvents.push(s);
       out.spawned++;
     }
 
@@ -467,6 +477,18 @@ export class Combat {
       this.drawMarker(ctx, finish[0], finish[1], tileZ, '#ff3366', 'F');
     }
 
+    // Deterministic pre-spawn telegraphs and short post-spawn handoffs.
+    for (const s of this.pendingSpawns) {
+      const untilSpawn = s.absTick - tickFloat;
+      if (untilSpawn < 0 || untilSpawn > PPQ) break;
+      this.drawSpawnTelegraph(ctx, s, tileZ, z, tickFloat, false);
+    }
+    for (const s of this.spawnEffects) {
+      if (tickFloat - s.absTick <= Math.min(PPQ, Math.max(12, s.durationTicks * 0.5))) {
+        this.drawSpawnTelegraph(ctx, s, tileZ, z, tickFloat, true);
+      }
+    }
+
     // Placement ghost.
     if (placement.active && placement.tile) {
       const [ptx, pty] = placement.tile;
@@ -527,6 +549,39 @@ export class Combat {
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#000';
       ctx.fillText(label, px, py);
+    }
+    ctx.restore();
+  }
+
+  private drawSpawnTelegraph(ctx: CanvasRenderingContext2D, s: SpawnEffect, tileZ: number, z: number, tickFloat: number, isResolved: boolean): void {
+    const lane = this.world.lanes[Math.min(s.lane, this.world.lanes.length - 1)];
+    const start = lane[0];
+    const color = BAND_COLORS[s.band];
+    const durationWeight = Math.max(0.7, Math.min(1.5, s.durationTicks / QUARTER_TICKS));
+    const age = isResolved ? tickFloat - s.absTick : PPQ - (s.absTick - tickFloat);
+    const phase = Math.max(0, Math.min(1, age / (isResolved ? Math.max(12, s.durationTicks * 0.5) : PPQ)));
+    const alpha = isResolved ? 1 - phase : 0.12 + phase * 0.42;
+    const px = start[0] * tileZ + tileZ / 2;
+    const py = start[1] * tileZ + tileZ / 2;
+    const radius = tileZ * (0.22 + durationWeight * 0.12 + phase * 0.18);
+    ctx.save();
+    ctx.strokeStyle = hexAlpha(color, alpha);
+    ctx.fillStyle = hexAlpha(color, alpha * 0.12);
+    ctx.lineWidth = Math.max(1, durationWeight * 1.5 * z);
+    ctx.shadowColor = color;
+    ctx.shadowBlur = (isResolved ? 12 : 5) * durationWeight * z;
+    ctx.beginPath(); ctx.arc(px, py, radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(px - radius * 0.45, py);
+    ctx.lineTo(px + radius * 0.45, py);
+    ctx.stroke();
+    if (isResolved) {
+      const beamTop = py - tileZ * (1.8 - phase * 1.8);
+      ctx.lineWidth = Math.max(1, durationWeight * z);
+      ctx.beginPath();
+      ctx.moveTo(px, beamTop);
+      ctx.lineTo(px, py - radius * 0.5);
+      ctx.stroke();
     }
     ctx.restore();
   }

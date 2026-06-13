@@ -275,4 +275,9 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Cable dragging still works after Escape, window blur, pointer cancel, and panning/zooming
 - [ ] Patch cables have deterministic natural slack and remain readable
 - [ ] Next-wave sheet music stays above the battlefield and pans/zooms with the level
+- [ ] 60 BPM Wave 1 count-in shows four bars of moving note preview and beat pulses
+- [ ] Note flashes and battlefield spawn telegraphs resolve on the enemy spawn tick
+- [ ] Long notes have weightier previews/telegraphs and short notes have sharper previews
+- [ ] MIDI and authored-score waves both use the same visible spawn timing
+- [ ] Reduced motion keeps playhead, note glow, and telegraphs readable without travel animation
 
