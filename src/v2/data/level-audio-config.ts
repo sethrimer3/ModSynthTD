@@ -18,6 +18,8 @@ export interface LevelAudioConfig {
   bpm: number;
   /** Beat/percussion loop — plays constantly in a seamless loop. */
   beatLoop: string;
+  /** Optional kick loop. When present, it replaces the fallback one-shot kicks. */
+  kickLoop?: string;
   /** Melodic/harmonic loop layers stacked over the beat. */
   bgLayers: string[];
   /** How many bars of MIDI intro to play before the physical wave begins. */

@@ -52,6 +52,7 @@ export class LevelMusicManager {
   private preloadAll(): void {
     // Background loops
     this.loadBuffer(this.config.beatLoop);
+    if (this.config.kickLoop) this.loadBuffer(this.config.kickLoop);
     for (const url of this.config.bgLayers) this.loadBuffer(url);
     // Wave intros + MIDI
     for (const wc of this.config.waveAudio) {
@@ -112,6 +113,11 @@ export class LevelMusicManager {
     return this.config.waveAudio.some(w => w.waveIndex === waveIndex);
   }
 
+  /** One-shot kick samples are only used when this planet has no kickLoop.ogg. */
+  shouldPlayFallbackKick(): boolean {
+    return !this.config.kickLoop;
+  }
+
   /**
    * Synchronous cache lookup. Returns null if not loaded yet or no MIDI configured.
    * Call waitForMidiScore() to wait for loading to finish.
@@ -134,6 +140,8 @@ export class LevelMusicManager {
 
     const beatBuf = this.bufCache.get(this.config.beatLoop);
     if (!beatBuf) return;
+    const kickBuf = this.config.kickLoop ? this.bufCache.get(this.config.kickLoop) : null;
+    if (this.config.kickLoop && kickBuf === undefined) return;
 
     const layerBufs = this.config.bgLayers.map(url => this.bufCache.get(url));
     if (layerBufs.some(b => b === undefined)) return; // not all loaded yet
@@ -142,6 +150,7 @@ export class LevelMusicManager {
     this.loopStartCtxTime = this.audio.currentTime;
     this.loopDurationSec = beatBuf.duration;
     this.loopSrcs.push(this.audio.startLoop(beatBuf, 'beat'));
+    if (kickBuf) this.loopSrcs.push(this.audio.startLoop(kickBuf, 'beat'));
     for (const buf of layerBufs) {
       if (buf) this.loopSrcs.push(this.audio.startLoop(buf, 'bg'));
     }

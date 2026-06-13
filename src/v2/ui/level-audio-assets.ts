@@ -10,17 +10,33 @@
 
 import { LevelAudioConfig } from '../data/level-audio-config';
 
+declare const require: {
+  context(directory: string, useSubdirectories: boolean, regExp: RegExp): {
+    keys(): string[];
+    (key: string): string;
+  };
+};
+
 import beatLoopUrl from '../../../ASSETS/LEVELS/60BPM/beatloop.ogg';
 import bgLayer1Url from '../../../ASSETS/LEVELS/60BPM/backgroundLoop_layer_1.ogg';
 import bgLayer2Url from '../../../ASSETS/LEVELS/60BPM/backgroundLoop_layer_2.ogg';
 import wave1OggUrl from '../../../ASSETS/LEVELS/60BPM/wave1.ogg';
 import wave1MidUrl from '../../../ASSETS/LEVELS/60BPM/wave1.mid';
 
+const kickLoopContext = require.context('../../../ASSETS/LEVELS', true, /kickLoop\.ogg$/i);
+
+function findKickLoop(bpm: number): string | undefined {
+  const expected = `./${bpm}BPM/kickLoop.ogg`.toLowerCase();
+  const key = kickLoopContext.keys().find(candidate => candidate.toLowerCase() === expected);
+  return key ? kickLoopContext(key) : undefined;
+}
+
 // ── 60 BPM — Pulse Orbit (w60) ───────────────────────────────────────────────
 
 const LEVEL_60BPM: LevelAudioConfig = {
   bpm: 60,
   beatLoop: beatLoopUrl,
+  kickLoop: findKickLoop(60),
   bgLayers: [bgLayer1Url, bgLayer2Url],
   introBarCount: 4,
   waveAudio: [

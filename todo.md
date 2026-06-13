@@ -140,6 +140,7 @@ kept only for history.
 - [ ] Improve build previews for multi-tile buildings and routed structures.
 - [x] Add clearer tutorial prompts for the first route, first turret, first wall, first radar, and first breach.
 - [x] Add persisted graphics controls for wire front/behind layering and wire opacity.
+- [x] Use shared one-shot kicks only as a fallback when a planet has no `kickLoop.ogg`.
 - [ ] Keep all visuals readable at the native pixel scale.
 - [x] Add conveyor direction preview ghost for conveyor/extractor tool (Q to rotate tooltip visible in place).
 

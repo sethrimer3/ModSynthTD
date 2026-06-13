@@ -139,6 +139,10 @@ envelope), scheduled by event id (no duplicates after suspend/resume), capped
 at 12 voices with oldest-steal, and disconnected on `ended`. No audible sound
 before a user gesture.
 
+Per-planet music automatically discovers `ASSETS/LEVELS/<BPM>BPM/kickLoop.ogg`.
+When present, that loop replaces the shared `kick_1` and `kick_2` one-shot
+fallback while the planet is active.
+
 ---
 
 ## 8. Tests

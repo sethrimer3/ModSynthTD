@@ -292,4 +292,6 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Different patched OUT routes fire from their own placed tower locations
 - [ ] Wire layer defaults to FRONT; the graphics slider switches wires between front of and behind modules immediately
 - [ ] Wire opacity updates cables, cable glow, drag previews, hit paths, and cable pulses immediately and persists after reload
+- [ ] A planet with `ASSETS/LEVELS/<BPM>BPM/kickLoop.ogg` plays that loop without layering `kick_1` or `kick_2`
+- [ ] A planet without `kickLoop.ogg` continues playing the fallback `kick_1` and `kick_2` rhythm
 

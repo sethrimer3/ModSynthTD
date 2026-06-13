@@ -814,7 +814,9 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
         // Percussion.
         if ((runState === 'wave' || runState === 'countin')) {
           const audioTime = audio.currentTime + ticksToSec(t - tickFloat, world.bpm);
-          if (t % PPQ === 0) audio.playKick((t / PPQ) | 0, audioTime);
+          if (t % PPQ === 0 && (levelMusic?.shouldPlayFallbackKick() ?? true)) {
+            audio.playKick((t / PPQ) | 0, audioTime);
+          }
           if (t % (PPQ / 2) === 0 && combat.aliveCount > 0) audio.playHihat(audioTime);
         }
       }
