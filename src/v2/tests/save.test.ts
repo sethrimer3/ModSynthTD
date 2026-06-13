@@ -6,7 +6,7 @@ import { test, assert, assertEq } from './harness';
 import {
   SaveData, SaveStorage, SAVE_KEY, SAVE_BACKUP_PREFIX,
   defaultSave, loadSave, persistSave, importSave, exportSave, resetSave,
-  getWorldSave, normalizeSave,
+  getWorldSave, normalizeSave, migrateSave,
 } from '../state/save';
 
 function fakeStorage(initial: Record<string, string> = {}): SaveStorage & { map: Map<string, string> } {
@@ -21,7 +21,7 @@ function fakeStorage(initial: Record<string, string> = {}): SaveStorage & { map:
 
 test('fresh storage loads defaults', () => {
   const r = loadSave(fakeStorage());
-  assertEq(r.save.schemaVersion, 1, 'current schema');
+  assertEq(r.save.schemaVersion, 2, 'current schema');
   assertEq(r.save.resonance, 0, 'no currency');
   assertEq(r.recoveredFromCorrupt, false, 'not a recovery');
 });
@@ -54,7 +54,7 @@ test('unknown blueprint and module types repaired without data loss elsewhere', 
   save.blueprints.push('amp');
   (save.blueprints as string[]).push('flux-capacitor');
   const ws = getWorldSave(save, 'w40');
-  ws.rack.modules.push({ instanceId: 'm-x', typeId: 'nonexistent', shelfIndex: 0, slotX: 0, settings: {} });
+  ws.rack.modules.push({ instanceId: 'm-x', typeId: 'nonexistent', gridY: 0, gridX: 0, settings: {} });
   ws.rack.cables.push({ cableId: 'c-x', fromModuleId: 'm-x', fromPortId: 'out', toModuleId: 'm-y', toPortId: 'in' });
   const { save: repaired, repairs } = normalizeSave(JSON.parse(JSON.stringify(save)));
   assertEq(repaired.resonance, 50, 'currency intact');
@@ -119,10 +119,155 @@ test('secret reveal and boss state persist', () => {
   assertEq(r.save.cipherChallengeUnlocked, true, 'challenge unlock permanent');
 });
 
+test('v1 save migrates shelfIndex/slotX to gridY/gridX', () => {
+  // Simulate a raw v1 save with old field names in module instances.
+  const v1Raw = {
+    schemaVersion: 1,
+    resonance: 42,
+    blueprints: [],
+    worlds: {
+      w40: {
+        shelfCount: 1,
+        rack: {
+          modules: [
+            { instanceId: 'm-clk', typeId: 'clock', shelfIndex: 0, slotX: 0, settings: {} },
+            { instanceId: 'm-osc', typeId: 'osc', shelfIndex: 0, slotX: 3, settings: {} },
+            { instanceId: 'm-out', typeId: 'output', shelfIndex: 0, slotX: 12, settings: {} },
+          ],
+          cables: [],
+        },
+        towersByOutputId: {},
+        bestWave: 0,
+        completed: false,
+        endlessBest: 0,
+        claimedWaveReward: 0,
+        completionClaimed: false,
+      },
+    },
+  };
+  const { data } = migrateSave(v1Raw as Record<string, unknown>);
+  assertEq(data.schemaVersion, 2, 'version bumped');
+  const modules = ((data as Record<string, unknown>).worlds as Record<string, Record<string, Record<string, Record<string, unknown>[]>>>).w40.rack.modules;
+  assertEq((modules[0] as Record<string, unknown>).gridX, 0, 'clock gridX=0');
+  assertEq((modules[0] as Record<string, unknown>).gridY, 0, 'clock gridY=0');
+  assertEq((modules[1] as Record<string, unknown>).gridX, 3, 'osc gridX=3');
+  assertEq((modules[2] as Record<string, unknown>).gridX, 12, 'output gridX=12');
+  assert(!('slotX' in (modules[0] as Record<string, unknown>)), 'old slotX removed');
+  assert(!('shelfIndex' in (modules[0] as Record<string, unknown>)), 'old shelfIndex removed');
+
+  // Full load round-trip preserves positions.
+  const { save } = normalizeSave(data);
+  assertEq(save.resonance, 42, 'resonance preserved');
+  const rack = save.worlds['w40'].rack;
+  assertEq(rack.modules[0].gridX, 0, 'gridX survives normalization');
+  assertEq(rack.modules[1].gridX, 3, 'osc position correct');
+  assertEq(rack.modules[2].gridX, 12, 'output position correct');
+});
+
+// ── Rack overlap repair tests ─────────────────────────────────────────────────
+
+test('overlap repair moves colliding module to first free slot', () => {
+  // Simulate an old save where two modules were packed at cols 0 and 1
+  // (valid when both were w:1), but 'amp' and 'phase' are now w:2.
+  // amp at col 0 occupies 0-1; phase at col 1 now overlaps.
+  const raw = {
+    schemaVersion: 2,
+    worlds: {
+      w40: {
+        shelfCount: 1,
+        rack: {
+          modules: [
+            { instanceId: 'm-amp',   typeId: 'amp',   gridY: 0, gridX: 0, settings: {} },
+            { instanceId: 'm-phase', typeId: 'phase', gridY: 0, gridX: 1, settings: {} },
+          ],
+          cables: [],
+        },
+        towersByOutputId: {}, bestWave: 0, completed: false, endlessBest: 0,
+        claimedWaveReward: 0, completionClaimed: false,
+      },
+    },
+  };
+  const { save, repairs } = normalizeSave(raw);
+  const modules = save.worlds['w40'].rack.modules;
+  assertEq(modules.length, 2, 'both modules survive');
+  // Both must be present and non-overlapping.
+  const amp   = modules.find(m => m.instanceId === 'm-amp')!;
+  const phase = modules.find(m => m.instanceId === 'm-phase')!;
+  assert(amp   !== undefined, 'amp present');
+  assert(phase !== undefined, 'phase present');
+  // amp stays at col 0 (was already valid); phase must have moved.
+  assertEq(amp.gridX, 0, 'amp stays at col 0');
+  assert(phase.gridX !== 1, 'phase moved away from overlapping col 1');
+  assert(repairs.some(r => r.includes('phase')), 'repair note emitted for phase');
+});
+
+test('overlap repair preserves cable connections after move', () => {
+  // amp → phase cable: endpoints use instanceId, not position,
+  // so a position repair must not break the cable.
+  const raw = {
+    schemaVersion: 2,
+    worlds: {
+      w40: {
+        shelfCount: 1,
+        rack: {
+          modules: [
+            { instanceId: 'm-amp',   typeId: 'amp',   gridY: 0, gridX: 0, settings: {} },
+            { instanceId: 'm-phase', typeId: 'phase', gridY: 0, gridX: 1, settings: {} },
+          ],
+          cables: [
+            { cableId: 'c-1', fromModuleId: 'm-amp', fromPortId: 'out', toModuleId: 'm-phase', toPortId: 'in' },
+          ],
+        },
+        towersByOutputId: {}, bestWave: 0, completed: false, endlessBest: 0,
+        claimedWaveReward: 0, completionClaimed: false,
+      },
+    },
+  };
+  const { save } = normalizeSave(raw);
+  const cables = save.worlds['w40'].rack.cables;
+  assertEq(cables.length, 1, 'cable survives repair');
+  assertEq(cables[0].fromModuleId, 'm-amp',   'cable from-id intact');
+  assertEq(cables[0].toModuleId,   'm-phase', 'cable to-id intact');
+});
+
+test('overlap repair expands shelfCount when row is full', () => {
+  // Fill row 0 with 8 clock modules (w:2) at cols 0,2,4,6,8,10,12,14.
+  // Then place clockdiv (w:2) at col 1 — overlaps the first clock.
+  // Row 0 is completely full; repair must expand to row 1.
+  const clocks = [0, 2, 4, 6, 8, 10, 12, 14].map((x, i) => ({
+    instanceId: `m-clk-${i}`, typeId: 'clock', gridY: 0, gridX: x, settings: {},
+  }));
+  const raw = {
+    schemaVersion: 2,
+    worlds: {
+      w40: {
+        shelfCount: 1,
+        rack: {
+          modules: [
+            ...clocks,
+            { instanceId: 'm-div', typeId: 'clockdiv', gridY: 0, gridX: 1, settings: {} },
+          ],
+          cables: [],
+        },
+        towersByOutputId: {}, bestWave: 0, completed: false, endlessBest: 0,
+        claimedWaveReward: 0, completionClaimed: false,
+      },
+    },
+  };
+  const { save, repairs } = normalizeSave(raw);
+  const ws = save.worlds['w40'];
+  assert(ws.shelfCount >= 2, 'shelfCount expanded to fit displaced module');
+  const modules = ws.rack.modules;
+  const div = modules.find(m => m.instanceId === 'm-div')!;
+  assert(div !== undefined, 'clockdiv still present');
+  assert(div.gridY >= 1, 'clockdiv moved to a new row');
+  assert(repairs.some(r => r.includes('clockdiv')), 'repair note emitted');
+});
+
 test('old single tower migrates to first output tower id', () => {
   const raw = defaultSave();
   const ws = getWorldSave(raw, 'w40');
-  ws.rack.modules.push({ instanceId: 'out-first', typeId: 'output', shelfIndex: 0, slotX: 0, settings: {} });
+  ws.rack.modules.push({ instanceId: 'out-first', typeId: 'output', gridY: 0, gridX: 0, settings: {} });
   ws.tower = { tileX: 3, tileY: 4, orientation: 'east' };
   delete (ws as Partial<typeof ws>).towersByOutputId;
   const normalized = normalizeSave(JSON.parse(JSON.stringify(raw))).save.worlds['w40'];

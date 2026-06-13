@@ -22,9 +22,13 @@ export interface ModuleInstance {
   /** Stable unique id, e.g. 'm-clock-1a2b'. */
   instanceId: string;
   typeId: string;
-  /** Shelf index (0-based) and leftmost grid slot on that shelf. */
-  shelfIndex: number;
-  slotX: number;
+  /**
+   * Top-left position in the coarse rack grid.
+   * gridX = column (0-based), gridY = row (0-based).
+   * The module occupies cells [gridX .. gridX+rackSize.w) × [gridY .. gridY+rackSize.h).
+   */
+  gridX: number;
+  gridY: number;
   settings: ModuleSettings;
 }
 
@@ -548,11 +552,19 @@ export function deserializeGraph(data: unknown): { graph: RackGraph; repairs: st
       }
       const { settings } = sanitizeSettings(def, (typeof m.settings === 'object' && m.settings !== null ? m.settings : {}) as ModuleSettings);
       seenIds.add(m.instanceId);
+      const mRaw = m as Partial<ModuleInstance> & Record<string, unknown>;
+      // Accept both current names and legacy v1 names (shelfIndex/slotX).
+      const gridX = typeof mRaw.gridX === 'number' ? Math.max(0, Math.floor(mRaw.gridX))
+        : typeof mRaw['slotX'] === 'number' ? Math.max(0, Math.floor(mRaw['slotX'] as number))
+        : 0;
+      const gridY = typeof mRaw.gridY === 'number' ? Math.max(0, Math.floor(mRaw.gridY))
+        : typeof mRaw['shelfIndex'] === 'number' ? Math.max(0, Math.floor(mRaw['shelfIndex'] as number))
+        : 0;
       graph.modules.push({
         instanceId: m.instanceId,
         typeId: m.typeId,
-        shelfIndex: typeof m.shelfIndex === 'number' ? Math.max(0, Math.floor(m.shelfIndex)) : 0,
-        slotX: typeof m.slotX === 'number' ? Math.max(0, Math.floor(m.slotX)) : 0,
+        gridX,
+        gridY,
         settings,
       });
     }

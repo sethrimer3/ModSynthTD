@@ -7,7 +7,7 @@ import { defaultSave, getWorldSave } from '../state/save';
 import {
   cumulativeReward, recordWaveCleared, recordWorldCompleted,
   purchaseShelf, refundShelf, purchaseModule, sellModule,
-  ensureStarterRack, checkPlacement, findFreeSlot, SHELF_SLOTS,
+  ensureStarterRack, checkPlacement, findFreeSlot, RACK_COLS,
 } from '../state/economy';
 import {
   isWorldUnlocked, applyWorldCompletionUnlocks, secretHintLevel,
@@ -75,7 +75,7 @@ test('occupied shelf cannot be refunded', () => {
   save.resonance = 200;
   purchaseShelf(save, 'w40');
   const ws = getWorldSave(save, 'w40');
-  ws.rack.modules.push({ instanceId: 'm-test', typeId: 'connector', shelfIndex: 1, slotX: 0, settings: {} });
+  ws.rack.modules.push({ instanceId: 'm-test', typeId: 'connector', gridY: 1, gridX: 0, settings: {} });
   const r = refundShelf(save, 'w40');
   assertEq(r.ok, false, 'occupied shelf blocked');
   assertEq(ws.shelfCount, 2, 'shelf retained');
@@ -178,20 +178,25 @@ test('repeated purchases never duplicate instance ids', () => {
 });
 
 test('placement rejects overlap and out-of-bounds', () => {
+  // osc has rackSize {w:3, h:1}, placed at gridY:0, gridX:0 — occupies cols 0-2
   const modules = [
-    { instanceId: 'a', typeId: 'osc', shelfIndex: 0, slotX: 0, settings: {} }, // width 3
+    { instanceId: 'a', typeId: 'osc', gridY: 0, gridX: 0, settings: {} },
   ];
-  assertEq(checkPlacement(modules, 1, null, 0, 2, 2).fits, false, 'overlap rejected');
-  assertEq(checkPlacement(modules, 1, null, 0, 3, 2).fits, true, 'adjacent ok');
-  assertEq(checkPlacement(modules, 1, null, 0, SHELF_SLOTS - 1, 2).fits, false, 'spills past shelf edge');
-  assertEq(checkPlacement(modules, 1, null, 1, 0, 2).fits, false, 'no such shelf');
-  assertEq(checkPlacement(modules, 1, 'a', 0, 0, 3).fits, true, 'self ignored when moving');
+  assertEq(checkPlacement(modules, 1, null, 0, 2, { w: 2, h: 1 }).fits, false, 'overlap rejected');
+  assertEq(checkPlacement(modules, 1, null, 0, 3, { w: 2, h: 1 }).fits, true, 'adjacent ok');
+  assertEq(checkPlacement(modules, 1, null, 0, RACK_COLS - 1, { w: 2, h: 1 }).fits, false, 'spills past column edge');
+  assertEq(checkPlacement(modules, 1, null, 1, 0, { w: 2, h: 1 }).fits, false, 'no such row');
+  assertEq(checkPlacement(modules, 1, 'a', 0, 0, { w: 3, h: 1 }).fits, true, 'self ignored when moving');
+  // Multi-row: {w:2, h:2} at gridY:0 with 1 row available should fail
+  assertEq(checkPlacement([], 1, null, 0, 0, { w: 2, h: 2 }).fits, false, 'multi-row rejected when only 1 row');
+  // Same placement with 2 rows should succeed
+  assertEq(checkPlacement([], 2, null, 0, 0, { w: 2, h: 2 }).fits, true, 'multi-row fits with 2 rows');
 });
 
-test('findFreeSlot fills shelves deterministically', () => {
-  const modules: Array<{ instanceId: string; typeId: string; shelfIndex: number; slotX: number; settings: Record<string, never> }> = [];
-  const spot = findFreeSlot(modules, 1, 2);
-  assertEq(spot, { shelfIndex: 0, slotX: 0 }, 'first slot first');
+test('findFreeSlot fills grid deterministically', () => {
+  const modules: Array<{ instanceId: string; typeId: string; gridY: number; gridX: number; settings: Record<string, never> }> = [];
+  const spot = findFreeSlot(modules, 1, { w: 2, h: 1 });
+  assertEq(spot, { gridY: 0, gridX: 0 }, 'first slot first');
 });
 
 test('world unlock chain follows completion', () => {
@@ -229,7 +234,7 @@ test('secret hints appear at six and eight completions', () => {
 
 let seq = 0;
 function m(typeId: string, settings: Record<string, number | string | boolean> = {}) {
-  return { instanceId: `cm${seq++}-${typeId}`, typeId, shelfIndex: 0, slotX: 0, settings };
+  return { instanceId: `cm${seq++}-${typeId}`, typeId, gridY: 0, gridX: 0, settings };
 }
 function c(from: { instanceId: string }, fp: string, to: { instanceId: string }, tp: string) {
   return { cableId: `cc${seq++}`, fromModuleId: from.instanceId, fromPortId: fp, toModuleId: to.instanceId, toPortId: tp };

@@ -8,10 +8,11 @@
 
 import { SerializedGraph, deserializeGraph, serializeGraph, RackGraph } from '../core/graph';
 import { getModuleType } from '../core/modules';
+import { RACK_COLS, MAX_ROWS, checkRackFit, findRackSlot } from '../core/rack-layout';
 
 export const SAVE_KEY = 'modsynth-td-save';
 export const SAVE_BACKUP_PREFIX = 'modsynth-td-save-corrupt-';
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 // ── Schema ──────────────────────────────────────────────────────────────────
 
@@ -120,6 +121,72 @@ export function defaultSave(): SaveData {
   };
 }
 
+// ── Rack placement repair ────────────────────────────────────────────────────
+
+/**
+ * Check whether (gridY, gridX, w, h) fits given already-committed placements
+ * in `placed[0..upTo-1]`. Only prior entries are checked so that earlier
+ * modules win when two overlap — the greedy-in-order priority rule.
+ * (Thin wrapper retained for the upTo-based greedy scan; delegates to checkRackFit.)
+ */
+function _fits(
+  placed: Array<{ gridY: number; gridX: number; w: number; h: number }>, upTo: number,
+  gridY: number, gridX: number, w: number, h: number,
+  rowCount: number,
+): boolean {
+  return checkRackFit(placed, gridY, gridX, w, h, rowCount, upTo);
+}
+
+function _freeSlot(
+  placed: Array<{ gridY: number; gridX: number; w: number; h: number }>,
+  upTo: number, w: number, h: number, rowCount: number,
+): { gridY: number; gridX: number } | null {
+  return findRackSlot(placed, w, h, rowCount, upTo);
+}
+
+/**
+ * Detect and repair placement overlaps in `modules` in-place.
+ * Called after shelfCount has already been bumped for tall modules.
+ * Mutates `modules[i].gridY/.gridX` and may increase `ws.shelfCount`.
+ * Cable endpoints reference instanceId, not position, so they are unaffected.
+ */
+function repairRackOverlaps(
+  modules: Array<{ gridY: number; gridX: number; typeId: string }>,
+  ws: { shelfCount: number },
+  worldId: string,
+  repairs: string[],
+): void {
+  const placed = modules.map(m => {
+    const def = getModuleType(m.typeId);
+    return { gridY: m.gridY, gridX: m.gridX, w: def?.rackSize.w ?? 2, h: def?.rackSize.h ?? 1 };
+  });
+
+  for (let i = 0; i < modules.length; i++) {
+    const { w, h, gridY, gridX } = placed[i];
+    // Check only against already-committed modules (0..i-1) so earlier entries keep priority.
+    if (_fits(placed, i, gridY, gridX, w, h, ws.shelfCount)) continue;
+
+    // Conflicts with a prior placement — find the first free slot.
+    let slot = _freeSlot(placed, i, w, h, ws.shelfCount);
+    if (!slot) {
+      // No room in existing rows; expand one row at a time up to the maximum.
+      while (ws.shelfCount < MAX_ROWS && !slot) {
+        ws.shelfCount++;
+        slot = _freeSlot(placed, i, w, h, ws.shelfCount);
+      }
+    }
+    if (slot) {
+      repairs.push(`[${worldId}] Moved ${modules[i].typeId} from (${modules[i].gridY},${modules[i].gridX}) to (${slot.gridY},${slot.gridX}) to resolve rack overlap.`);
+      modules[i].gridY = slot.gridY;
+      modules[i].gridX = slot.gridX;
+      placed[i].gridY = slot.gridY;
+      placed[i].gridX = slot.gridX;
+    } else {
+      repairs.push(`[${worldId}] Could not place ${modules[i].typeId} — rack full after expanding to max rows.`);
+    }
+  }
+}
+
 // ── Normalization (repairs any structurally damaged save) ──────────────────
 
 function clamp01(v: unknown, fallback: number): number {
@@ -196,8 +263,21 @@ export function normalizeSave(raw: unknown): { save: SaveData; repairs: string[]
       ws.claimedWaveReward = asNonNegInt(w.claimedWaveReward, 0);
       ws.completionClaimed = asBool(w.completionClaimed, false);
       const { graph, repairs: rackRepairs } = deserializeGraph(w.rack);
-      ws.rack = serializeGraph(graph);
       for (const note of rackRepairs) repairs.push(`[${worldId}] ${note}`);
+      // Pass 1: ensure shelfCount covers all placed modules (multi-row modules, old saves).
+      for (const m of graph.modules) {
+        const def = getModuleType(m.typeId);
+        const h = def?.rackSize.h ?? 1;
+        const needed = m.gridY + h;
+        if (needed > ws.shelfCount) {
+          ws.shelfCount = Math.min(4, needed); // 4 = MAX_ROWS (not imported to avoid circular dep)
+        }
+      }
+      // Pass 2: repair overlaps caused by rackSize changes between versions
+      // (e.g. modules widened from w:1→w:2 in a later release).
+      repairRackOverlaps(graph.modules, ws, worldId, repairs);
+      // Serialize after all in-memory repairs so ws.rack reflects final positions.
+      ws.rack = serializeGraph(graph);
       const outputIds = graph.modules.filter(m => m.typeId === 'output').map(m => m.instanceId);
       if (typeof w.towersByOutputId === 'object' && w.towersByOutputId !== null) {
         for (const [outputId, raw] of Object.entries(w.towersByOutputId as Record<string, unknown>)) {
@@ -241,7 +321,27 @@ type Migration = (data: Record<string, unknown>) => Record<string, unknown>;
  * Keyed by source version: migrations[n] upgrades version n → n+1.
  * Version 1 is the first real schema; future shape changes append here.
  */
-export const MIGRATIONS: Record<number, Migration> = {};
+export const MIGRATIONS: Record<number, Migration> = {
+  /** v1 → v2: rename module instance geometry fields to gridX/gridY. */
+  1: (data) => {
+    const worlds = (data as Record<string, unknown>).worlds;
+    if (typeof worlds !== 'object' || worlds === null) return data;
+    for (const ws of Object.values(worlds as Record<string, unknown>)) {
+      if (typeof ws !== 'object' || ws === null) continue;
+      const rack = (ws as Record<string, unknown>).rack;
+      if (typeof rack !== 'object' || rack === null) continue;
+      const modules = (rack as Record<string, unknown>).modules;
+      if (!Array.isArray(modules)) continue;
+      for (const m of modules) {
+        if (typeof m !== 'object' || m === null) continue;
+        const mod = m as Record<string, unknown>;
+        if ('slotX' in mod && !('gridX' in mod)) { mod['gridX'] = mod['slotX']; delete mod['slotX']; }
+        if ('shelfIndex' in mod && !('gridY' in mod)) { mod['gridY'] = mod['shelfIndex']; delete mod['shelfIndex']; }
+      }
+    }
+    return data;
+  },
+};
 
 export function migrateSave(raw: Record<string, unknown>): { data: Record<string, unknown>; applied: number[] } {
   let data = raw;

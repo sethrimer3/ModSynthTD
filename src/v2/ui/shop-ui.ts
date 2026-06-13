@@ -114,7 +114,7 @@ export function openShop(parent: HTMLElement, opts: ShopUIOpts): void {
     const meta = document.createElement('div');
     meta.style.cssText = 'font-size:0.54rem;color:#5577aa;display:flex;justify-content:space-between;';
     const ports = document.createElement('span');
-    ports.textContent = `${def.inputs.length}in · ${def.outputs.length}out · ${def.widthUnits}u`;
+    ports.textContent = `${def.inputs.length}in · ${def.outputs.length}out · ${def.rackSize.w}×${def.rackSize.h}`;
     const owned = document.createElement('span');
     meta.append(ports, owned);
     card.appendChild(meta);

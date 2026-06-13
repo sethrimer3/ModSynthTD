@@ -9,8 +9,8 @@ import { TICKS_PER_MEASURE, QUARTER_TICKS } from '../core/ticks';
 import { MAX_EVENTS_PER_WINDOW } from '../core/limits';
 
 let nextId = 0;
-function mod(typeId: string, settings: ModuleSettings = {}, shelfIndex = 0, slotX = 0) {
-  return { instanceId: `m${nextId++}-${typeId}`, typeId, shelfIndex, slotX, settings };
+function mod(typeId: string, settings: ModuleSettings = {}, gridY = 0, gridX = 0) {
+  return { instanceId: `m${nextId++}-${typeId}`, typeId, gridY, gridX, settings };
 }
 function cable(from: { instanceId: string }, fromPort: string, to: { instanceId: string }, toPort: string) {
   return {
@@ -369,7 +369,7 @@ test('serialization round-trips', () => {
 test('deserialize drops unknown module types and repairs cables', () => {
   const { graph } = starterGraph();
   const ser = serializeGraph(graph) as unknown as { modules: Array<Record<string, unknown>>; cables: Array<Record<string, unknown>> };
-  ser.modules.push({ instanceId: 'm-ghost', typeId: 'haunted-reverb', shelfIndex: 0, slotX: 9, settings: {} });
+  ser.modules.push({ instanceId: 'm-ghost', typeId: 'haunted-reverb', gridY: 0, gridX: 9, settings: {} });
   ser.cables.push({ cableId: 'c-ghost', fromModuleId: 'm-ghost', fromPortId: 'out', toModuleId: ser.modules[2].instanceId as string, toPortId: 'in' });
   const { graph: restored, repairs } = deserializeGraph(ser);
   assert(repairs.length >= 2, 'unknown module and its cable both reported');

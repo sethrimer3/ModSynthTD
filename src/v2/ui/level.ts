@@ -17,8 +17,9 @@ import {
 } from '../state/save';
 import {
   recordWaveCleared, recordWorldCompleted, ensureStarterRack,
-  purchaseModule, sellModule, purchaseShelf, refundShelf, shelfCost, MAX_SHELVES, CURRENCY_SYMBOL,
+  purchaseModule, sellModule, purchaseShelf, refundShelf, shelfCost, MAX_ROWS, CURRENCY_SYMBOL,
 } from '../state/economy';
+import { getModuleType } from '../core/modules';
 import {
   applyWorldCompletionUnlocks, checkCipherRoute, revealSecretWorld, canAttemptCipher,
 } from '../state/progression';
@@ -195,14 +196,18 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       if (r.ok) { layoutScene(); rack.rebuild(); host.persist(); refreshHud(); }
     },
     canBuyShelf: () => {
-      if (worldSave.shelfCount >= MAX_SHELVES) return { ok: false, label: 'Max shelves' };
+      if (worldSave.shelfCount >= MAX_ROWS) return { ok: false, label: 'Max rows' };
       const cost = shelfCost(worldSave.shelfCount + 1);
       return { ok: save.resonance >= cost, label: `${cost} Resonance` };
     },
     canRefundShelf: () => {
       const sc = worldSave.shelfCount;
       if (sc <= 1) return false;
-      return !graph.modules.some(m => m.shelfIndex === sc - 1);
+      const lastRow = sc - 1;
+      return !graph.modules.some(m => {
+        const h = getModuleType(m.typeId)?.rackSize.h ?? 1;
+        return m.gridY <= lastRow && m.gridY + h > lastRow;
+      });
     },
     onModuleSelected: () => undefined,
     onBeginTowerDrag: (outputModuleId, clientX, clientY) => {

@@ -17,6 +17,16 @@ export type PortDirection = 'in' | 'out';
  */
 export type PortDomain = 'trigger' | 'voice' | 'either';
 
+/**
+ * Normalized face coordinate (0..1 in each axis) for placing a port on the
+ * module face. (0,0) is top-left; (1,1) is bottom-right. Optional — when
+ * absent the renderer applies a default layout based on direction and count.
+ */
+export interface FacePoint {
+  x: number; // 0..1
+  y: number; // 0..1
+}
+
 export interface PortSpec {
   /** Stable port id, unique within the module type (e.g. 'in', 'out', 'outB'). */
   portId: string;
@@ -28,21 +38,32 @@ export interface PortSpec {
   maxConnections: number;
   /** Required inputs produce a validation warning when disconnected. */
   required: boolean;
+  /**
+   * Where on the module face to render this port, in normalized 0..1 coords.
+   * When absent, the renderer stacks inputs on the left and outputs on the right.
+   */
+  anchor?: FacePoint;
+  /** Which panel edge the port juts from, for cable direction hints. */
+  side?: 'left' | 'right' | 'top' | 'bottom';
 }
 
-export function makeInput(portId: string, domain: PortDomain, label: string, help: string, opts?: { maxConnections?: number; required?: boolean }): PortSpec {
+export function makeInput(portId: string, domain: PortDomain, label: string, help: string, opts?: { maxConnections?: number; required?: boolean; anchor?: FacePoint; side?: 'left' | 'right' | 'top' | 'bottom' }): PortSpec {
   return {
     portId, direction: 'in', domain, label, help,
     maxConnections: opts?.maxConnections ?? 1,
     required: opts?.required ?? true,
+    anchor: opts?.anchor,
+    side: opts?.side,
   };
 }
 
-export function makeOutput(portId: string, domain: PortDomain, label: string, help: string, opts?: { maxConnections?: number }): PortSpec {
+export function makeOutput(portId: string, domain: PortDomain, label: string, help: string, opts?: { maxConnections?: number; anchor?: FacePoint; side?: 'left' | 'right' | 'top' | 'bottom' }): PortSpec {
   return {
     portId, direction: 'out', domain, label, help,
     maxConnections: opts?.maxConnections ?? 1,
     required: false,
+    anchor: opts?.anchor,
+    side: opts?.side,
   };
 }
 

@@ -12,7 +12,7 @@ import { RackGraph, ModuleInstance, Cable, validateGraph, GraphValidation } from
 import { getModuleType, ModuleTypeDef, SettingSpec } from '../core/modules';
 import { PortSpec, arePortsCompatible } from '../core/ports';
 import { SignalEvent } from '../core/events';
-import { SHELF_SLOTS, MAX_SHELVES, shelfCost, checkPlacement } from '../state/economy';
+import { RACK_COLS, MAX_ROWS, shelfCost, checkPlacement } from '../state/economy';
 import { hashString } from '../core/rng';
 import { createSoftWireRenderer, SoftWireData } from '../../version2-soft-wire';
 import { TowerStyle } from './tower-style';
@@ -24,13 +24,33 @@ export const SHELF_H = 148;
 export const SHELF_GAP = 14;
 export const RACK_PAD = 16;
 
+// ── Module face layout regions ───────────────────────────────────────────────
+// All values in pixels relative to the module panel div.
+
+/** Height of the title/header band at the top of every panel. */
+const FACE_HEADER_H = 26;
+/** Height of the LED/footer band at the bottom of every panel. */
+const FACE_FOOTER_H = 22;
+/** Horizontal port reservation per side for wide panels; narrows for small panels. */
+function facePortStripW(panelW: number): number {
+  return Math.min(24, Math.max(6, Math.floor(panelW * 0.22)));
+}
+
 export function rackWidthPx(): number {
-  return SHELF_SLOTS * SLOT_PX + RACK_PAD * 2;
+  return RACK_COLS * SLOT_PX + RACK_PAD * 2;
 }
 
 export function rackHeightPx(shelfCount: number, showBuyRail: boolean): number {
   const rails = shelfCount + (showBuyRail ? 1 : 0);
   return rails * (SHELF_H + SHELF_GAP) + RACK_PAD * 2;
+}
+
+/**
+ * Pixel height of a module's panel area, including any shelf-gap rows it spans.
+ * A 1-row module is SHELF_H tall; a 2-row module spans SHELF_H + SHELF_GAP + SHELF_H.
+ */
+export function moduleHeightPx(rackSizeH: number): number {
+  return rackSizeH * SHELF_H + Math.max(0, rackSizeH - 1) * SHELF_GAP;
 }
 
 const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
@@ -100,7 +120,10 @@ interface PlugView {
 interface ModuleView {
   inst: ModuleInstance;
   def: ModuleTypeDef;
+  /** Background panel: gradient, border, screws, LED, plug wraps. z=20. */
   rootEl: HTMLElement;
+  /** Content overlay: title + controls. z=31 — stays above cables in "front" mode. */
+  contentEl: HTMLElement;
   plugs: PlugView[];
   ledEl: HTMLElement | null;
   flashUntil: number;
@@ -139,7 +162,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
   root.appendChild(hitSvg);
 
   const pulseSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  pulseSvg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:32;';
+  pulseSvg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:35;';
   root.appendChild(pulseSvg);
 
   const moduleViews = new Map<string, ModuleView>();
@@ -180,15 +203,22 @@ export function createRackUI(opts: RackUIOpts): RackUI {
   }
 
   function modulePos(inst: ModuleInstance): { x: number; y: number } {
-    return { x: RACK_PAD + inst.slotX * SLOT_PX, y: shelfTop(inst.shelfIndex) + 10 };
+    return { x: RACK_PAD + inst.gridX * SLOT_PX, y: shelfTop(inst.gridY) + 10 };
   }
 
-  /** Analytic plug layout: inputs left edge, outputs right edge. */
+  /** Analytic plug layout: inputs left edge, outputs right edge, stacked in usable face area. */
   function plugLocal(def: ModuleTypeDef, spec: PortSpec, index: number, count: number): { x: number; y: number } {
-    const w = def.widthUnits * SLOT_PX - 6;
-    const x = spec.direction === 'in' ? 10 : w - 10;
-    const usable = SHELF_H - 58;
-    const y = 34 + (count <= 1 ? usable / 2 : (index + 0.5) * (usable / count));
+    const panelW = def.rackSize.w * SLOT_PX - 6;
+    const panelH = moduleHeightPx(def.rackSize.h) - 20;
+    if (spec.anchor) {
+      return { x: spec.anchor.x * panelW, y: spec.anchor.y * panelH };
+    }
+    const x = spec.direction === 'in' ? 10 : panelW - 10;
+    // Usable vertical space: skip 32px title header + 22px LED/bottom footer.
+    const safeTop = 32;
+    const safeBottom = 22;
+    const usable = panelH - safeTop - safeBottom;
+    const y = safeTop + (count <= 1 ? usable / 2 : (index + 0.5) * (usable / count));
     return { x, y };
   }
 
@@ -202,6 +232,8 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       const off = plugLocal(mv.def, pv.spec, idx, list.length);
       pv.cx = pos.x + off.x;
       pv.cy = pos.y + off.y;
+      pv.wrapEl.style.left = `${pv.cx - 16}px`;
+      pv.wrapEl.style.top  = `${pv.cy - 16}px`;
     }
   }
 
@@ -464,8 +496,8 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     grabDY: number;
     ghost: HTMLElement;
     valid: boolean;
-    targetShelf: number;
-    targetSlot: number;
+    targetGridY: number;
+    targetGridX: number;
     pointerId: number;
     moved: boolean;
   }
@@ -483,7 +515,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     ghost.style.cssText = `
       position:absolute;border:2px dashed ${opts.themeColor};border-radius:8px;
       pointer-events:none;z-index:40;opacity:0;
-      width:${mv.def.widthUnits * SLOT_PX - 6}px;height:${SHELF_H - 20}px;
+      width:${mv.def.rackSize.w * SLOT_PX - 6}px;height:${moduleHeightPx(mv.def.rackSize.h) - 20}px;
     `;
     root.appendChild(ghost);
     moduleDrag = {
@@ -492,14 +524,16 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       grabDY: local.y - pos.y,
       ghost,
       valid: true,
-      targetShelf: mv.inst.shelfIndex,
-      targetSlot: mv.inst.slotX,
+      targetGridY: mv.inst.gridY,
+      targetGridX: mv.inst.gridX,
       pointerId: e.pointerId,
       moved: false,
     };
     root.setPointerCapture(e.pointerId);
     mv.rootEl.style.zIndex = '45';
+    mv.contentEl.style.zIndex = '46';
     mv.rootEl.style.opacity = '0.85';
+    mv.contentEl.style.opacity = '0.85';
   }
 
   function updateModuleDrag(e: PointerEvent): void {
@@ -511,17 +545,19 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     if (!md.moved && Math.hypot(x - modulePos(md.mv.inst).x, y - modulePos(md.mv.inst).y) > 4) md.moved = true;
     md.mv.rootEl.style.left = `${x}px`;
     md.mv.rootEl.style.top = `${y}px`;
+    md.mv.contentEl.style.left = `${x}px`;
+    md.mv.contentEl.style.top = `${y}px`;
     recomputePlugCentersAt(md.mv, x, y);
 
-    const shelf = Math.round((y - 10 - RACK_PAD) / (SHELF_H + SHELF_GAP));
-    const slot = Math.round((x - RACK_PAD) / SLOT_PX);
-    md.targetShelf = shelf;
-    md.targetSlot = slot;
-    const check = checkPlacement(graph.modules, opts.getShelfCount(), md.mv.inst.instanceId, shelf, slot, md.mv.def.widthUnits);
+    const gridY = Math.round((y - 10 - RACK_PAD) / (SHELF_H + SHELF_GAP));
+    const gridX = Math.round((x - RACK_PAD) / SLOT_PX);
+    md.targetGridY = gridY;
+    md.targetGridX = gridX;
+    const check = checkPlacement(graph.modules, opts.getShelfCount(), md.mv.inst.instanceId, gridY, gridX, md.mv.def.rackSize);
     md.valid = check.fits;
     md.ghost.style.opacity = md.moved ? '1' : '0';
-    md.ghost.style.left = `${RACK_PAD + slot * SLOT_PX}px`;
-    md.ghost.style.top = `${shelfTop(shelf) + 10}px`;
+    md.ghost.style.left = `${RACK_PAD + gridX * SLOT_PX}px`;
+    md.ghost.style.top = `${shelfTop(gridY) + 10}px`;
     md.ghost.style.borderColor = md.valid ? opts.themeColor : '#ff3344';
     md.mv.rootEl.style.borderColor = md.valid ? opts.themeColor : '#ff3344';
   }
@@ -535,6 +571,8 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       const off = plugLocal(mv.def, pv.spec, idx, list.length);
       pv.cx = x + off.x;
       pv.cy = y + off.y;
+      pv.wrapEl.style.left = `${pv.cx - 16}px`;
+      pv.wrapEl.style.top  = `${pv.cy - 16}px`;
     }
   }
 
@@ -544,11 +582,13 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     moduleDrag = null;
     md.ghost.remove();
     md.mv.rootEl.style.zIndex = '';
+    md.mv.contentEl.style.zIndex = '';
     md.mv.rootEl.style.opacity = '';
+    md.mv.contentEl.style.opacity = '';
     md.mv.rootEl.style.borderColor = md.valid ? '#1a2a44' : '#ff3344';
     if (md.moved && md.valid) {
-      md.mv.inst.shelfIndex = md.targetShelf;
-      md.mv.inst.slotX = md.targetSlot;
+      md.mv.inst.gridY = md.targetGridY;
+      md.mv.inst.gridX = md.targetGridX;
       graphChanged();
     }
     // Always settle onto the (possibly restored) grid slot.
@@ -563,7 +603,9 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     moduleDrag = null;
     md.ghost.remove();
     md.mv.rootEl.style.zIndex = '';
+    md.mv.contentEl.style.zIndex = '';
     md.mv.rootEl.style.opacity = '';
+    md.mv.contentEl.style.opacity = '';
     md.mv.rootEl.style.borderColor = '#1a2a44';
     positionModule(md.mv);
   }
@@ -572,6 +614,8 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     const pos = modulePos(mv.inst);
     mv.rootEl.style.left = `${pos.x}px`;
     mv.rootEl.style.top = `${pos.y}px`;
+    mv.contentEl.style.left = `${pos.x}px`;
+    mv.contentEl.style.top = `${pos.y}px`;
     recomputePlugCenters(mv);
   }
 
@@ -704,37 +748,66 @@ export function createRackUI(opts: RackUIOpts): RackUI {
   function buildModuleView(inst: ModuleInstance): ModuleView | null {
     const def = getModuleType(inst.typeId);
     if (!def) return null;
-    const el = document.createElement('div');
-    const w = def.widthUnits * SLOT_PX - 6;
-    el.style.cssText = `
-      position:absolute;width:${w}px;height:${SHELF_H - 20}px;
+    const panelW = def.rackSize.w * SLOT_PX - 6;
+    const panelH = moduleHeightPx(def.rackSize.h) - 20;
+    const portStrip = facePortStripW(panelW);
+
+    // ── Background element (z=20): gradient, border, screws, LED, plug wraps ──
+    const bgEl = document.createElement('div');
+    bgEl.style.cssText = `
+      position:absolute;width:${panelW}px;height:${panelH}px;
       background:linear-gradient(180deg,#0a1226,#060c18);
       border:1.5px solid #1a2a44;border-radius:8px;
       box-shadow:0 2px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(120,160,255,0.07);
-      z-index:20;${FF}touch-action:none;cursor:grab;user-select:none;
+      z-index:20;touch-action:none;cursor:grab;user-select:none;
       transition:border-color 0.15s, box-shadow 0.2s;
     `;
+    bgEl.title = `${def.name} — ${def.tooltip}`;
 
-    // Faceplate screws for the eurorack look.
-    for (const [sx, sy] of [[4, 4], [w - 9, 4], [4, SHELF_H - 30], [w - 9, SHELF_H - 30]] as Array<[number, number]>) {
+    // Faceplate screws at panel corners.
+    for (const [sx, sy] of [[4, 4], [panelW - 9, 4], [4, panelH - 14], [panelW - 9, panelH - 14]] as Array<[number, number]>) {
       const screw = document.createElement('div');
-      screw.style.cssText = `position:absolute;left:${sx}px;top:${sy}px;width:5px;height:5px;border-radius:50%;background:#1c2a45;border:1px solid #2c4068;`;
-      el.appendChild(screw);
+      screw.style.cssText = `position:absolute;left:${sx}px;top:${sy}px;width:5px;height:5px;border-radius:50%;background:#1c2a45;border:1px solid #2c4068;pointer-events:none;`;
+      bgEl.appendChild(screw);
     }
 
+    // Activity LED at bottom centre of background.
+    const led = document.createElement('div');
+    led.style.cssText = `
+      position:absolute;bottom:8px;left:50%;transform:translateX(-50%);
+      width:7px;height:7px;border-radius:50%;
+      background:#102030;border:1px solid #224466;transition:background 0.1s, box-shadow 0.1s;
+      pointer-events:none;
+    `;
+    bgEl.appendChild(led);
+
+    // ── Content overlay (z=34): above cables AND plugs ───────────────────────
+    // pointer-events:none on the container; interactive children re-enable it.
+    const contentEl = document.createElement('div');
+    contentEl.style.cssText = `
+      position:absolute;width:${panelW}px;height:${panelH}px;
+      z-index:34;pointer-events:none;border-radius:8px;overflow:hidden;${FF}
+    `;
+
+    // Title — stays inside header band, uses ellipsis for long names.
     const title = document.createElement('div');
     title.textContent = `⠿ ${def.shortName} ⠿`;
     title.title = def.tooltip;
     title.style.cssText = `
-      text-align:center;margin-top:7px;font-size:10px;font-weight:800;
-      letter-spacing:0.14em;color:${def.color};text-shadow:0 0 8px ${def.color}66;
-      cursor:grab;
+      position:absolute;top:0;left:0;right:0;height:${FACE_HEADER_H}px;
+      display:flex;align-items:center;justify-content:center;
+      font-size:10px;font-weight:800;letter-spacing:0.14em;
+      color:${def.color};text-shadow:0 0 8px ${def.color}66;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+      padding:0 ${portStrip + 4}px;box-sizing:border-box;
+      pointer-events:none;
     `;
-    el.appendChild(title);
+    contentEl.appendChild(title);
 
-    const mv: ModuleView = { inst, def, rootEl: el, plugs: [], ledEl: null, flashUntil: 0, refreshSettings: () => undefined };
+    // Placeholder mv so closures can reference it before controls are wired up.
+    const mv: ModuleView = { inst, def, rootEl: bgEl, contentEl, plugs: [], ledEl: led, flashUntil: 0, refreshSettings: () => undefined };
 
-    // Plugs.
+    // ── Plug wraps (root-level, z=33) — above front-cables (30), below content (34) ──
     const allPorts: Array<{ spec: PortSpec; list: PortSpec[] }> = [
       ...def.inputs.map(spec => ({ spec, list: def.inputs })),
       ...def.outputs.map(spec => ({ spec, list: def.outputs })),
@@ -743,8 +816,9 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       const idx = list.findIndex(p => p.portId === spec.portId);
       const off = plugLocal(def, spec, idx, list.length);
       const wrapEl = document.createElement('div');
+      // Position is root-relative; updated whenever module moves via syncPlugWrapPos.
       wrapEl.style.cssText = `
-        position:absolute;left:${off.x - 16}px;top:${off.y - 16}px;width:32px;height:32px;
+        position:absolute;left:0;top:0;width:32px;height:32px;
         display:flex;align-items:center;justify-content:center;touch-action:none;
         cursor:crosshair;z-index:33;
       `;
@@ -761,7 +835,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       `;
       wrapEl.appendChild(plugEl);
       wrapEl.title = `${spec.label} — ${spec.help}`;
-      el.appendChild(wrapEl);
+      root.appendChild(wrapEl);
       const pv: PlugView = { moduleId: inst.instanceId, spec, el: plugEl, wrapEl, cx: 0, cy: 0 };
       mv.plugs.push(pv);
       if (spec.direction === 'out') {
@@ -771,7 +845,6 @@ export function createRackUI(opts: RackUIOpts): RackUI {
         });
       } else {
         wrapEl.addEventListener('pointerdown', (e: PointerEvent) => {
-          // Grab the existing cable on this input to re-route it.
           if (opts.isLive() || drag) return;
           const existing = graph.cables.find(c => c.toModuleId === inst.instanceId && c.toPortId === spec.portId);
           if (existing) {
@@ -783,18 +856,22 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       }
     }
 
-    // Controls column (between plug columns).
-    const controls = document.createElement('div');
+    // ── Controls in contentEl ─────────────────────────────────────────────────
+    // Safe region: below header, above footer, horizontally inside port strips.
+    // Ports live on left/right strip edges so no vertical reservation is needed.
     const hasIn = def.inputs.length > 0;
     const hasOut = def.outputs.length > 0;
+
+    const controls = document.createElement('div');
     controls.style.cssText = `
-      position:absolute;top:26px;bottom:24px;
-      left:${hasIn ? 24 : 8}px;right:${hasOut ? 24 : 8}px;
-      display:flex;flex-direction:column;gap:3px;justify-content:center;
-      overflow:hidden;
+      position:absolute;
+      top:${FACE_HEADER_H}px;bottom:${FACE_FOOTER_H}px;
+      left:${hasIn ? portStrip : 6}px;right:${hasOut ? portStrip : 6}px;
+      display:flex;flex-direction:column;gap:4px;justify-content:center;
+      pointer-events:auto;
     `;
     controls.dataset.rackControl = 'true';
-    el.appendChild(controls);
+    contentEl.appendChild(controls);
 
     const settingEls: HTMLElement[] = [];
     for (const spec of def.settingsSpec) {
@@ -803,69 +880,64 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       controls.appendChild(ctrl);
     }
 
-    // Output-module extras: tower + synth + test pulse.
+    // ── Output-module extras ──────────────────────────────────────────────────
     if (def.typeId === 'output') {
       const towerState = opts.getTowerState(inst.instanceId);
+
+      // Tower drag slot — prominent button taking most of the vertical space.
       const slot = document.createElement('button');
       slot.title = 'Drag this emitter tower onto the battlefield';
-      slot.style.cssText = `${FF}height:35px;position:relative;cursor:grab;background:#050914;border:3px solid ${towerState.style.color};border-radius:6px;color:${towerState.style.color};touch-action:none;`;
-      const silhouette = document.createElement('span');
+      slot.style.cssText = `${FF}flex:1;min-height:44px;max-height:72px;position:relative;cursor:grab;background:#050914;border:3px solid ${towerState.style.color};border-radius:6px;color:${towerState.style.color};touch-action:none;overflow:hidden;`;
       const clip = towerState.style.shape === 'circle' ? 'circle(45%)'
         : towerState.style.shape === 'triangle' ? 'polygon(50% 0,100% 100%,0 100%)'
         : towerState.style.shape === 'hexagon' ? 'polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)'
         : towerState.style.shape === 'chevron' ? 'polygon(0 0,100% 50%,0 100%,35% 50%)'
         : towerState.style.shape === 'diamond' ? 'polygon(50% 0,100% 50%,50% 100%,0 50%)'
         : 'polygon(0 0,100% 0,100% 100%,0 100%)';
-      silhouette.style.cssText = `position:absolute;left:8px;top:6px;width:18px;height:18px;background:${towerState.style.color};clip-path:${clip};filter:drop-shadow(0 0 4px ${towerState.style.color});`;
+      const silhouette = document.createElement('span');
+      silhouette.style.cssText = `position:absolute;left:10px;top:50%;transform:translateY(-50%);width:22px;height:22px;background:${towerState.style.color};clip-path:${clip};filter:drop-shadow(0 0 5px ${towerState.style.color});`;
       const slotLabel = document.createElement('span');
       slotLabel.textContent = towerState.isPlaced ? 'PLACED' : 'DRAG TOWER';
-      slotLabel.style.cssText = 'position:absolute;right:4px;top:11px;font-size:6px;font-weight:800;letter-spacing:0.06em;';
+      slotLabel.style.cssText = `position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:7px;font-weight:800;letter-spacing:0.07em;color:${towerState.style.color};white-space:nowrap;`;
       slot.append(silhouette, slotLabel);
       slot.addEventListener('pointerdown', (e: PointerEvent) => {
         e.stopPropagation();
         e.preventDefault();
         opts.onBeginTowerDrag(inst.instanceId, e.clientX, e.clientY);
       });
-      controls.appendChild(slot);
+
+      // Row of action buttons.
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex;gap:3px;justify-content:center;flex-wrap:wrap;';
-      const mkBtn = (txt: string, title: string, fn: () => void) => {
+      row.style.cssText = 'display:flex;gap:4px;justify-content:center;flex-shrink:0;';
+      const mkBtn = (txt: string, ttl: string, fn: () => void) => {
         const b = document.createElement('button');
         b.textContent = txt;
-        b.title = title;
-        b.style.cssText = `${FF}font-size:8px;font-weight:800;padding:2px 5px;border-radius:4px;cursor:pointer;background:#0a1020;border:1px solid #2a3d65;color:#88aacc;letter-spacing:0.05em;`;
+        b.title = ttl;
+        b.style.cssText = `${FF}font-size:8px;font-weight:800;padding:3px 7px;border-radius:4px;cursor:pointer;background:#0a1020;border:1px solid #2a3d65;color:#88aacc;letter-spacing:0.05em;white-space:nowrap;`;
         b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
-        row.appendChild(b);
         return b;
       };
-      mkBtn('↻ROT', 'Rotate this output tower clockwise', () => opts.onRotateTower(inst.instanceId));
-      mkBtn('PULSE', 'Send a test pulse through the patch (preparation only)', () => opts.onTestPulse(inst.instanceId));
-      controls.appendChild(row);
+      row.appendChild(mkBtn('↻ ROT', 'Rotate this output tower clockwise', () => opts.onRotateTower(inst.instanceId)));
+      row.appendChild(mkBtn('PULSE', 'Send a test pulse through the patch (preparation only)', () => opts.onTestPulse(inst.instanceId)));
 
+      // Synth state label.
       const synthState = document.createElement('div');
-      synthState.style.cssText = 'text-align:center;font-size:7px;letter-spacing:0.08em;color:#44608a;';
-      controls.appendChild(synthState);
+      synthState.style.cssText = 'text-align:center;font-size:7px;letter-spacing:0.08em;color:#44608a;flex-shrink:0;';
       const updateSynthLabel = () => {
         const s = opts.getSynthState();
-        synthState.textContent = !s.configured ? 'SYNTH OFF' : s.needsGesture ? 'TAP TO ENABLE AUDIO' : s.active ? 'SYNTH LIVE' : 'SYNTH READY';
+        synthState.textContent = !s.configured ? 'SYNTH OFF' : s.needsGesture ? 'TAP TO ENABLE' : s.active ? 'SYNTH LIVE' : 'SYNTH READY';
         synthState.style.color = s.active ? def.color : '#44608a';
       };
       settingEls.push(Object.assign(synthState, { __refresh: updateSynthLabel }) as unknown as HTMLElement);
       updateSynthLabel();
+
+      // Insert output-specific elements before the settings (tower slot first).
+      controls.insertBefore(slot, controls.firstChild);
+      controls.appendChild(row);
+      controls.appendChild(synthState);
     }
 
-    // Activity LED.
-    const led = document.createElement('div');
-    led.style.cssText = `
-      position:absolute;bottom:8px;left:50%;transform:translateX(-50%);
-      width:7px;height:7px;border-radius:50%;
-      background:#102030;border:1px solid #224466;transition:background 0.1s, box-shadow 0.1s;
-      pointer-events:none;
-    `;
-    el.appendChild(led);
-    mv.ledEl = led;
-
-    // Sell tab (non-starters, preparation only).
+    // ── Sell tab in contentEl (stays above cables) ────────────────────────────
     if (!def.isStarter) {
       const sell = document.createElement('button');
       sell.textContent = '×';
@@ -873,14 +945,14 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       sell.style.cssText = `
         position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:4px;
         ${FF}font-size:10px;line-height:1;cursor:pointer;padding:0;
-        background:#1a0f14;border:1px solid #663344;color:#aa6677;z-index:34;
+        background:#1a0f14;border:1px solid #663344;color:#aa6677;pointer-events:auto;
       `;
       sell.addEventListener('click', (e) => {
         e.stopPropagation();
         if (opts.isLive()) return;
         opts.onSellModule(inst.instanceId);
       });
-      el.appendChild(sell);
+      contentEl.appendChild(sell);
     }
 
     mv.refreshSettings = () => {
@@ -890,59 +962,99 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       }
     };
 
-    el.addEventListener('pointerdown', (e: PointerEvent) => {
+    // Drag initiates from bgEl (clicks not landing on controls fall through since
+    // contentEl is pointer-events:none except for controls/buttons).
+    bgEl.addEventListener('pointerdown', (e: PointerEvent) => {
       if (drag || (e.target as HTMLElement).closest('[data-rack-control="true"]')) return;
       e.stopPropagation();
       beginModuleDrag(mv, e);
     });
 
-    el.title = `${def.name} — ${def.tooltip}`;
     return mv;
   }
 
-  // ── Shelves ───────────────────────────────────────────────────────────────
+  // ── Rack case ─────────────────────────────────────────────────────────────
 
   function buildShelves(): void {
     shelvesEl.innerHTML = '';
     const count = opts.getShelfCount();
-    for (let i = 0; i < count; i++) {
-      const rail = document.createElement('div');
-      rail.style.cssText = `
-        position:absolute;left:${RACK_PAD - 8}px;top:${shelfTop(i)}px;
-        width:${SHELF_SLOTS * SLOT_PX + 16}px;height:${SHELF_H}px;
-        background:linear-gradient(180deg,#0c1322 0%,#080d18 8%,#070b14 92%,#0c1322 100%);
-        border:1px solid #16243c;border-radius:6px;
-        box-shadow:inset 0 4px 10px rgba(0,0,0,0.55);
+
+    const caseLeft = RACK_PAD - 8;
+    const caseTop  = shelfTop(0);
+    const caseW    = RACK_COLS * SLOT_PX + 16;
+    // Case height spans all rows including inter-row gaps.
+    const caseH    = count * SHELF_H + Math.max(0, count - 1) * SHELF_GAP;
+
+    // ── Unified case panel ────────────────────────────────────────────────────
+    const caseEl = document.createElement('div');
+    caseEl.style.cssText = `
+      position:absolute;left:${caseLeft}px;top:${caseTop}px;
+      width:${caseW}px;height:${caseH}px;
+      background:#060c18;
+      border:2px solid #1e3052;border-radius:6px;
+      box-shadow:inset 0 0 60px rgba(0,0,0,0.55),0 4px 24px rgba(0,0,0,0.6);
+    `;
+
+    // Subtle vertical column guides (every slot boundary).
+    const colGrid = document.createElement('div');
+    colGrid.style.cssText = `
+      position:absolute;inset:0;border-radius:6px;pointer-events:none;overflow:hidden;
+      background-image:repeating-linear-gradient(
+        90deg,
+        transparent 0 ${SLOT_PX - 1}px,
+        rgba(20,45,85,0.35) ${SLOT_PX - 1}px ${SLOT_PX}px
+      );
+      background-position:8px 0;
+    `;
+    caseEl.appendChild(colGrid);
+
+    // Horizontal seam at each inter-row gap.
+    for (let i = 0; i < count - 1; i++) {
+      const seamY = i * (SHELF_H + SHELF_GAP) + SHELF_H;
+      const seam = document.createElement('div');
+      seam.style.cssText = `
+        position:absolute;left:0;top:${seamY}px;width:100%;height:${SHELF_GAP}px;
+        background:linear-gradient(180deg,
+          rgba(0,0,0,0.35) 0%,#04080f 30%,#04080f 70%,rgba(0,0,0,0.35) 100%);
+        border-top:1px solid rgba(10,20,44,0.9);
+        border-bottom:1px solid rgba(10,20,44,0.9);
+        pointer-events:none;
       `;
-      // Eurorack mounting rails.
-      for (const top of [2, SHELF_H - 8]) {
-        const bar = document.createElement('div');
-        bar.style.cssText = `
-          position:absolute;left:0;top:${top}px;width:100%;height:6px;
-          background:repeating-linear-gradient(90deg,#16233c 0 ${SLOT_PX - 3}px,#22365a ${SLOT_PX - 3}px ${SLOT_PX}px);
-          border-radius:3px;opacity:0.8;
-        `;
-        rail.appendChild(bar);
-      }
-      shelvesEl.appendChild(rail);
+      caseEl.appendChild(seam);
     }
-    // Buy / refund shelf rail.
+
+    // Top and bottom eurorack mounting rails.
+    for (const barTop of [0, caseH - 8]) {
+      const bar = document.createElement('div');
+      bar.style.cssText = `
+        position:absolute;left:0;top:${barTop}px;width:100%;height:8px;
+        background:repeating-linear-gradient(
+          90deg,#16233c 0 ${SLOT_PX - 3}px,#22365a ${SLOT_PX - 3}px ${SLOT_PX}px
+        );
+        border-radius:3px;opacity:0.85;pointer-events:none;
+      `;
+      caseEl.appendChild(bar);
+    }
+
+    shelvesEl.appendChild(caseEl);
+
+    // ── Buy / refund row button (below the case) ──────────────────────────────
     const buyInfo = opts.canBuyShelf();
-    if (count < MAX_SHELVES || opts.canRefundShelf()) {
-      const rail = document.createElement('div');
-      rail.style.cssText = `
-        position:absolute;left:${RACK_PAD - 8}px;top:${shelfTop(count)}px;
-        width:${SHELF_SLOTS * SLOT_PX + 16}px;height:40px;
+    if (count < MAX_ROWS || opts.canRefundShelf()) {
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = `
+        position:absolute;left:${caseLeft}px;top:${shelfTop(count)}px;
+        width:${caseW}px;height:40px;
         display:flex;align-items:center;justify-content:center;gap:8px;${FF}
       `;
-      if (count < MAX_SHELVES) {
+      if (count < MAX_ROWS) {
         const b = document.createElement('button');
         b.textContent = `+ SHELF (${shelfCost(count + 1)}◈)`;
         b.style.cssText = `${FF}font-size:10px;font-weight:800;letter-spacing:0.08em;padding:4px 12px;border-radius:6px;cursor:pointer;
           background:${buyInfo.ok ? '#11281a' : '#0a1020'};border:1.5px dashed ${buyInfo.ok ? '#33dd88' : '#2a3d65'};color:${buyInfo.ok ? '#33dd88' : '#44608a'};`;
         b.title = buyInfo.label;
         b.addEventListener('click', (e) => { e.stopPropagation(); if (!opts.isLive()) opts.onBuyShelf(); });
-        rail.appendChild(b);
+        btnRow.appendChild(b);
       }
       if (opts.canRefundShelf()) {
         const r = document.createElement('button');
@@ -950,17 +1062,17 @@ export function createRackUI(opts: RackUIOpts): RackUI {
         r.style.cssText = `${FF}font-size:10px;font-weight:800;letter-spacing:0.08em;padding:4px 12px;border-radius:6px;cursor:pointer;
           background:#1a0f14;border:1.5px dashed #aa6677;color:#aa6677;`;
         r.addEventListener('click', (e) => { e.stopPropagation(); if (!opts.isLive()) opts.onRefundShelf(); });
-        rail.appendChild(r);
+        btnRow.appendChild(r);
       }
-      shelvesEl.appendChild(rail);
+      shelvesEl.appendChild(btnRow);
     }
   }
 
   // ── Rebuild ───────────────────────────────────────────────────────────────
 
   function rebuild(): void {
-    // Remove module DOM.
-    for (const mv of moduleViews.values()) mv.rootEl.remove();
+    // Remove module DOM (both bg and content overlay).
+    for (const mv of moduleViews.values()) { mv.rootEl.remove(); mv.contentEl.remove(); }
     moduleViews.clear();
     for (const view of cableViews.values()) {
       view.hitPath.remove();
@@ -975,6 +1087,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       if (!mv) continue;
       moduleViews.set(inst.instanceId, mv);
       root.appendChild(mv.rootEl);
+      root.appendChild(mv.contentEl);
       positionModule(mv);
     }
     for (const c of graph.cables) addCableView(c);

@@ -8,6 +8,8 @@ import { SaveData, getWorldSave } from './save';
 import { getModuleType, ModuleTypeDef } from '../core/modules';
 import { ModuleInstance } from '../core/graph';
 import { hashString } from '../core/rng';
+import { RACK_COLS, MAX_ROWS, checkRackFit, findRackSlot } from '../core/rack-layout';
+export { RACK_COLS, MAX_ROWS } from '../core/rack-layout';
 
 // ── Currency identity ───────────────────────────────────────────────────────
 
@@ -55,13 +57,12 @@ export function recordWorldCompleted(save: SaveData, worldId: string, completion
   return { awarded: completionReward };
 }
 
-// ── Shelves ─────────────────────────────────────────────────────────────────
+// ── Rack dimensions ──────────────────────────────────────────────────────────
 
-/** Cost of buying shelf n (1-based; shelf 1 is free and mandatory). */
+/** Cost of buying a new rack row (row n, 1-based; row 1 is free and mandatory). */
 export const SHELF_COSTS: readonly number[] = [0, 60, 120, 200];
-export const MAX_SHELVES = 4;
-/** Grid slots per shelf. */
-export const SHELF_SLOTS = 16;
+// Legacy aliases — prefer MAX_ROWS / RACK_COLS (re-exported from rack-layout.ts above).
+export { MAX_ROWS as MAX_SHELVES, RACK_COLS as SHELF_SLOTS } from '../core/rack-layout';
 
 export interface EconomyResult {
   ok: boolean;
@@ -74,7 +75,7 @@ export function shelfCost(shelfNumber: number): number {
 
 export function purchaseShelf(save: SaveData, worldId: string): EconomyResult {
   const ws = getWorldSave(save, worldId);
-  if (ws.shelfCount >= MAX_SHELVES) return { ok: false, error: 'Rack already has the maximum four shelves.' };
+  if (ws.shelfCount >= MAX_ROWS) return { ok: false, error: 'Rack already has the maximum four rows.' };
   const cost = shelfCost(ws.shelfCount + 1);
   if (save.resonance < cost) return { ok: false, error: `Needs ${cost} ${CURRENCY_NAME}.` };
   save.resonance -= cost;
@@ -84,10 +85,15 @@ export function purchaseShelf(save: SaveData, worldId: string): EconomyResult {
 
 export function refundShelf(save: SaveData, worldId: string): EconomyResult {
   const ws = getWorldSave(save, worldId);
-  if (ws.shelfCount <= 1) return { ok: false, error: 'The first shelf cannot be removed.' };
-  const shelfIndex = ws.shelfCount - 1;
-  const occupied = ws.rack.modules.some(m => m.shelfIndex === shelfIndex);
-  if (occupied) return { ok: false, error: 'Shelf must be empty before refunding.' };
+  if (ws.shelfCount <= 1) return { ok: false, error: 'The first row cannot be removed.' };
+  const lastRow = ws.shelfCount - 1;
+  // A module occupies the last row if any of its rows falls on lastRow.
+  const occupied = ws.rack.modules.some(m => {
+    const def = getModuleType(m.typeId);
+    const h = def?.rackSize.h ?? 1;
+    return m.gridY <= lastRow && m.gridY + h > lastRow;
+  });
+  if (occupied) return { ok: false, error: 'Row must be empty before refunding.' };
   const cost = shelfCost(ws.shelfCount);
   ws.shelfCount--;
   save.resonance += cost;
@@ -125,43 +131,50 @@ export interface PlacementCheck {
   reason?: string;
 }
 
-/** Does a module of given width fit at shelf/slot without overlap? */
-export function checkPlacement(
+/** Build a PlacedRect array from ModuleInstance[], looking up each module's rackSize. */
+function toPlacedRects(
   modules: readonly ModuleInstance[],
-  shelfCount: number,
-  ignoreInstanceId: string | null,
-  shelfIndex: number,
-  slotX: number,
-  widthUnits: number,
-): PlacementCheck {
-  if (shelfIndex < 0 || shelfIndex >= shelfCount) return { fits: false, reason: 'No such shelf.' };
-  if (slotX < 0 || slotX + widthUnits > SHELF_SLOTS) return { fits: false, reason: 'Outside usable rack space.' };
-  for (const m of modules) {
-    if (m.instanceId === ignoreInstanceId) continue;
-    if (m.shelfIndex !== shelfIndex) continue;
-    const def = getModuleType(m.typeId);
-    const w = def?.widthUnits ?? 2;
-    if (slotX < m.slotX + w && m.slotX < slotX + widthUnits) {
-      return { fits: false, reason: 'Overlaps another module.' };
-    }
-  }
-  return { fits: true };
+  skipInstanceId?: string | null,
+) {
+  return modules
+    .filter(m => m.instanceId !== skipInstanceId)
+    .map(m => {
+      const def = getModuleType(m.typeId);
+      return { gridY: m.gridY, gridX: m.gridX, w: def?.rackSize.w ?? 2, h: def?.rackSize.h ?? 1 };
+    });
 }
 
-/** Find the first free slot for a module of given width, or null. */
+/**
+ * Does a module with the given rackSize fit at (gridY, gridX) without
+ * overlapping the rack boundary or any existing module?
+ */
+export function checkPlacement(
+  modules: readonly ModuleInstance[],
+  rowCount: number,
+  ignoreInstanceId: string | null,
+  gridY: number,
+  gridX: number,
+  rackSize: { w: number; h: number },
+): PlacementCheck {
+  // Keep explicit reason strings for UI feedback.
+  if (gridY < 0 || gridY + rackSize.h > rowCount) return { fits: false, reason: 'Outside rack rows.' };
+  if (gridX < 0 || gridX + rackSize.w > RACK_COLS) return { fits: false, reason: 'Outside rack columns.' };
+  const placed = toPlacedRects(modules, ignoreInstanceId);
+  return checkRackFit(placed, gridY, gridX, rackSize.w, rackSize.h, rowCount)
+    ? { fits: true }
+    : { fits: false, reason: 'Overlaps another module.' };
+}
+
+/**
+ * Find the first free position for a module of the given rackSize.
+ * Scans row-major order (top-left to bottom-right).
+ */
 export function findFreeSlot(
   modules: readonly ModuleInstance[],
-  shelfCount: number,
-  widthUnits: number,
-): { shelfIndex: number; slotX: number } | null {
-  for (let shelf = 0; shelf < shelfCount; shelf++) {
-    for (let x = 0; x + widthUnits <= SHELF_SLOTS; x++) {
-      if (checkPlacement(modules, shelfCount, null, shelf, x, widthUnits).fits) {
-        return { shelfIndex: shelf, slotX: x };
-      }
-    }
-  }
-  return null;
+  rowCount: number,
+  rackSize: { w: number; h: number },
+): { gridY: number; gridX: number } | null {
+  return findRackSlot(toPlacedRects(modules), rackSize.w, rackSize.h, rowCount);
 }
 
 export interface PurchaseResult extends EconomyResult {
@@ -178,15 +191,15 @@ export function purchaseModule(save: SaveData, worldId: string, typeId: string):
   if (!isBlueprintUnlocked(save, typeId)) return { ok: false, error: 'Blueprint not unlocked yet.' };
   if (save.resonance < def.cost) return { ok: false, error: `Needs ${def.cost} ${CURRENCY_NAME}.` };
   const ws = getWorldSave(save, worldId);
-  const spot = findFreeSlot(ws.rack.modules, ws.shelfCount, def.widthUnits);
-  if (!spot) return { ok: false, error: 'No free rack space — move modules or buy a shelf.' };
+  const spot = findFreeSlot(ws.rack.modules, ws.shelfCount, def.rackSize);
+  if (!spot) return { ok: false, error: 'No free rack space — move modules or buy a row.' };
   const instanceId = newInstanceId(typeId, save);
   save.resonance -= def.cost;
   ws.rack.modules.push({
     instanceId,
     typeId,
-    shelfIndex: spot.shelfIndex,
-    slotX: spot.slotX,
+    gridY: spot.gridY,
+    gridX: spot.gridX,
     settings: { ...def.defaultSettings },
   });
   return { ok: true, instanceId };
@@ -227,24 +240,35 @@ export function ensureStarterRack(save: SaveData, worldId: string): boolean {
   let changed = false;
   const have = (typeId: string) => ws.rack.modules.find(m => m.typeId === typeId);
 
-  const starterLayout: Array<{ typeId: string; slotX: number }> = [
-    { typeId: 'clock', slotX: 0 },
-    { typeId: 'osc', slotX: 3 },
-    { typeId: 'output', slotX: 12 },
+  const starterLayout: Array<{ typeId: string; gridX: number }> = [
+    { typeId: 'clock', gridX: 0 },
+    { typeId: 'osc', gridX: 3 },
+    { typeId: 'output', gridX: 12 },
   ];
-  for (const { typeId, slotX } of starterLayout) {
+
+  // Ensure enough rows for the tallest starter module (output is 3×2, needs 2 rows).
+  const maxStarterH = starterLayout.reduce((acc, { typeId }) => {
+    const def = getModuleType(typeId);
+    return Math.max(acc, def?.rackSize.h ?? 1);
+  }, 1);
+  if (ws.shelfCount < maxStarterH) {
+    ws.shelfCount = maxStarterH;
+    changed = true;
+  }
+
+  for (const { typeId, gridX } of starterLayout) {
     if (have(typeId)) continue;
     const def = getModuleType(typeId)!;
-    // Prefer the canonical slot; fall back to any free slot.
-    const spot = checkPlacement(ws.rack.modules, ws.shelfCount, null, 0, slotX, def.widthUnits).fits
-      ? { shelfIndex: 0, slotX }
-      : findFreeSlot(ws.rack.modules, ws.shelfCount, def.widthUnits);
+    // Prefer the canonical column; fall back to any free slot.
+    const spot = checkPlacement(ws.rack.modules, ws.shelfCount, null, 0, gridX, def.rackSize).fits
+      ? { gridY: 0, gridX }
+      : findFreeSlot(ws.rack.modules, ws.shelfCount, def.rackSize);
     if (!spot) continue;
     ws.rack.modules.push({
       instanceId: newInstanceId(typeId, save),
       typeId,
-      shelfIndex: spot.shelfIndex,
-      slotX: spot.slotX,
+      gridY: spot.gridY,
+      gridX: spot.gridX,
       settings: { ...def.defaultSettings },
     });
     changed = true;
