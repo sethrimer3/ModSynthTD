@@ -122,6 +122,8 @@ class EnemyRt {
   flashMatch = false;
   /** Crescendo: incoming damage scales down as it advances. */
   private readonly baseBandIdx: number;
+  /** Exact Hz from MIDI pitch when available; undefined for authored waves. */
+  private readonly midiHz: number | undefined;
 
   constructor(spawn: SpawnEvent, def: EnemyDef, lane: Tile[], laneIndex: number, spawnTick: number, chordOffset: number, pool?: HpPool) {
     this.def = def;
@@ -132,6 +134,7 @@ class EnemyRt {
     this.chordOffset = chordOffset;
     this.pool = pool ?? { hp: def.maxHp, maxHp: def.maxHp };
     this.baseBandIdx = ['low', 'mid', 'high'].indexOf(spawn.band);
+    this.midiHz = spawn.hertz;
   }
 
   /** Steps taken at the given tick, including the fermata hold. */
@@ -177,8 +180,12 @@ class EnemyRt {
     return 'none';
   }
 
-  /** Resonance Hz derived from current band (updates for accidental enemies). */
-  get hz(): number { return bandToHz(this.band); }
+  /**
+   * Resonance Hz for damage matching.
+   * MIDI-derived enemies: exact Hz from the original MIDI pitch (fixed).
+   * Authored enemies: band-derived Hz (shifts for accidental enemies).
+   */
+  get hz(): number { return this.midiHz ?? bandToHz(this.band); }
 
   damageScale(): number {
     if (this.def.behavior === 'crescendo') {

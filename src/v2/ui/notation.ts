@@ -181,7 +181,7 @@ export function renderNotation(score: WaveScore, themeColor: string, dprScale = 
       x: tickToX(spawn.tick),
       y: TOP_PAD + spawn.lane * (STAFF_H + LANE_GAP) + BAND_Y[spawn.band],
       color: def?.color ?? themeColor,
-      hz: bandToHz(spawn.band),
+      hz: spawn.hertz ?? bandToHz(spawn.band),
     };
   });
   return { canvas, widthPx, heightPx, notes, tickToX };

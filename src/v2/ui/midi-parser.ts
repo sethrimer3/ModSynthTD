@@ -192,6 +192,8 @@ export function midiNotesToWaveScore(notes: RawMidiNote[], waveId: string): Wave
       durationTicks: q.gameTicks,
       enemyTypeId: q.id,
       band: pitchToBand(n.pitch, minPitch, maxPitch),
+      midiPitch: n.pitch,
+      hertz: 440 * Math.pow(2, (n.pitch - 69) / 12),
     };
   });
 

@@ -29,6 +29,10 @@ export interface ScoreNote {
   chordGroup?: string;
   /** Tie to the next note of the same lane/enemy (rendering + tied-pair spawn). */
   tieToNext?: boolean;
+  /** MIDI note number (0–127) preserved from the source MIDI file, if any. */
+  midiPitch?: number;
+  /** Exact frequency in Hz derived from midiPitch: 440 × 2^((pitch−69)/12). */
+  hertz?: number;
 }
 
 export interface WaveScore {
@@ -105,6 +109,10 @@ export interface SpawnEvent {
   chordGroup?: string;
   tiedToNext?: boolean;
   durationTicks: number;
+  /** MIDI note number preserved from source MIDI file, if any. */
+  midiPitch?: number;
+  /** Exact frequency in Hz from MIDI pitch. Takes priority over band-derived Hz in damage/popup. */
+  hertz?: number;
 }
 
 export interface CompiledScore {
@@ -129,6 +137,8 @@ export function compileScore(score: WaveScore): CompiledScore {
         chordGroup: n.chordGroup,
         tiedToNext: n.tieToNext,
         durationTicks: n.durationTicks,
+        midiPitch: n.midiPitch,
+        hertz: n.hertz,
       };
     });
   return {

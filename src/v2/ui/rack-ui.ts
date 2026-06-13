@@ -995,16 +995,27 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       box-shadow:inset 0 0 60px rgba(0,0,0,0.55),0 4px 24px rgba(0,0,0,0.6);
     `;
 
-    // Subtle vertical column guides (every slot boundary).
+    // 2D slot grid: vertical column lines every SLOT_PX, horizontal shelf-row
+    // lines every (SHELF_H + SHELF_GAP). The horizontal period matches shelf
+    // geometry so lines land at the top and bottom edge of each shelf row.
+    const rowPeriod = SHELF_H + SHELF_GAP;
     const colGrid = document.createElement('div');
     colGrid.style.cssText = `
       position:absolute;inset:0;border-radius:6px;pointer-events:none;overflow:hidden;
-      background-image:repeating-linear-gradient(
-        90deg,
-        transparent 0 ${SLOT_PX - 1}px,
-        rgba(20,45,85,0.35) ${SLOT_PX - 1}px ${SLOT_PX}px
-      );
-      background-position:8px 0;
+      background-image:
+        repeating-linear-gradient(
+          90deg,
+          transparent 0 ${SLOT_PX - 1}px,
+          rgba(20,45,85,0.45) ${SLOT_PX - 1}px ${SLOT_PX}px
+        ),
+        repeating-linear-gradient(
+          0deg,
+          rgba(18,42,82,0.35) 0 1px,
+          transparent 1px ${SHELF_H - 1}px,
+          rgba(18,42,82,0.25) ${SHELF_H - 1}px ${SHELF_H}px,
+          transparent ${SHELF_H}px ${rowPeriod}px
+        );
+      background-position:8px 0, 0 0;
     `;
     caseEl.appendChild(colGrid);
 
