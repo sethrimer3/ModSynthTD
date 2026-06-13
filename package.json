@@ -7,7 +7,8 @@
     "dev": "webpack serve --mode development --host 0.0.0.0",
     "desktop": "npm run build && electron .",
     "desktop:dev": "electron . --dev",
-    "desktop:no-build": "electron ."
+    "desktop:no-build": "electron .",
+    "test": "tsc -p tsconfig.tests.json && node .tests-build/tests/run-tests.js"
   },
   "main": "electron/main.cjs",
   "devDependencies": {

@@ -13,7 +13,45 @@ AI agents should maintain this file as part of normal implementation work.
 - Keep items short, concrete, and implementation-oriented.
 - Do not use this file for broad design vision. Put design intent in `design.md`.
 
-## Current Priority: Make the Core Factory-Defense Loop Real
+## ModSynth TD Campaign (current product)
+
+The modular-synth tower-defense campaign is the live product. See
+`V2_MODSYNTH_PLAN.md` for architecture, status ledger, and the content guide.
+The factory-defense items below are **legacy** (superseded by the campaign) and
+kept only for history.
+
+### Done
+- [x] Pure core: integer-tick timing (PPQ 48), canonical SignalEvent, typed
+  ports, data-driven module registry, deterministic bounded graph
+  validate/evaluate, score schema/compiler, enemy registry. (81 unit tests)
+- [x] Versioned save (v1) with migrations, import/export/reset, malformed-save
+  backup, unknown-module repair.
+- [x] Resonance economy: cumulative milestone rewards (no double-claim),
+  module purchase/sell/100%-refund, 1–4 shelves, starter-rack repair.
+- [x] Progression: unlock chain, blueprint unlocks, secret hints, exact Signal
+  Cipher route check, secret-world reveal persistence.
+- [x] Nine worlds (40–200 BPM), distinct tracks/themes, authored scores meeting
+  wave minimums (8/10/10/10/10/10/12/12 + gauntlet/3 boss phases).
+- [x] Unified pannable/zoomable scene (battlefield canvas + DOM rack + SVG
+  cables share one camera); Auto/Left/Right/Below rack placement.
+- [x] Editable multi-shelf rack: drag/rearrange, cross-shelf, overlap
+  prevention, drag-to-patch, reconnect, organized-yet-messy soft cables.
+- [x] Combat, cable pulses, and Web Audio synthesis all derive from the same
+  SignalEvents; limiter + polyphony cap + autoplay-safe activation + cleanup.
+- [x] Glowing sheet-music preview with playhead synced to spawning.
+- [x] World map, shop, settings, contextual tutorials, test pulse.
+- [x] Build passing, browser-verified: enter world, run wave, clear, reward.
+
+### Deferred / follow-up
+- [ ] Balance pass across all nine worlds (per-wave difficulty curves, default
+  single-direction tower vs. escapes on long tracks at low BPM).
+- [ ] More enemy sprite variety (several enemy ids reuse base note sprites).
+- [ ] Audio output not captured/verified in this environment (logic complete).
+- [ ] Endless-mode scaling beyond looping authored waves.
+- [ ] Boss-phase bespoke visuals for w200 (currently strong authored scores).
+- [ ] Mobile pinch/orientation tuning on real devices.
+
+## Legacy: Make the Core Factory-Defense Loop Real (superseded)
 
 - [x] Add actual conveyor placement as the basic infinite logistics tool.
 - [x] Replace fixed deposit-to-core mote paths with player-built conveyor routes.

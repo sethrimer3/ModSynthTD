@@ -25,6 +25,8 @@ export interface RopeNode {
 export interface SoftWireData {
   nodes:       RopeNode[];
   segLen:      number;
+  /** Per-wire slack multiplier (0.9–1.3) for natural cable-tangle variation. */
+  slackScale?: number;
   polyline:    SVGPolylineElement;
   gradient:    SVGLinearGradientElement;
   gradStop0:   SVGStopElement;
@@ -231,7 +233,7 @@ export function createSoftWireRenderer(panelEl: HTMLElement): SoftWireRenderer {
     deltaMs: number,
   ): void {
     if (wire.nodes.length !== ROPE_N) {
-      wire.segLen = initRope(wire.nodes, ax, ay, bx, by);
+      wire.segLen = initRope(wire.nodes, ax, ay, bx, by) * (wire.slackScale ?? 1);
     }
     updateRope(wire.nodes, wire.segLen, ax, ay, bx, by);
     wire.colorBleedT = Math.min(0.5, wire.colorBleedT + BLEED_RATE * deltaMs);

@@ -1,4 +1,4 @@
 import './styles.css';
-import { startVersion2 } from './version2';
+import { startModSynthTD } from './v2/app';
 
-startVersion2();
+startModSynthTD();

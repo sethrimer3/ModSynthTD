@@ -1,0 +1,205 @@
+/**
+ * settings-ui.ts — Settings overlay: audio, rack position, reduced motion,
+ * save export/import/reset.
+ */
+
+import { SaveData, RackPosition, exportSave, importSave, persistSave, resetSave, SaveStorage } from '../state/save';
+import { getAudioEngine } from './audio-engine';
+
+const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
+
+export interface SettingsUIOpts {
+  save: SaveData;
+  storage: SaveStorage;
+  onSaveChanged(): void;
+  onRackPositionChanged(): void;
+  onReset(): void;
+}
+
+export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position:fixed;inset:0;background:rgba(0,3,10,0.85);z-index:200;
+    display:flex;align-items:center;justify-content:center;${FF}
+  `;
+  const panel = document.createElement('div');
+  panel.style.cssText = `
+    background:#070d1a;border:1.5px solid #2a3d65;border-radius:14px;
+    padding:1.2rem 1.4rem;display:flex;flex-direction:column;gap:0.8rem;
+    width:min(420px, 92vw);max-height:88vh;overflow-y:auto;color:#cfe6ff;
+  `;
+  overlay.appendChild(panel);
+
+  const h = document.createElement('div');
+  h.textContent = 'SETTINGS — ModSynth TD';
+  h.style.cssText = 'font-size:0.85rem;font-weight:800;letter-spacing:0.1em;color:#dff6ff;';
+  panel.appendChild(h);
+
+  const row = (label: string, control: HTMLElement) => {
+    const r = document.createElement('div');
+    r.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:0.8rem;';
+    const l = document.createElement('span');
+    l.textContent = label;
+    l.style.cssText = 'font-size:0.68rem;color:#88aacc;letter-spacing:0.05em;';
+    r.append(l, control);
+    panel.appendChild(r);
+    return r;
+  };
+
+  const applyAudio = () => {
+    getAudioEngine().setPrefs({
+      masterMuted: opts.save.settings.masterMuted,
+      masterVolume: opts.save.settings.masterVolume,
+      percussionVolume: opts.save.settings.percussionVolume,
+    });
+    opts.onSaveChanged();
+  };
+
+  // Master mute.
+  const muteBtn = document.createElement('button');
+  const styleToggle = (b: HTMLButtonElement, on: boolean, onLabel: string, offLabel: string) => {
+    b.textContent = on ? onLabel : offLabel;
+    b.style.cssText = `${FF}font-size:0.65rem;font-weight:800;padding:4px 12px;border-radius:6px;cursor:pointer;
+      background:${on ? '#11281a' : '#0a1020'};border:1.5px solid ${on ? '#33dd88' : '#2a3d65'};color:${on ? '#33dd88' : '#5577aa'};`;
+  };
+  const refreshMute = () => styleToggle(muteBtn, !opts.save.settings.masterMuted, 'SOUND ON', 'MUTED');
+  muteBtn.addEventListener('click', () => {
+    opts.save.settings.masterMuted = !opts.save.settings.masterMuted;
+    refreshMute();
+    applyAudio();
+  });
+  refreshMute();
+  row('Master audio', muteBtn);
+
+  // Sliders.
+  const slider = (value: number, onInput: (v: number) => void) => {
+    const s = document.createElement('input');
+    s.type = 'range';
+    s.min = '0'; s.max = '100';
+    s.value = String(Math.round(value * 100));
+    s.style.cssText = 'width:150px;accent-color:#00ddcc;';
+    s.addEventListener('input', () => onInput(parseInt(s.value, 10) / 100));
+    return s;
+  };
+  row('Master volume', slider(opts.save.settings.masterVolume, v => { opts.save.settings.masterVolume = v; applyAudio(); }));
+  row('Percussion volume', slider(opts.save.settings.percussionVolume, v => { opts.save.settings.percussionVolume = v; applyAudio(); }));
+
+  // Rack position.
+  const posWrap = document.createElement('div');
+  posWrap.style.cssText = 'display:flex;gap:4px;';
+  const positions: RackPosition[] = ['auto', 'left', 'right', 'below'];
+  const posBtns = new Map<RackPosition, HTMLButtonElement>();
+  const refreshPos = () => {
+    for (const [p, b] of posBtns) {
+      const on = opts.save.settings.rackPosition === p;
+      b.style.background = on ? '#102a3a' : '#0a1020';
+      b.style.borderColor = on ? '#00ddcc' : '#2a3d65';
+      b.style.color = on ? '#00ddcc' : '#5577aa';
+    }
+  };
+  for (const p of positions) {
+    const b = document.createElement('button');
+    b.textContent = p.toUpperCase();
+    b.style.cssText = `${FF}font-size:0.6rem;font-weight:800;padding:4px 8px;border-radius:6px;cursor:pointer;border:1.5px solid #2a3d65;background:#0a1020;color:#5577aa;`;
+    b.addEventListener('click', () => {
+      opts.save.settings.rackPosition = p;
+      refreshPos();
+      opts.onSaveChanged();
+      opts.onRackPositionChanged();
+    });
+    posBtns.set(p, b);
+    posWrap.appendChild(b);
+  }
+  refreshPos();
+  row('Rack position', posWrap);
+
+  // Reduced motion.
+  const rmBtn = document.createElement('button');
+  const refreshRm = () => styleToggle(rmBtn, opts.save.settings.reducedMotion, 'REDUCED', 'FULL');
+  rmBtn.addEventListener('click', () => {
+    opts.save.settings.reducedMotion = !opts.save.settings.reducedMotion;
+    refreshRm();
+    opts.onSaveChanged();
+  });
+  refreshRm();
+  row('Motion', rmBtn);
+
+  // Save tools.
+  const tools = document.createElement('div');
+  tools.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:0.4rem;border-top:1px solid #16243c;padding-top:0.8rem;';
+  const toolBtn = (label: string, color: string, fn: () => void) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = `${FF}font-size:0.62rem;font-weight:800;padding:5px 10px;border-radius:6px;cursor:pointer;background:#0a1020;border:1.5px solid ${color};color:${color};letter-spacing:0.05em;`;
+    b.addEventListener('click', fn);
+    tools.appendChild(b);
+    return b;
+  };
+
+  const status = document.createElement('div');
+  status.style.cssText = 'font-size:0.6rem;color:#88aacc;min-height:1em;';
+
+  toolBtn('EXPORT SAVE', '#33dd88', () => {
+    const text = exportSave(opts.save);
+    const blob = new Blob([text], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `modsynth-td-save-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    status.textContent = 'Save exported.';
+  });
+
+  toolBtn('IMPORT SAVE', '#44aaff', () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.addEventListener('change', () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      void file.text().then(text => {
+        const result = importSave(text);
+        if (!result.ok || !result.save) {
+          status.textContent = `Import rejected: ${result.error}`;
+          status.style.color = '#ff6677';
+          return;
+        }
+        Object.assign(opts.save, result.save);
+        persistSave(opts.storage, opts.save);
+        status.textContent = `Imported.${result.repairs && result.repairs.length > 0 ? ` ${result.repairs.length} repair(s) applied.` : ''}`;
+        status.style.color = '#33dd88';
+        opts.onReset();
+      });
+    });
+    input.click();
+  });
+
+  let confirmReset = false;
+  const resetBtn = toolBtn('RESET PROGRESS', '#ff6677', () => {
+    if (!confirmReset) {
+      confirmReset = true;
+      resetBtn.textContent = 'REALLY RESET? CLICK AGAIN';
+      setTimeout(() => { confirmReset = false; resetBtn.textContent = 'RESET PROGRESS'; }, 4000);
+      return;
+    }
+    const fresh = resetSave(opts.storage);
+    Object.assign(opts.save, fresh);
+    opts.onReset();
+    overlay.remove();
+  });
+
+  panel.appendChild(tools);
+  panel.appendChild(status);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = 'CLOSE';
+  closeBtn.style.cssText = `${FF}font-size:0.68rem;font-weight:800;padding:6px;border-radius:8px;cursor:pointer;background:#0a1020;border:1.5px solid #2a3d65;color:#88aacc;margin-top:0.4rem;`;
+  closeBtn.addEventListener('click', () => overlay.remove());
+  panel.appendChild(closeBtn);
+
+  overlay.addEventListener('pointerdown', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  parent.appendChild(overlay);
+}

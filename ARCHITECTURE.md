@@ -2,7 +2,14 @@
 
 Title: **ModSynth TD**
 
-This document describes the current system structure and data flow for the prototype. It should be updated whenever systems are significantly changed.
+ModSynth TD is a modular-synth tower-defense campaign. The player builds a real
+patchable synthesizer rack; the evaluated patch produces timed combat signals
+that fight musical-note enemies. The rack and battlefield share one pannable,
+zoomable world-space scene.
+
+This document describes the current (campaign) architecture. See
+`V2_MODSYNTH_PLAN.md` for the implementation plan, status ledger, and the
+content-extension guide.
 
 ---
 
@@ -10,191 +17,126 @@ This document describes the current system structure and data flow for the proto
 
 | Concern | Technology |
 |---|---|
-| Language | TypeScript (strict mode) |
-| Build | Webpack 5 |
+| Language | TypeScript (strict) |
+| Build | Webpack 5 (`npm run build`) |
+| Tests | `tsc` + node harness (`npm test`) |
 | Desktop shell | Electron |
-| Rendering | HTML5 Canvas 2D |
-| Persistence | `localStorage` |
-| Styling | CSS (single flat file) |
+| Rendering | HTML5 Canvas 2D (battlefield) + DOM/SVG (rack, cables) |
+| Audio | Web Audio API |
+| Persistence | `localStorage` (key `modsynth-td-save`, schema v1) |
 
-Commands:
-- `npm run build` — production bundle
-- `npm run dev` — watch mode local dev server
-
-- `npm run desktop` - build production bundle, then launch Electron from `dist/index.html`
-- `npm run desktop:dev` - launch Electron against the Webpack dev server URL
-- `npm run desktop:no-build` - launch Electron against the existing `dist/index.html`
+Entry: `src/main.ts` → `src/v2/app.ts` `startModSynthTD()`.
 
 ---
 
-## 2. Module Structure
-
-The application boots directly into the ModSynth TD synth-defense implementation.
+## 2. Module map
 
 ```
-src/
-  main.ts                    — entry point
-  version2.ts                — current ModSynth TD game
-  version2-*.ts              — audio, enemies, waves, and rack wiring
-  styles.css                 — shared UI styles
+src/v2/
+  core/                 pure, renderer-free, node-testable
+    ticks.ts            integer musical timing (PPQ 48)
+    rng.ts              seeded deterministic randomness
+    limits.ts           central bounded-execution caps
+    events.ts           canonical SignalEvent
+    ports.ts            typed port contracts + compatibility
+    modules.ts          data-driven module registry + pure process()
+    graph.ts            rack graph: validate, evaluate, (de)serialize
+    score.ts            wave-score schema, validate, compile
+    enemy-defs.ts       enemy registry (data only)
+  data/
+    score-dsl.ts        compact rhythm-notation authoring DSL
+    worlds.ts           nine-world campaign + authored scores
+  state/                pure save/economy/progression
+    save.ts             versioned schema, migrations, import/export/reset
+    economy.ts          Resonance: milestones, purchases, refunds, shelves
+    progression.ts      unlock chain, blueprints, Signal Cipher route check
+  ui/                   browser-only
+    camera.ts           shared world-space camera + pointer/touch controls
+    combat.ts           tick-driven combat runtime + battlefield renderer
+    rack-ui.ts          editable shelves, modules, soft cables, pulses
+    audio-engine.ts     Web Audio synthesis from SignalEvents
+    notation.ts         glowing sheet-music renderer (cached)
+    tutorials.ts        contextual one-shot tips
+    shop-ui.ts          module shop / browser
+    settings-ui.ts      audio, rack position, save tools
+    worldmap.ts         campaign map + summaries + hidden secret world
+    level.ts            the unified-scene level orchestrator
+  app.ts                root: save load, screen routing, persistence
+  tests/                deterministic unit tests (81)
+
+src/version2-soft-wire.ts   reused Verlet-rope SVG cable renderer
+ASSETS/                      sprites, kick samples, font
 ```
 
-Desktop runtime:
-- `electron/main.cjs` - Electron main process and BrowserWindow setup.
-- `run-desktop.bat` builds, then launches Electron.
-- `run-desktop-dev.bat` starts the Webpack dev server in a separate terminal, then launches Electron with DevTools.
-- `run-desktop-no-build.bat` launches the existing `dist` bundle without rebuilding.
+---
+
+## 3. The canonical signal model
+
+One evaluated patch → one stream of `SignalEvent` (`core/events.ts`). The same
+stream drives **combat projectiles, visible cable pulses, the output tower, and
+Web Audio voices**. Nothing else (AudioNodes, DOM, canvas objects) is a source
+of truth.
+
+`graph.evaluatePatch(graph, {startTick, endTick, seedBase})` is pure,
+deterministic, cycle-safe, and bounded (see `core/limits.ts`). It runs without
+the renderer or an AudioContext, so it is fully unit-tested.
+
+Authored timing is **integer ticks** at PPQ 48 (`core/ticks.ts`). Seconds are
+derived only at the transport/audio boundary. A `WaveScore` compiles into the
+enemy spawn schedule, the notation layout, and preview audio from one source.
 
 ---
 
-## 3. System Overview
+## 4. The unified scene
 
-### 3.1 Constants and Configuration
+`ui/level.ts` builds one camera-driven scene:
+- a viewport-sized battlefield `<canvas>` (camera applied inside `combat.draw`),
+- a CSS-transformed rack layer (`translate(pan) scale(zoom)`) holding the DOM
+  rack, SVG cables, and pulse overlay.
 
-Game tuning and state live in `version2.ts` and its focused support modules.
-
-Key constants:
-- `tileSizePx` — native pixel size of one build tile (12)
-- `gridWidthTile` / `gridHeightTile` — board dimensions (20 x 20)
-- `coreTile`, `depositTile`, `deposit2Tile` — fixed positions
-- `turretRangeTile` — turret attack range in tiles
-- `TURRET_FIRE_COOLDOWN_SEC` — turret fire cycle duration (0.35 s)
-- `META_UPGRADE_CONFIGS` — upgrade label, cost, cap, and stat formula
-- `coreHpDamagedThreshold` — HP fraction (30%) below which the core pulses red
-
-### 3.2 Game State
-
-Top-level mutable state is declared as `let` at module level:
-
-| Variable | Type | Purpose |
-|---|---|---|
-| `ore` | number | Local run currency |
-| `totalOreEarned` | number | Cumulative ore earned this run (for ore/s rate display) |
-| `metaCurrency` | number | Persistent prestige currency |
-| `upgradeLevel` | Record | Purchased permanent upgrade levels |
-| `coreHp` | number | Current core health |
-| `waveIndex` | number | Current wave number |
-| `radarLevel` | number | Current radar expansion count |
-| `revealRadiusTile` | number | Fog-of-war reveal radius |
-| `enemies` | Enemy[] | Active enemy list |
-| `motes` | Mote[] | Ore motes from deposit 1 |
-| `motes2` | Mote[] | Ore motes from deposit 2 |
-| `worms` | Worm[] | Active worm enemy list |
-| `structures` | Structure[] | Flat tile-index array of placed structures |
-| `terrainIsDebris` | boolean[] | Flat tile-index array of debris tiles |
-| `structureHp` | Map<number, number> | HP per placed structure (by tile index) |
-| `blueprintGhosts` | Map<number, Structure> | Destroyed structure ghosts for rebuilding |
-| `distanceField` | Int16Array | BFS distance from core, recomputed on structural change |
-| `turretAngleRad` | Map<number, number> | Last firing angle per turret tile |
-| `environment` | EnvironmentState | Day/night time accumulator and disabled-by-default weather scaffold |
-
-### 3.3 Persistence
-
-Two `localStorage` keys:
-- `tiny-base-idle-meta` — meta currency total (number)
-- `tiny-base-idle-upg` — upgrade levels (JSON object)
-
-### 3.4 Terrain
-
-`buildStarterTerrain()` sets up the initial debris ring around the core with one open entrance at `entranceTile`. Terrain is stored as a flat boolean array indexed by `tileIndex(x, y)`.
-
-### 3.5 Pathfinding
-
-Enemies use a BFS distance field computed from the core outward (`computeDistanceField()`). The field is recomputed whenever a structure is placed or destroyed. Enemies step toward the neighbor with the lowest distance value each frame.
-
-The Breaker enemy bypasses the distance field and moves directly toward `breakerTargetTile` (a debris tile near the top of the base). When it arrives, it clears that debris tile and opens the second entrance.
-
-### 3.6 Game Loop
-
-```
-requestAnimationFrame
-  └─ update(dtSec)
-       ├─ updateEnemies(dtSec)
-       ├─ updateWorms(dtSec)
-       ├─ updateTurrets(dtSec)
-       └─ updateMotes(dtSec)
-  └─ render()
-       ├─ draw terrain and structures
-       ├─ draw grid lines (during hover)
-       ├─ draw deposits and motes
-       ├─ draw enemies and shot flashes
-       ├─ draw worm enemies
-       ├─ draw hover ghost and turret range preview
-       ├─ draw overlays (WAVE, BREACH, GAME OVER)
-       └─ update HUD spans and upgrade panel
-```
-
-Time step is capped at `Math.min(0.05, dt)` to prevent large jumps.
-
-### 3.7 Mote System
-
-Motes represent ore particles traveling from a deposit to the core. Each mote has a `progress` value from 0 to 1. Position is linearly interpolated from deposit to core in the render step.
-
-- `motes` — deposit 1 (upper-left, always visible)
-- `motes2` — deposit 2 (lower-right, revealed at `revealRadiusTile >= 6`)
-
-Both deliver 1 ore on arrival and are removed from the array.
-
-### 3.8 Radar and Fog
-
-`isTileVisible(x, y)` returns true when a tile is within `revealRadiusTile` distance from the core. Unexplored tiles are rendered as near-black. Radar buildings increment `radarLevel` and `revealRadiusTile` up to a maximum.
-
-### 3.9 Meta Upgrade System
-
-Three persistent upgrades are stored in `upgradeLevel` and persisted to `localStorage`. Each has 3 levels:
-
-| Key | Effect per level |
-|---|---|
-| `coreArmor` | +20 max core HP |
-| `turretPower` | +3 turret damage per shot |
-| `oreBonus` | +30 starting ore each run |
-
-Upgrades are purchased via `buyUpgrade()` which costs meta currency, applies the effect immediately to the current run, saves state, and refreshes the upgrade panel UI.
+Both use the one `Camera` (`ui/camera.ts`): wheel zoom, drag pan, touch pan,
+pinch, fit-scene, soft clamping. Rack placement (Auto/Left/Right/Below) only
+repositions the rack root; module coordinates are shelf/slot-local, so changing
+side never disturbs the patch.
 
 ---
 
-## 4. Rendering
+## 5. Transport & wave lifecycle
 
-The canvas renders at native resolution (240 x 240 pixels for a 20 x 20 grid at 12 px/tile). The CSS `image-rendering: pixelated` scales it up to fill its square field container.
-
-The HUD is DOM rendered over the top-left and top-right of the square playing field. The meta currency is a HUD button; activating it hides the playing field and opens the separate meta upgrade menu.
-
-Draw order per frame:
-1. Background clear
-2. Weather background scaffold (currently no-op while clear)
-3. Terrain tiles (debris, ground, unexplored fog)
-4. Blueprint ghosts
-5. Structures (wall, turret, radar, logistics, production, repair)
-6. Structure HP bars
-7. Directional tile shadows and dawn/dusk sunbeams
-8. Core tile (with pulsing red overlay when critically damaged)
-9. Deposits, resource motes, route rings, grid/range previews, shot flashes, enemies, worms, and hover ghost
-10. Daylight/sunset tint and night darkness
-11. Masked local building/core night glows clipped to visible radar tiles
-12. Weather foreground scaffold (currently no-op while clear)
-13. Canvas overlays (breach warnings, wave text, game over)
-14. Build number watermark and optional day/night debug time
-15. HUD span updates (ore shows rate `/s` after 4 s elapsed) + upgrade panel state update
-16. Status bar update (cost hint for turret/radar; erase target name; repair cost)
+`level.ts` runs a free-running integer-tick transport
+(`tickFloat = elapsedSec · bpm · PPQ / 60`). Each frame it processes newly
+crossed integer ticks (catch-up capped for tab suspension). States:
+`ready → countin → wave → cleared|failed`, then world `victory` and optional
+endless mode. During a wave, topology is locked; knobs flagged `liveSafe`
+recompute only future events.
 
 ---
 
-## 5. Input
+## 6. Persistence
 
-Mouse and touch input is handled via `pointerdown`, `pointermove`, `pointerup`, and `pointercancel` events on the canvas. Pointer capture is used to support drag-placing structures.
-
-Keyboard shortcuts are handled via `keydown` on `window`. Keys `w/1`, `t/2`, `r/3`, `e/4`, `f/5` select tools. `[` and `]` jump the day/night clock backward/forward by 5 minutes for visual testing, and `\` toggles a fast day/night preview; normal play remains one 3600-second cycle.
+`state/save.ts` — `modsynth-td-save`, schema v1. Per-world rack (modules with
+stable ids, cables, tower, synth pref), shelves, best wave, claimed milestone
+watermark, completion; plus global Resonance, blueprints, secret reveal, boss
+state, settings, tutorials. Malformed saves are backed up (never overwritten);
+unknown module types are dropped with cables repaired and reported
+non-destructively. Migrations are keyed by version.
 
 ---
 
-## 6. Future Architecture Notes
+## 7. Audio safety
 
-When these systems grow enough to warrant separation:
+`ui/audio-engine.ts` — one AudioContext, master gain → compressor/limiter →
+destination; separate percussion and synth buses. Voices are built per
+SignalEvent (osc type from waveform, freq from band+pitch, gate/attack/release
+envelope), scheduled by event id (no duplicates after suspend/resume), capped
+at 12 voices with oldest-steal, and disconnected on `ended`. No audible sound
+before a user gesture.
 
-- Extract `terrain.ts` — terrain generation, debris state, BFS distance field
-- Extract `enemies.ts` — enemy types, wave spawning, pathfinding update
-- Extract `motes.ts` — particle simulation, deposit management
-- Extract `upgrades.ts` — meta upgrade definitions, purchase logic, persistence
-- Extract `renderer.ts` — all canvas draw calls
-- Extract `hud.ts` — DOM update logic
-- Extract `input.ts` — input event handling and tool selection
+---
+
+## 8. Tests
+
+`npm test` compiles `src/v2/{core,data,state,tests}` (CommonJS, no DOM) and runs
+the node harness: 81 deterministic tests across timing/RNG, graph
+validation+evaluation, score compilation, economy, save/migration, and world
+data. `npm run build` validates the full browser bundle.

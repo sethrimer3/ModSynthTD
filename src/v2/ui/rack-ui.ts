@@ -1,0 +1,1023 @@
+/**
+ * rack-ui.ts — The editable multi-shelf rack: DOM modules, analytic plug
+ * layout, soft patch cables, drag-to-rearrange, drag-to-patch, and the
+ * organized-yet-messy cable tangle.
+ *
+ * The rack root lives inside the camera-scaled scene container, so all
+ * pointer math divides by the camera zoom. Plug positions are computed
+ * analytically from module slots — no per-frame DOM measurement.
+ */
+
+import { RackGraph, ModuleInstance, Cable, validateGraph, GraphValidation } from '../core/graph';
+import { getModuleType, ModuleTypeDef, SettingSpec } from '../core/modules';
+import { PortSpec, arePortsCompatible } from '../core/ports';
+import { SignalEvent } from '../core/events';
+import { SHELF_SLOTS, MAX_SHELVES, shelfCost, checkPlacement } from '../state/economy';
+import { hashString } from '../core/rng';
+import { createSoftWireRenderer, SoftWireData } from '../../version2-soft-wire';
+
+// ── Metrics ─────────────────────────────────────────────────────────────────
+
+export const SLOT_PX = 36;
+export const SHELF_H = 148;
+export const SHELF_GAP = 14;
+export const RACK_PAD = 16;
+
+export function rackWidthPx(): number {
+  return SHELF_SLOTS * SLOT_PX + RACK_PAD * 2;
+}
+
+export function rackHeightPx(shelfCount: number, showBuyRail: boolean): number {
+  const rails = shelfCount + (showBuyRail ? 1 : 0);
+  return rails * (SHELF_H + SHELF_GAP) + RACK_PAD * 2;
+}
+
+const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
+
+const DOMAIN_COLORS: Record<string, string> = {
+  trigger: '#33dd88',
+  voice: '#cc44ff',
+  either: '#88aacc',
+};
+
+// ── Public interface ────────────────────────────────────────────────────────
+
+export interface RackUIOpts {
+  root: HTMLElement;
+  graph: RackGraph;
+  getShelfCount(): number;
+  getZoom(): number;
+  /** Topology locked (active wave). */
+  isLive(): boolean;
+  themeColor: string;
+  reducedMotion(): boolean;
+  onGraphChanged(): void;
+  onSellModule(instanceId: string): void;
+  onBuyShelf(): void;
+  onRefundShelf(): void;
+  canBuyShelf(): { ok: boolean; label: string };
+  canRefundShelf(): boolean;
+  onModuleSelected(instanceId: string | null): void;
+  /** Output-module action buttons. */
+  onTowerMove(): void;
+  onTowerRotate(): void;
+  onSynthToggle(): void;
+  onTestPulse(): void;
+  getSynthState(): { configured: boolean; active: boolean; needsGesture: boolean };
+}
+
+export interface RackUI {
+  update(nowMs: number): void;
+  /** Rebuild all module/cable DOM from the graph (after structural changes). */
+  rebuild(): void;
+  /** Live cable pulse + module activity data for the current window. */
+  setTraffic(cableTraffic: Map<string, SignalEvent[]>, moduleActivity: Map<string, number>): void;
+  setCurrentTick(tick: number): void;
+  flashModule(instanceId: string): void;
+  highlightRoute(moduleIds: ReadonlySet<string> | null): void;
+  refreshControls(): void;
+  validation(): GraphValidation;
+  destroy(): void;
+}
+
+// ── Internals ───────────────────────────────────────────────────────────────
+
+interface PlugView {
+  moduleId: string;
+  spec: PortSpec;
+  el: HTMLElement;     // visible circle
+  wrapEl: HTMLElement; // larger hit target
+  /** Rack-local center. */
+  cx: number;
+  cy: number;
+}
+
+interface ModuleView {
+  inst: ModuleInstance;
+  def: ModuleTypeDef;
+  rootEl: HTMLElement;
+  plugs: PlugView[];
+  ledEl: HTMLElement | null;
+  flashUntil: number;
+  refreshSettings: () => void;
+}
+
+interface CableView {
+  cable: Cable;
+  wire: SoftWireData;
+  hitPath: SVGPolylineElement;
+  highlight: 'none' | 'dim' | 'bright';
+}
+
+interface PulseDot {
+  cableId: string;
+  eventTick: number;
+  el: SVGCircleElement;
+}
+
+export function createRackUI(opts: RackUIOpts): RackUI {
+  const { root, graph } = opts;
+  root.innerHTML = '';
+  root.style.cssText = `position:absolute;${FF}`;
+
+  const shelvesEl = document.createElement('div');
+  shelvesEl.style.cssText = 'position:absolute;inset:0;';
+  root.appendChild(shelvesEl);
+
+  const soft = createSoftWireRenderer(root);
+  root.appendChild(soft.svgEl);
+  soft.svgEl.style.zIndex = '30';
+
+  // Invisible-but-clickable hit layer for cables sits above modules.
+  const hitSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  hitSvg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:31;';
+  root.appendChild(hitSvg);
+
+  const pulseSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  pulseSvg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:32;';
+  root.appendChild(pulseSvg);
+
+  const moduleViews = new Map<string, ModuleView>();
+  const cableViews = new Map<string, CableView>();
+  const slurping: Array<{ wire: SoftWireData; ax: number; ay: number }> = [];
+  const pulses: PulseDot[] = [];
+
+  let traffic = new Map<string, SignalEvent[]>();
+  let activity = new Map<string, number>();
+  let currentTick = -1;
+  let lastUpdateMs = 0;
+  let selectedModuleId: string | null = null;
+  let routeHighlight: ReadonlySet<string> | null = null;
+  let cachedValidation: GraphValidation = validateGraph(graph);
+  let cableSeq = Date.now() % 100000;
+
+  // ── Coordinate helpers ────────────────────────────────────────────────────
+
+  function localPoint(clientX: number, clientY: number): { x: number; y: number } {
+    const r = root.getBoundingClientRect();
+    const z = Math.max(0.001, opts.getZoom());
+    return { x: (clientX - r.left) / z, y: (clientY - r.top) / z };
+  }
+
+  function shelfTop(shelfIndex: number): number {
+    return RACK_PAD + shelfIndex * (SHELF_H + SHELF_GAP);
+  }
+
+  function modulePos(inst: ModuleInstance): { x: number; y: number } {
+    return { x: RACK_PAD + inst.slotX * SLOT_PX, y: shelfTop(inst.shelfIndex) + 10 };
+  }
+
+  /** Analytic plug layout: inputs left edge, outputs right edge. */
+  function plugLocal(def: ModuleTypeDef, spec: PortSpec, index: number, count: number): { x: number; y: number } {
+    const w = def.widthUnits * SLOT_PX - 6;
+    const x = spec.direction === 'in' ? 10 : w - 10;
+    const usable = SHELF_H - 58;
+    const y = 34 + (count <= 1 ? usable / 2 : (index + 0.5) * (usable / count));
+    return { x, y };
+  }
+
+  function recomputePlugCenters(mv: ModuleView): void {
+    const pos = modulePos(mv.inst);
+    const ins = mv.def.inputs;
+    const outs = mv.def.outputs;
+    for (const pv of mv.plugs) {
+      const list = pv.spec.direction === 'in' ? ins : outs;
+      const idx = list.findIndex(p => p.portId === pv.spec.portId);
+      const off = plugLocal(mv.def, pv.spec, idx, list.length);
+      pv.cx = pos.x + off.x;
+      pv.cy = pos.y + off.y;
+    }
+  }
+
+  // ── Validation cache ──────────────────────────────────────────────────────
+
+  function revalidate(): void {
+    cachedValidation = validateGraph(graph);
+  }
+
+  function graphChanged(): void {
+    revalidate();
+    opts.onGraphChanged();
+  }
+
+  // ── Cable management ──────────────────────────────────────────────────────
+
+  function findPlug(moduleId: string, portId: string): PlugView | null {
+    const mv = moduleViews.get(moduleId);
+    if (!mv) return null;
+    return mv.plugs.find(p => p.spec.portId === portId) ?? null;
+  }
+
+  function cableColor(c: Cable): { src: string; dst: string } {
+    const fromDef = moduleViews.get(c.fromModuleId)?.def;
+    const toDef = moduleViews.get(c.toModuleId)?.def;
+    return {
+      src: fromDef?.color ?? '#88aacc',
+      dst: toDef?.color ?? '#88aacc',
+    };
+  }
+
+  function addCableView(c: Cable): void {
+    const { src, dst } = cableColor(c);
+    const wire = soft.createWire(src, dst);
+    // Per-cable slack variation for the organized-yet-messy tangle.
+    const slackScale = 0.92 + (hashString(c.cableId) % 1000) / 1000 * 0.35;
+    (wire as SoftWireData & { slackScale?: number }).slackScale = slackScale;
+
+    const hit = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    hit.setAttribute('fill', 'none');
+    hit.setAttribute('stroke', 'rgba(0,0,0,0)');
+    hit.setAttribute('stroke-width', '14');
+    hit.setAttribute('stroke-linecap', 'round');
+    hit.style.pointerEvents = 'stroke';
+    hit.style.cursor = 'pointer';
+    hitSvg.appendChild(hit);
+
+    const view: CableView = { cable: c, wire, hitPath: hit, highlight: 'none' };
+    cableViews.set(c.cableId, view);
+
+    hit.addEventListener('pointerenter', () => { if (view.highlight === 'none') setCableEmphasis(view, 1.6); });
+    hit.addEventListener('pointerleave', () => { if (view.highlight === 'none') setCableEmphasis(view, 1); });
+    hit.addEventListener('pointerdown', (e: PointerEvent) => {
+      // Grab the destination end of an existing cable to re-route it.
+      if (opts.isLive() || drag) return;
+      e.stopPropagation();
+      beginCableDragFromExisting(view, e);
+    });
+
+    // Drag the tip handle (near destination plug) to reconnect.
+    wire.tipHandle.addEventListener('pointerdown', (e: PointerEvent) => {
+      if (opts.isLive() || drag) return;
+      e.stopPropagation();
+      beginCableDragFromExisting(view, e);
+    });
+  }
+
+  function setCableEmphasis(view: CableView, widthScale: number): void {
+    view.wire.polyline.setAttribute('stroke-width', String(3 * widthScale));
+  }
+
+  function removeCable(cableId: string, slurp: boolean): void {
+    const view = cableViews.get(cableId);
+    const idx = graph.cables.findIndex(c => c.cableId === cableId);
+    if (idx !== -1) graph.cables.splice(idx, 1);
+    if (view) {
+      cableViews.delete(cableId);
+      view.hitPath.remove();
+      if (slurp && !opts.reducedMotion()) {
+        const from = findPlug(view.cable.fromModuleId, view.cable.fromPortId);
+        view.wire.isSlurping = true;
+        view.wire.slurpMs = 0;
+        slurping.push({ wire: view.wire, ax: from?.cx ?? 0, ay: from?.cy ?? 0 });
+      } else {
+        soft.finalizeWireRemoval(view.wire);
+      }
+    }
+  }
+
+  function tryConnect(fromModuleId: string, fromPortId: string, toModuleId: string, toPortId: string): boolean {
+    const cable: Cable = {
+      cableId: `c-${(cableSeq++).toString(36)}`,
+      fromModuleId, fromPortId, toModuleId, toPortId,
+    };
+    graph.cables.push(cable);
+    const v = validateGraph(graph);
+    const fatal = v.issues.some(i => i.severity === 'error' &&
+      ['cycle', 'incompatible-ports', 'fanout-exceeded', 'fanin-exceeded', 'duplicate-cable', 'self-cycle'].includes(i.code) &&
+      (i.cableId === cable.cableId || i.code === 'cycle'));
+    if (fatal) {
+      graph.cables.pop();
+      revalidate();
+      return false;
+    }
+    addCableView(cable);
+    graphChanged();
+    return true;
+  }
+
+  // ── Plug drag (patching) ──────────────────────────────────────────────────
+
+  interface DragState {
+    fromModuleId: string;
+    fromPort: PortSpec;
+    curX: number;
+    curY: number;
+    pointerId: number;
+  }
+  let drag: DragState | null = null;
+
+  function compatibleTarget(pv: PlugView): boolean {
+    if (!drag) return false;
+    if (pv.spec.direction !== 'in') return false;
+    if (pv.moduleId === drag.fromModuleId) return false;
+    if (!arePortsCompatible(drag.fromPort, pv.spec)) return false;
+    const fanIn = graph.cables.filter(c => c.toModuleId === pv.moduleId && c.toPortId === pv.spec.portId).length;
+    if (fanIn >= pv.spec.maxConnections) return false;
+    return true;
+  }
+
+  function setTargetHighlights(active: boolean): void {
+    for (const mv of moduleViews.values()) {
+      for (const pv of mv.plugs) {
+        if (active && compatibleTarget(pv)) {
+          pv.el.style.boxShadow = `0 0 10px 3px ${DOMAIN_COLORS[pv.spec.domain]}, 0 0 0 2px #fff`;
+          pv.el.style.transform = 'scale(1.4)';
+        } else {
+          pv.el.style.boxShadow = pv.el.dataset.shadow ?? '';
+          pv.el.style.transform = '';
+        }
+      }
+    }
+  }
+
+  function beginPlugDrag(mv: ModuleView, pv: PlugView, e: PointerEvent): void {
+    if (opts.isLive()) return;
+    // Output port at max fan-out: grab its existing cable instead.
+    const existing = graph.cables.filter(c => c.fromModuleId === pv.moduleId && c.fromPortId === pv.spec.portId);
+    if (existing.length >= pv.spec.maxConnections && existing.length > 0) {
+      const view = cableViews.get(existing[existing.length - 1].cableId);
+      if (view) { beginCableDragFromExisting(view, e); return; }
+    }
+    const local = localPoint(e.clientX, e.clientY);
+    drag = { fromModuleId: pv.moduleId, fromPort: pv.spec, curX: local.x, curY: local.y, pointerId: e.pointerId };
+    root.setPointerCapture(e.pointerId);
+    soft.setDragPreview(pv.cx, pv.cy, local.x, local.y, mv.def.color);
+    setTargetHighlights(true);
+  }
+
+  function beginCableDragFromExisting(view: CableView, e: PointerEvent): void {
+    const fromMv = moduleViews.get(view.cable.fromModuleId);
+    const fromPv = findPlug(view.cable.fromModuleId, view.cable.fromPortId);
+    if (!fromMv || !fromPv) return;
+    removeCable(view.cable.cableId, false);
+    graphChanged();
+    const local = localPoint(e.clientX, e.clientY);
+    drag = { fromModuleId: fromPv.moduleId, fromPort: fromPv.spec, curX: local.x, curY: local.y, pointerId: e.pointerId };
+    root.setPointerCapture(e.pointerId);
+    soft.setDragPreview(fromPv.cx, fromPv.cy, local.x, local.y, fromMv.def.color);
+    setTargetHighlights(true);
+  }
+
+  function plugUnder(clientX: number, clientY: number, wantInput: boolean): PlugView | null {
+    for (const mv of moduleViews.values()) {
+      for (const pv of mv.plugs) {
+        if (wantInput && pv.spec.direction !== 'in') continue;
+        if (!wantInput && pv.spec.direction !== 'out') continue;
+        const r = pv.wrapEl.getBoundingClientRect();
+        if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) return pv;
+      }
+    }
+    return null;
+  }
+
+  function endPlugDrag(e: PointerEvent): void {
+    if (!drag) return;
+    const target = plugUnder(e.clientX, e.clientY, true);
+    if (target && compatibleTarget(target)) {
+      // Bump an existing cable on a single-input port.
+      const existing = graph.cables.filter(c => c.toModuleId === target.moduleId && c.toPortId === target.spec.portId);
+      if (existing.length >= target.spec.maxConnections) {
+        removeCable(existing[0].cableId, true);
+      }
+      tryConnect(drag.fromModuleId, drag.fromPort.portId, target.moduleId, target.spec.portId);
+    }
+    drag = null;
+    soft.hideDragPreview();
+    setTargetHighlights(false);
+  }
+
+  // ── Module drag (rearranging) ─────────────────────────────────────────────
+
+  interface ModuleDrag {
+    mv: ModuleView;
+    grabDX: number;
+    grabDY: number;
+    ghost: HTMLElement;
+    valid: boolean;
+    targetShelf: number;
+    targetSlot: number;
+    pointerId: number;
+    moved: boolean;
+  }
+  let moduleDrag: ModuleDrag | null = null;
+
+  function beginModuleDrag(mv: ModuleView, e: PointerEvent): void {
+    if (opts.isLive()) return;
+    const local = localPoint(e.clientX, e.clientY);
+    const pos = modulePos(mv.inst);
+    const ghost = document.createElement('div');
+    ghost.style.cssText = `
+      position:absolute;border:2px dashed ${opts.themeColor};border-radius:8px;
+      pointer-events:none;z-index:40;opacity:0;
+      width:${mv.def.widthUnits * SLOT_PX - 6}px;height:${SHELF_H - 20}px;
+    `;
+    root.appendChild(ghost);
+    moduleDrag = {
+      mv,
+      grabDX: local.x - pos.x,
+      grabDY: local.y - pos.y,
+      ghost,
+      valid: true,
+      targetShelf: mv.inst.shelfIndex,
+      targetSlot: mv.inst.slotX,
+      pointerId: e.pointerId,
+      moved: false,
+    };
+    root.setPointerCapture(e.pointerId);
+    mv.rootEl.style.zIndex = '45';
+    mv.rootEl.style.opacity = '0.85';
+  }
+
+  function updateModuleDrag(e: PointerEvent): void {
+    const md = moduleDrag;
+    if (!md) return;
+    const local = localPoint(e.clientX, e.clientY);
+    const x = local.x - md.grabDX;
+    const y = local.y - md.grabDY;
+    if (!md.moved && Math.hypot(x - modulePos(md.mv.inst).x, y - modulePos(md.mv.inst).y) > 4) md.moved = true;
+    md.mv.rootEl.style.left = `${x}px`;
+    md.mv.rootEl.style.top = `${y}px`;
+    recomputePlugCentersAt(md.mv, x, y);
+
+    const shelf = Math.round((y - 10 - RACK_PAD) / (SHELF_H + SHELF_GAP));
+    const slot = Math.round((x - RACK_PAD) / SLOT_PX);
+    md.targetShelf = shelf;
+    md.targetSlot = slot;
+    const check = checkPlacement(graph.modules, opts.getShelfCount(), md.mv.inst.instanceId, shelf, slot, md.mv.def.widthUnits);
+    md.valid = check.fits;
+    md.ghost.style.opacity = md.moved ? '1' : '0';
+    md.ghost.style.left = `${RACK_PAD + slot * SLOT_PX}px`;
+    md.ghost.style.top = `${shelfTop(shelf) + 10}px`;
+    md.ghost.style.borderColor = md.valid ? opts.themeColor : '#ff3344';
+  }
+
+  function recomputePlugCentersAt(mv: ModuleView, x: number, y: number): void {
+    const ins = mv.def.inputs;
+    const outs = mv.def.outputs;
+    for (const pv of mv.plugs) {
+      const list = pv.spec.direction === 'in' ? ins : outs;
+      const idx = list.findIndex(p => p.portId === pv.spec.portId);
+      const off = plugLocal(mv.def, pv.spec, idx, list.length);
+      pv.cx = x + off.x;
+      pv.cy = y + off.y;
+    }
+  }
+
+  function endModuleDrag(): void {
+    const md = moduleDrag;
+    if (!md) return;
+    moduleDrag = null;
+    md.ghost.remove();
+    md.mv.rootEl.style.zIndex = '';
+    md.mv.rootEl.style.opacity = '';
+    if (md.moved && md.valid) {
+      md.mv.inst.shelfIndex = md.targetShelf;
+      md.mv.inst.slotX = md.targetSlot;
+      graphChanged();
+    }
+    // Always settle onto the (possibly restored) grid slot.
+    positionModule(md.mv);
+    if (!md.moved) selectModule(md.mv.inst.instanceId);
+  }
+
+  function positionModule(mv: ModuleView): void {
+    const pos = modulePos(mv.inst);
+    mv.rootEl.style.left = `${pos.x}px`;
+    mv.rootEl.style.top = `${pos.y}px`;
+    recomputePlugCenters(mv);
+  }
+
+  // ── Selection / highlighting ──────────────────────────────────────────────
+
+  function selectModule(instanceId: string | null): void {
+    selectedModuleId = instanceId;
+    for (const mv of moduleViews.values()) {
+      const sel = mv.inst.instanceId === instanceId;
+      mv.rootEl.style.outline = sel ? `2px solid ${opts.themeColor}` : '';
+    }
+    applyCableHighlights();
+    opts.onModuleSelected(instanceId);
+  }
+
+  function applyCableHighlights(): void {
+    for (const view of cableViews.values()) {
+      let mode: 'none' | 'dim' | 'bright' = 'none';
+      if (routeHighlight) {
+        const on = routeHighlight.has(view.cable.fromModuleId) && routeHighlight.has(view.cable.toModuleId);
+        mode = on ? 'bright' : 'dim';
+      } else if (selectedModuleId) {
+        const touches = view.cable.fromModuleId === selectedModuleId || view.cable.toModuleId === selectedModuleId;
+        mode = touches ? 'bright' : 'dim';
+      }
+      view.highlight = mode;
+      view.wire.polyline.style.opacity = mode === 'dim' ? '0.18' : '1';
+      view.wire.polyline.setAttribute('stroke-width', mode === 'bright' ? '4.5' : '3');
+    }
+  }
+
+  // ── Module DOM ────────────────────────────────────────────────────────────
+
+  function buildSettingControl(mv: ModuleView, spec: SettingSpec): HTMLElement {
+    const inst = mv.inst;
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;align-items:center;gap:3px;justify-content:space-between;';
+    const label = document.createElement('span');
+    label.textContent = spec.label;
+    label.style.cssText = 'font-size:8px;color:#44608a;letter-spacing:0.08em;';
+    wrap.appendChild(label);
+
+    const refresh: Array<() => void> = [];
+    const lockable: HTMLButtonElement[] = [];
+
+    if (spec.type === 'enum' && spec.options) {
+      const btn = document.createElement('button');
+      btn.style.cssText = `${FF}font-size:9px;font-weight:800;padding:2px 6px;border-radius:4px;cursor:pointer;background:#0a1020;border:1px solid #2a3d65;color:${mv.def.color};min-width:34px;`;
+      const labelFor = (v: unknown) => {
+        const idx = spec.options!.findIndex(o => o === v);
+        return spec.optionLabels?.[idx] ?? String(v);
+      };
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (opts.isLive() && !spec.liveSafe) return;
+        const idx = spec.options!.findIndex(o => o === inst.settings[spec.key]);
+        inst.settings[spec.key] = spec.options![(idx + 1) % spec.options!.length];
+        refresh.forEach(f => f());
+        graphChanged();
+      });
+      refresh.push(() => { btn.textContent = labelFor(inst.settings[spec.key] ?? mv.def.defaultSettings[spec.key]); });
+      lockable.push(btn);
+      wrap.appendChild(btn);
+    } else if (spec.type === 'bool') {
+      const btn = document.createElement('button');
+      btn.style.cssText = `${FF}font-size:9px;font-weight:800;padding:2px 6px;border-radius:4px;cursor:pointer;background:#0a1020;border:1px solid #2a3d65;min-width:30px;`;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (opts.isLive() && !spec.liveSafe) return;
+        inst.settings[spec.key] = !(inst.settings[spec.key] === true);
+        refresh.forEach(f => f());
+        graphChanged();
+      });
+      refresh.push(() => {
+        const on = inst.settings[spec.key] === true;
+        btn.textContent = on ? 'ON' : 'OFF';
+        btn.style.color = on ? mv.def.color : '#44608a';
+        btn.style.borderColor = on ? mv.def.color : '#2a3d65';
+      });
+      lockable.push(btn);
+      wrap.appendChild(btn);
+    } else {
+      // int/float: − value +
+      const minus = document.createElement('button');
+      const plus = document.createElement('button');
+      const val = document.createElement('span');
+      for (const b of [minus, plus]) {
+        b.style.cssText = `${FF}font-size:10px;font-weight:800;width:16px;height:16px;border-radius:4px;cursor:pointer;background:#0a1020;border:1px solid #2a3d65;color:#88aacc;line-height:1;padding:0;`;
+      }
+      minus.textContent = '−';
+      plus.textContent = '+';
+      val.style.cssText = `font-size:9px;color:${mv.def.color};min-width:26px;text-align:center;font-weight:800;`;
+      const step = spec.type === 'int' ? 1 : 0.05;
+      const change = (dir: number) => {
+        if (opts.isLive() && !spec.liveSafe) return;
+        const cur = typeof inst.settings[spec.key] === 'number' ? inst.settings[spec.key] as number : (mv.def.defaultSettings[spec.key] as number ?? 0);
+        let next = cur + dir * step;
+        if (spec.min !== undefined) next = Math.max(spec.min, next);
+        if (spec.max !== undefined) next = Math.min(spec.max, next);
+        inst.settings[spec.key] = spec.type === 'int' ? Math.round(next) : Math.round(next * 100) / 100;
+        refresh.forEach(f => f());
+        graphChanged();
+      };
+      minus.addEventListener('click', (e) => { e.stopPropagation(); change(-1); });
+      plus.addEventListener('click', (e) => { e.stopPropagation(); change(1); });
+      refresh.push(() => {
+        const cur = inst.settings[spec.key] ?? mv.def.defaultSettings[spec.key];
+        val.textContent = typeof cur === 'number' ? (spec.type === 'int' ? String(cur) : (cur as number).toFixed(2)) : String(cur);
+      });
+      lockable.push(minus, plus);
+      const group = document.createElement('span');
+      group.style.cssText = 'display:inline-flex;align-items:center;gap:2px;';
+      group.append(minus, val, plus);
+      wrap.appendChild(group);
+    }
+
+    refresh.forEach(f => f());
+    (wrap as HTMLElement & { __refresh?: () => void }).__refresh = () => {
+      refresh.forEach(f => f());
+      const locked = opts.isLive() && !spec.liveSafe;
+      for (const b of lockable) {
+        b.style.opacity = locked ? '0.35' : '1';
+        b.style.cursor = locked ? 'not-allowed' : 'pointer';
+      }
+    };
+    return wrap;
+  }
+
+  function buildModuleView(inst: ModuleInstance): ModuleView | null {
+    const def = getModuleType(inst.typeId);
+    if (!def) return null;
+    const el = document.createElement('div');
+    const w = def.widthUnits * SLOT_PX - 6;
+    el.style.cssText = `
+      position:absolute;width:${w}px;height:${SHELF_H - 20}px;
+      background:linear-gradient(180deg,#0a1226,#060c18);
+      border:1.5px solid #1a2a44;border-radius:8px;
+      box-shadow:0 2px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(120,160,255,0.07);
+      z-index:20;${FF}touch-action:none;cursor:grab;user-select:none;
+      transition:border-color 0.15s, box-shadow 0.2s;
+    `;
+
+    // Faceplate screws for the eurorack look.
+    for (const [sx, sy] of [[4, 4], [w - 9, 4], [4, SHELF_H - 30], [w - 9, SHELF_H - 30]] as Array<[number, number]>) {
+      const screw = document.createElement('div');
+      screw.style.cssText = `position:absolute;left:${sx}px;top:${sy}px;width:5px;height:5px;border-radius:50%;background:#1c2a45;border:1px solid #2c4068;`;
+      el.appendChild(screw);
+    }
+
+    const title = document.createElement('div');
+    title.textContent = def.shortName;
+    title.style.cssText = `
+      text-align:center;margin-top:7px;font-size:10px;font-weight:800;
+      letter-spacing:0.14em;color:${def.color};text-shadow:0 0 8px ${def.color}66;
+      pointer-events:none;
+    `;
+    el.appendChild(title);
+
+    const mv: ModuleView = { inst, def, rootEl: el, plugs: [], ledEl: null, flashUntil: 0, refreshSettings: () => undefined };
+
+    // Plugs.
+    const allPorts: Array<{ spec: PortSpec; list: PortSpec[] }> = [
+      ...def.inputs.map(spec => ({ spec, list: def.inputs })),
+      ...def.outputs.map(spec => ({ spec, list: def.outputs })),
+    ];
+    for (const { spec, list } of allPorts) {
+      const idx = list.findIndex(p => p.portId === spec.portId);
+      const off = plugLocal(def, spec, idx, list.length);
+      const wrapEl = document.createElement('div');
+      wrapEl.style.cssText = `
+        position:absolute;left:${off.x - 13}px;top:${off.y - 13}px;width:26px;height:26px;
+        display:flex;align-items:center;justify-content:center;touch-action:none;
+        cursor:crosshair;z-index:33;
+      `;
+      const color = DOMAIN_COLORS[spec.domain];
+      const plugEl = document.createElement('div');
+      const shadow = `0 0 6px ${color}99`;
+      plugEl.dataset.shadow = shadow;
+      plugEl.style.cssText = `
+        width:13px;height:13px;border-radius:50%;
+        background:${color}22;border:2px solid ${color};
+        box-shadow:${shadow};transition:transform 0.1s, box-shadow 0.1s;
+        pointer-events:none;
+      `;
+      wrapEl.appendChild(plugEl);
+      wrapEl.title = `${spec.label} — ${spec.help}`;
+      el.appendChild(wrapEl);
+      const pv: PlugView = { moduleId: inst.instanceId, spec, el: plugEl, wrapEl, cx: 0, cy: 0 };
+      mv.plugs.push(pv);
+      if (spec.direction === 'out') {
+        wrapEl.addEventListener('pointerdown', (e: PointerEvent) => {
+          e.stopPropagation();
+          beginPlugDrag(mv, pv, e);
+        });
+      } else {
+        wrapEl.addEventListener('pointerdown', (e: PointerEvent) => {
+          // Grab the existing cable on this input to re-route it.
+          if (opts.isLive() || drag) return;
+          const existing = graph.cables.find(c => c.toModuleId === inst.instanceId && c.toPortId === spec.portId);
+          if (existing) {
+            e.stopPropagation();
+            const view = cableViews.get(existing.cableId);
+            if (view) beginCableDragFromExisting(view, e);
+          }
+        });
+      }
+    }
+
+    // Controls column (between plug columns).
+    const controls = document.createElement('div');
+    const hasIn = def.inputs.length > 0;
+    const hasOut = def.outputs.length > 0;
+    controls.style.cssText = `
+      position:absolute;top:26px;bottom:24px;
+      left:${hasIn ? 24 : 8}px;right:${hasOut ? 24 : 8}px;
+      display:flex;flex-direction:column;gap:3px;justify-content:center;
+      overflow:hidden;
+    `;
+    el.appendChild(controls);
+
+    const settingEls: HTMLElement[] = [];
+    for (const spec of def.settingsSpec) {
+      const ctrl = buildSettingControl(mv, spec);
+      settingEls.push(ctrl);
+      controls.appendChild(ctrl);
+    }
+
+    // Output-module extras: tower + synth + test pulse.
+    if (def.typeId === 'output') {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:3px;justify-content:center;flex-wrap:wrap;';
+      const mkBtn = (txt: string, title: string, fn: () => void) => {
+        const b = document.createElement('button');
+        b.textContent = txt;
+        b.title = title;
+        b.style.cssText = `${FF}font-size:8px;font-weight:800;padding:2px 5px;border-radius:4px;cursor:pointer;background:#0a1020;border:1px solid #2a3d65;color:#88aacc;letter-spacing:0.05em;`;
+        b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+        row.appendChild(b);
+        return b;
+      };
+      mkBtn('MOVE', 'Place / move the output tower on the battlefield', () => opts.onTowerMove());
+      mkBtn('↻ROT', 'Rotate the tower clockwise', () => opts.onTowerRotate());
+      mkBtn('PULSE', 'Send a test pulse through the patch (preparation only)', () => opts.onTestPulse());
+      controls.appendChild(row);
+
+      const synthState = document.createElement('div');
+      synthState.style.cssText = 'text-align:center;font-size:7px;letter-spacing:0.08em;color:#44608a;';
+      controls.appendChild(synthState);
+      const updateSynthLabel = () => {
+        const s = opts.getSynthState();
+        synthState.textContent = !s.configured ? 'SYNTH OFF' : s.needsGesture ? 'TAP TO ENABLE AUDIO' : s.active ? 'SYNTH LIVE' : 'SYNTH READY';
+        synthState.style.color = s.active ? def.color : '#44608a';
+      };
+      settingEls.push(Object.assign(synthState, { __refresh: updateSynthLabel }) as unknown as HTMLElement);
+      updateSynthLabel();
+    }
+
+    // Activity LED.
+    const led = document.createElement('div');
+    led.style.cssText = `
+      position:absolute;bottom:8px;left:50%;transform:translateX(-50%);
+      width:7px;height:7px;border-radius:50%;
+      background:#102030;border:1px solid #224466;transition:background 0.1s, box-shadow 0.1s;
+      pointer-events:none;
+    `;
+    el.appendChild(led);
+    mv.ledEl = led;
+
+    // Sell tab (non-starters, preparation only).
+    if (!def.isStarter) {
+      const sell = document.createElement('button');
+      sell.textContent = '×';
+      sell.title = `Sell for full refund (${def.cost})`;
+      sell.style.cssText = `
+        position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:4px;
+        ${FF}font-size:10px;line-height:1;cursor:pointer;padding:0;
+        background:#1a0f14;border:1px solid #663344;color:#aa6677;z-index:34;
+      `;
+      sell.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (opts.isLive()) return;
+        opts.onSellModule(inst.instanceId);
+      });
+      el.appendChild(sell);
+    }
+
+    mv.refreshSettings = () => {
+      for (const s of settingEls) {
+        const fn = (s as HTMLElement & { __refresh?: () => void }).__refresh;
+        if (fn) fn();
+      }
+    };
+
+    el.addEventListener('pointerdown', (e: PointerEvent) => {
+      if (drag) return;
+      e.stopPropagation();
+      beginModuleDrag(mv, e);
+    });
+
+    el.title = `${def.name} — ${def.tooltip}`;
+    return mv;
+  }
+
+  // ── Shelves ───────────────────────────────────────────────────────────────
+
+  function buildShelves(): void {
+    shelvesEl.innerHTML = '';
+    const count = opts.getShelfCount();
+    for (let i = 0; i < count; i++) {
+      const rail = document.createElement('div');
+      rail.style.cssText = `
+        position:absolute;left:${RACK_PAD - 8}px;top:${shelfTop(i)}px;
+        width:${SHELF_SLOTS * SLOT_PX + 16}px;height:${SHELF_H}px;
+        background:linear-gradient(180deg,#0c1322 0%,#080d18 8%,#070b14 92%,#0c1322 100%);
+        border:1px solid #16243c;border-radius:6px;
+        box-shadow:inset 0 4px 10px rgba(0,0,0,0.55);
+      `;
+      // Eurorack mounting rails.
+      for (const top of [2, SHELF_H - 8]) {
+        const bar = document.createElement('div');
+        bar.style.cssText = `
+          position:absolute;left:0;top:${top}px;width:100%;height:6px;
+          background:repeating-linear-gradient(90deg,#16233c 0 ${SLOT_PX - 3}px,#22365a ${SLOT_PX - 3}px ${SLOT_PX}px);
+          border-radius:3px;opacity:0.8;
+        `;
+        rail.appendChild(bar);
+      }
+      shelvesEl.appendChild(rail);
+    }
+    // Buy / refund shelf rail.
+    const buyInfo = opts.canBuyShelf();
+    if (count < MAX_SHELVES || opts.canRefundShelf()) {
+      const rail = document.createElement('div');
+      rail.style.cssText = `
+        position:absolute;left:${RACK_PAD - 8}px;top:${shelfTop(count)}px;
+        width:${SHELF_SLOTS * SLOT_PX + 16}px;height:40px;
+        display:flex;align-items:center;justify-content:center;gap:8px;${FF}
+      `;
+      if (count < MAX_SHELVES) {
+        const b = document.createElement('button');
+        b.textContent = `+ SHELF (${shelfCost(count + 1)}◈)`;
+        b.style.cssText = `${FF}font-size:10px;font-weight:800;letter-spacing:0.08em;padding:4px 12px;border-radius:6px;cursor:pointer;
+          background:${buyInfo.ok ? '#11281a' : '#0a1020'};border:1.5px dashed ${buyInfo.ok ? '#33dd88' : '#2a3d65'};color:${buyInfo.ok ? '#33dd88' : '#44608a'};`;
+        b.title = buyInfo.label;
+        b.addEventListener('click', (e) => { e.stopPropagation(); if (!opts.isLive()) opts.onBuyShelf(); });
+        rail.appendChild(b);
+      }
+      if (opts.canRefundShelf()) {
+        const r = document.createElement('button');
+        r.textContent = `− REFUND SHELF (${shelfCost(count)}◈)`;
+        r.style.cssText = `${FF}font-size:10px;font-weight:800;letter-spacing:0.08em;padding:4px 12px;border-radius:6px;cursor:pointer;
+          background:#1a0f14;border:1.5px dashed #aa6677;color:#aa6677;`;
+        r.addEventListener('click', (e) => { e.stopPropagation(); if (!opts.isLive()) opts.onRefundShelf(); });
+        rail.appendChild(r);
+      }
+      shelvesEl.appendChild(rail);
+    }
+  }
+
+  // ── Rebuild ───────────────────────────────────────────────────────────────
+
+  function rebuild(): void {
+    // Remove module DOM.
+    for (const mv of moduleViews.values()) mv.rootEl.remove();
+    moduleViews.clear();
+    for (const view of cableViews.values()) {
+      view.hitPath.remove();
+      soft.finalizeWireRemoval(view.wire);
+    }
+    cableViews.clear();
+
+    buildShelves();
+
+    for (const inst of graph.modules) {
+      const mv = buildModuleView(inst);
+      if (!mv) continue;
+      moduleViews.set(inst.instanceId, mv);
+      root.appendChild(mv.rootEl);
+      positionModule(mv);
+    }
+    for (const c of graph.cables) addCableView(c);
+    revalidate();
+    applyCableHighlights();
+  }
+
+  // ── Root pointer handlers (drag continuation) ─────────────────────────────
+
+  const onRootMove = (e: PointerEvent) => {
+    if (drag && e.pointerId === drag.pointerId) {
+      const local = localPoint(e.clientX, e.clientY);
+      drag.curX = local.x;
+      drag.curY = local.y;
+    } else if (moduleDrag && e.pointerId === moduleDrag.pointerId) {
+      updateModuleDrag(e);
+    }
+  };
+  const onRootUp = (e: PointerEvent) => {
+    if (drag && e.pointerId === drag.pointerId) endPlugDrag(e);
+    else if (moduleDrag && e.pointerId === moduleDrag.pointerId) endModuleDrag();
+    if (root.hasPointerCapture(e.pointerId)) root.releasePointerCapture(e.pointerId);
+  };
+  const onRootCancel = (e: PointerEvent) => {
+    if (drag) { drag = null; soft.hideDragPreview(); setTargetHighlights(false); }
+    if (moduleDrag) {
+      // Cancelled drag restores the previous valid position.
+      moduleDrag.ghost.remove();
+      moduleDrag.mv.rootEl.style.zIndex = '';
+      moduleDrag.mv.rootEl.style.opacity = '';
+      positionModule(moduleDrag.mv);
+      moduleDrag = null;
+    }
+    if (root.hasPointerCapture(e.pointerId)) root.releasePointerCapture(e.pointerId);
+  };
+  root.addEventListener('pointermove', onRootMove);
+  root.addEventListener('pointerup', onRootUp);
+  root.addEventListener('pointercancel', onRootCancel);
+  root.addEventListener('pointerdown', () => {
+    if (!drag && !moduleDrag) selectModule(null);
+  });
+
+  // ── Frame update ──────────────────────────────────────────────────────────
+
+  const PULSE_TRAVEL_TICKS = 12;
+
+  function update(nowMs: number): void {
+    const deltaMs = lastUpdateMs > 0 ? Math.min(nowMs - lastUpdateMs, 100) : 16;
+    lastUpdateMs = nowMs;
+    const reduced = opts.reducedMotion();
+
+    soft.setViewBox(root.clientWidth, root.clientHeight);
+
+    if (drag) {
+      const fromPv = findPlug(drag.fromModuleId, drag.fromPort.portId);
+      if (fromPv) soft.updateDragPreviewPhysics(fromPv.cx, fromPv.cy, drag.curX, drag.curY);
+    }
+
+    for (const view of cableViews.values()) {
+      const a = findPlug(view.cable.fromModuleId, view.cable.fromPortId);
+      const b = findPlug(view.cable.toModuleId, view.cable.toPortId);
+      if (!a || !b) continue;
+      soft.updateLockedWire(view.wire, a.cx, a.cy, b.cx, b.cy, reduced ? 0 : deltaMs);
+      // Mirror node polyline onto the invisible hit path (cheap string reuse).
+      const pts = view.wire.polyline.getAttribute('points');
+      if (pts) view.hitPath.setAttribute('points', pts);
+    }
+
+    for (let i = slurping.length - 1; i >= 0; i--) {
+      const s = slurping[i];
+      if (soft.updateSlurpingWire(s.wire, s.ax, s.ay, deltaMs)) {
+        soft.finalizeWireRemoval(s.wire);
+        slurping.splice(i, 1);
+      }
+    }
+
+    // Cable pulses from canonical SignalEvents.
+    if (!reduced && currentTick >= 0) {
+      let pulseIdx = 0;
+      for (const [cableId, events] of traffic) {
+        const view = cableViews.get(cableId);
+        if (!view || view.wire.nodes.length === 0) continue;
+        for (const ev of events) {
+          const age = currentTick - (ev.tick - PULSE_TRAVEL_TICKS);
+          if (age < 0 || age > PULSE_TRAVEL_TICKS) continue;
+          const t = age / PULSE_TRAVEL_TICKS;
+          const nodes = view.wire.nodes;
+          const fi = t * (nodes.length - 1);
+          const i0 = Math.min(nodes.length - 2, Math.floor(fi));
+          const frac = fi - i0;
+          const x = nodes[i0].x + (nodes[i0 + 1].x - nodes[i0].x) * frac;
+          const y = nodes[i0].y + (nodes[i0 + 1].y - nodes[i0].y) * frac;
+          let dot = pulses[pulseIdx];
+          if (!dot) {
+            const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            c.setAttribute('r', '3.4');
+            pulseSvg.appendChild(c);
+            dot = { cableId, eventTick: ev.tick, el: c };
+            pulses.push(dot);
+          }
+          dot.el.setAttribute('cx', x.toFixed(1));
+          dot.el.setAttribute('cy', y.toFixed(1));
+          dot.el.setAttribute('fill', view.wire.srcColor);
+          dot.el.style.filter = `drop-shadow(0 0 4px ${view.wire.srcColor})`;
+          dot.el.style.display = '';
+          pulseIdx++;
+          if (pulseIdx >= 40) break;
+        }
+        if (pulseIdx >= 40) break;
+      }
+      for (let i = pulseIdx; i < pulses.length; i++) pulses[i].el.style.display = 'none';
+    }
+
+    // Activity LEDs + flash decay.
+    for (const mv of moduleViews.values()) {
+      const act = activity.get(mv.inst.instanceId) ?? 0;
+      const flashing = nowMs < mv.flashUntil;
+      if (mv.ledEl) {
+        const on = act > 0 || flashing;
+        mv.ledEl.style.background = on ? mv.def.color : '#102030';
+        mv.ledEl.style.boxShadow = on ? `0 0 6px ${mv.def.color}` : '';
+      }
+      if (flashing) {
+        mv.rootEl.style.borderColor = mv.def.color;
+        mv.rootEl.style.boxShadow = `0 0 14px ${mv.def.color}66`;
+      } else if (mv.rootEl.style.borderColor !== '') {
+        mv.rootEl.style.borderColor = '#1a2a44';
+        mv.rootEl.style.boxShadow = '0 2px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(120,160,255,0.07)';
+      }
+    }
+  }
+
+  rebuild();
+
+  return {
+    update,
+    rebuild,
+    setTraffic(t, a) { traffic = t; activity = a; },
+    setCurrentTick(t) { currentTick = t; },
+    flashModule(id) {
+      const mv = moduleViews.get(id);
+      if (mv) mv.flashUntil = performance.now() + 380;
+    },
+    highlightRoute(ids) {
+      routeHighlight = ids;
+      applyCableHighlights();
+    },
+    refreshControls() {
+      for (const mv of moduleViews.values()) mv.refreshSettings();
+    },
+    validation: () => cachedValidation,
+    destroy() {
+      root.removeEventListener('pointermove', onRootMove);
+      root.removeEventListener('pointerup', onRootUp);
+      root.removeEventListener('pointercancel', onRootCancel);
+      root.innerHTML = '';
+    },
+  };
+}
