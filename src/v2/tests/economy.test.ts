@@ -114,6 +114,18 @@ test('selling removes attached cables atomically', () => {
   assertEq(ws.rack.cables.length, before - 1, 'attached cable removed with module');
 });
 
+test('additional output can be bought and selling removes its tower', () => {
+  const save = defaultSave();
+  save.resonance = 100;
+  ensureStarterRack(save, 'w40');
+  const bought = purchaseModule(save, 'w40', 'output');
+  assertEq(bought.ok, true, 'output is shop-buyable');
+  const ws = getWorldSave(save, 'w40');
+  ws.towersByOutputId[bought.instanceId!] = { tileX: 2, tileY: 3, orientation: 'north' };
+  sellModule(save, 'w40', bought.instanceId!);
+  assertEq(ws.towersByOutputId[bought.instanceId!], undefined, 'tower placement removed with output');
+});
+
 test('starter modules cannot be sold and starter repair is idempotent', () => {
   const save = defaultSave();
   const changed1 = ensureStarterRack(save, 'w40');

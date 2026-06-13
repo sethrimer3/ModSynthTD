@@ -118,3 +118,13 @@ test('secret reveal and boss state persist', () => {
   assertEq(r.save.finalBossDefeated, true, 'boss completion permanent');
   assertEq(r.save.cipherChallengeUnlocked, true, 'challenge unlock permanent');
 });
+
+test('old single tower migrates to first output tower id', () => {
+  const raw = defaultSave();
+  const ws = getWorldSave(raw, 'w40');
+  ws.rack.modules.push({ instanceId: 'out-first', typeId: 'output', shelfIndex: 0, slotX: 0, settings: {} });
+  ws.tower = { tileX: 3, tileY: 4, orientation: 'east' };
+  delete (ws as Partial<typeof ws>).towersByOutputId;
+  const normalized = normalizeSave(JSON.parse(JSON.stringify(raw))).save.worlds['w40'];
+  assertEq(normalized.towersByOutputId['out-first'], { tileX: 3, tileY: 4, orientation: 'east' }, 'legacy tower assigned to first output');
+});

@@ -171,7 +171,7 @@ export interface PurchaseResult extends EconomyResult {
 export function purchaseModule(save: SaveData, worldId: string, typeId: string): PurchaseResult {
   const def = getModuleType(typeId);
   if (!def) return { ok: false, error: 'Unknown module type.' };
-  if (def.kind === 'sink' || def.isStarter) {
+  if (!def.shopBuyable && def.isStarter) {
     // Starters exist exactly once via ensureStarterRack, not the shop.
     return { ok: false, error: 'Starter modules are part of the rack, not the shop.' };
   }
@@ -198,10 +198,13 @@ export function sellModule(save: SaveData, worldId: string, instanceId: string):
   if (idx === -1) return { ok: false, error: 'Module not found.' };
   const def = getModuleType(ws.rack.modules[idx].typeId);
   if (!def) return { ok: false, error: 'Unknown module type.' };
-  if (def.isStarter) return { ok: false, error: 'Starter modules cannot be sold.' };
+  if (def.isStarter && (def.typeId !== 'output' || ws.rack.modules.filter(m => m.typeId === 'output').length <= 1)) {
+    return { ok: false, error: 'The last starter module cannot be sold.' };
+  }
   // Atomic: remove module + its cables + refund in one step.
   ws.rack.modules.splice(idx, 1);
   ws.rack.cables = ws.rack.cables.filter(c => c.fromModuleId !== instanceId && c.toModuleId !== instanceId);
+  delete ws.towersByOutputId[instanceId];
   save.resonance += def.cost; // 100% refund outside combat (caller guards live state)
   return { ok: true };
 }
@@ -269,5 +272,5 @@ export function ensureStarterRack(save: SaveData, worldId: string): boolean {
 }
 
 export function moduleTypeForShop(def: ModuleTypeDef): boolean {
-  return !def.isStarter && def.kind !== 'sink';
+  return def.shopBuyable === true || !def.isStarter;
 }

@@ -1,5 +1,15 @@
 # Implementation Decisions
 
+## D-037: Output Instance Identity Is Preserved Through Evaluation
+
+**Decision**: A rack may contain multiple output modules. Evaluation retains the
+flat event stream for compatibility and also returns `eventsByOutput`, keyed by
+output module instance id. Save normalization stores placements in
+`towersByOutputId` and migrates the legacy single tower to the first output.
+
+**Reason**: Each output must be an independent combat endpoint with stable
+placement identity while old saves and consumers continue to load.
+
 ## D-036: Canonical Signal Events Drive Combat Readability
 
 **Decision**: Projectile visuals, tower firing pulses, and transient wave

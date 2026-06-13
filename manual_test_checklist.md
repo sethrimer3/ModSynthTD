@@ -284,4 +284,6 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] AMP changes projectile intensity and hit-text scale; DELAY echoes appear ghosted
 - [ ] Splitter/Router multi-direction fire is visible at the output tower
 - [ ] Cleared waves show KO, escapes, shots, matched hits, and resisted hits
+- [ ] Buying an additional OUT module succeeds and selling it removes its saved tower placement
+- [ ] Old single-tower saves load with the placement assigned to the first OUT module
 

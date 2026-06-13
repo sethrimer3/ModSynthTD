@@ -135,6 +135,30 @@ test('no route to output reported', () => {
   assertEq(v.status, 'no-output-route', 'disconnected output detected');
 });
 
+test('multiple outputs are valid and events retain output identity', () => {
+  const { graph, osc, out } = starterGraph();
+  const split = mod('splitter');
+  const out2 = mod('output');
+  graph.modules.push(split, out2);
+  graph.cables = graph.cables.filter(c => c.fromModuleId !== osc.instanceId);
+  graph.cables.push(cable(osc, 'out', split, 'in'));
+  graph.cables.push(cable(split, 'outA', out, 'in'));
+  graph.cables.push(cable(split, 'outB', out2, 'in'));
+  const v = validateGraph(graph);
+  assert(v.status === 'valid' || v.status === 'valid-unused', 'multiple patched outputs are valid');
+  const r = evaluatePatch(graph, WINDOW);
+  assertEq(r.eventsByOutput.size, 2, 'events grouped for both outputs');
+  assertEq(r.eventsByOutput.get(out.instanceId)!.length, 8, 'first output receives events');
+  assertEq(r.eventsByOutput.get(out2.instanceId)!.length, 8, 'second output receives events');
+});
+
+test('unpatched extra output is nonfatal', () => {
+  const { graph } = starterGraph();
+  graph.modules.push(mod('output'));
+  const v = validateGraph(graph);
+  assert(!v.issues.some(i => i.severity === 'error' && i.code === 'multiple-outputs'), 'extra output does not invalidate graph');
+});
+
 test('splitter divides amplitude across connected branches', () => {
   const clock = mod('clock', { subdivisionTicks: 192 });
   const osc = mod('osc');

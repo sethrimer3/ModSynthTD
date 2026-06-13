@@ -62,6 +62,7 @@ export interface ModuleTypeDef {
   /** Purchase cost in Resonance. Starters cost 0 and are non-sellable. */
   cost: number;
   isStarter: boolean;
+  shopBuyable?: boolean;
   /** World id whose completion unlocks this blueprint; null = always available. */
   unlockAfterWorld: string | null;
   tooltip: string;
@@ -202,8 +203,9 @@ const OUTPUT: ModuleTypeDef = {
   shortName: 'OUT',
   color: '#ffcc00',
   widthUnits: 3,
-  cost: 0,
+  cost: 45,
   isStarter: true,
+  shopBuyable: true,
   unlockAfterWorld: null,
   tooltip: 'The single combat output. Drives the tower — and, when enabled, the audible synth.',
   kind: 'sink',

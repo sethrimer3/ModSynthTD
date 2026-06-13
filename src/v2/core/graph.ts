@@ -206,8 +206,6 @@ export function validateGraph(graph: RackGraph): GraphValidation {
   const sources = graph.modules.filter(m => defs.get(m.instanceId)?.kind === 'source');
   if (outputs.length === 0) {
     issues.push({ severity: 'error', code: 'no-output', message: 'No main output module in the rack.' });
-  } else if (outputs.length > 1) {
-    issues.push({ severity: 'error', code: 'multiple-outputs', message: 'Only one main combat output is allowed per rack.' });
   }
   if (sources.length === 0) {
     issues.push({ severity: 'error', code: 'no-source', message: 'No clock source in the rack — nothing generates signal.' });
@@ -239,8 +237,8 @@ export function validateGraph(graph: RackGraph): GraphValidation {
     if (reachableFromSource.has(id) && reachesOutput.has(id)) contributing.add(id);
   }
 
-  const outputConnected = outputs.length === 1 && contributing.has(outputs[0].instanceId);
-  if (outputs.length === 1 && sources.length > 0 && !outputConnected) {
+  const outputConnected = outputs.some(o => contributing.has(o.instanceId));
+  if (outputs.length > 0 && sources.length > 0 && !outputConnected) {
     issues.push({ severity: 'error', code: 'no-output-route', message: 'No signal route reaches the main output.' });
   }
 
@@ -331,7 +329,7 @@ export function validateGraph(graph: RackGraph): GraphValidation {
   const hasError = (code: string) => issues.some(i => i.code === code && i.severity === 'error');
   if (hasCycle) status = 'cycle';
   else if (hasError('incompatible-ports') || hasError('fanout-exceeded') || hasError('fanin-exceeded')) status = 'incompatible';
-  else if (hasError('no-output') || hasError('no-output-route') || hasError('no-source') || hasError('multiple-outputs')) status = 'no-output-route';
+  else if (hasError('no-output') || hasError('no-output-route') || hasError('no-source')) status = 'no-output-route';
   else if (hasError('missing-starter')) status = 'missing-starter';
   else if (issues.some(i => i.severity === 'error')) status = 'invalid';
   else if (issues.some(i => i.code === 'excessive-events')) status = 'excessive-events';
@@ -347,6 +345,7 @@ export function validateGraph(graph: RackGraph): GraphValidation {
 export interface EvalResult {
   /** Events arriving at the main output, sorted, bounded. */
   events: SignalEvent[];
+  eventsByOutput: Map<string, SignalEvent[]>;
   /** Per-cable traffic for visible pulse animation. */
   cableTraffic: Map<string, SignalEvent[]>;
   /** Event count that passed through each module (activity LEDs). */
@@ -391,16 +390,17 @@ export function evaluatePatch(graph: RackGraph, opts: EvalOptions): EvalResult {
 
   const cableTraffic = new Map<string, SignalEvent[]>();
   const moduleActivity = new Map<string, number>();
+  const eventsByOutput = new Map<string, SignalEvent[]>();
   let truncated = false;
 
   if (validation.topoOrder.length < byId.size) {
     // Cyclic: refuse to evaluate.
-    return { events: [], cableTraffic, moduleActivity, truncated };
+    return { events: [], eventsByOutput, cableTraffic, moduleActivity, truncated };
   }
   const fatal = validation.issues.some(i =>
-    i.severity === 'error' && ['no-output', 'multiple-outputs', 'no-source', 'no-output-route', 'missing-starter', 'too-deep'].includes(i.code));
+    i.severity === 'error' && ['no-output', 'no-source', 'no-output-route', 'missing-starter', 'too-deep'].includes(i.code));
   if (fatal && !opts.injectAtSources) {
-    return { events: [], cableTraffic, moduleActivity, truncated };
+    return { events: [], eventsByOutput, cableTraffic, moduleActivity, truncated };
   }
 
   // Cables grouped by destination and source for routing events.
@@ -484,7 +484,9 @@ export function evaluatePatch(graph: RackGraph, opts: EvalOptions): EvalResult {
     moduleActivity.set(moduleId, activity);
 
     if (def.kind === 'sink') {
-      finalEvents = (result['_final'] ?? []).filter(e => e.tick >= opts.startTick && e.tick < opts.endTick);
+      const outputEvents = (result['_final'] ?? []).filter(e => e.tick >= opts.startTick && e.tick < opts.endTick);
+      eventsByOutput.set(moduleId, outputEvents);
+      finalEvents.push(...outputEvents);
     } else {
       outputBuffers.set(moduleId, result);
     }
@@ -496,7 +498,7 @@ export function evaluatePatch(graph: RackGraph, opts: EvalOptions): EvalResult {
     truncated = true;
   }
 
-  return { events: finalEvents, cableTraffic, moduleActivity, truncated };
+  return { events: finalEvents, eventsByOutput, cableTraffic, moduleActivity, truncated };
 }
 
 // ── Serialization ───────────────────────────────────────────────────────────

@@ -45,6 +45,8 @@ kept only for history.
 - [x] Build passing, browser-verified: enter world, run wave, clear, reward.
 
 ### Deferred / follow-up
+- [ ] Finish per-output tower UI/runtime: direct slot-to-board dragging, unique shapes/colors, per-output controls, and independent Combat firing/rendering from `eventsByOutput`.
+- [ ] Require every contributing output to have a placed tower before wave start and surface missing-output placement warnings.
 - [ ] Balance pass across all nine worlds (per-wave difficulty curves, default
   single-direction tower vs. escapes on long tracks at low BPM).
 - [ ] More enemy sprite variety (several enemy ids reuse base note sprites).

@@ -32,7 +32,9 @@ export interface WorldSave {
   endlessBest: number;
   shelfCount: number; // 1..4
   rack: SerializedGraph;
-  tower: TowerSave | null;
+  towersByOutputId: Record<string, TowerSave>;
+  /** Deprecated single-tower field, retained only while old UI/save data migrates. */
+  tower?: TowerSave | null;
   /** Best wave for which milestone currency has already been claimed. */
   claimedWaveReward: number;
   completionClaimed: boolean;
@@ -81,6 +83,7 @@ export function defaultWorldSave(): WorldSave {
     endlessBest: 0,
     shelfCount: 1,
     rack: { modules: [], cables: [] },
+    towersByOutputId: {},
     tower: null,
     claimedWaveReward: 0,
     completionClaimed: false,
@@ -188,6 +191,19 @@ export function normalizeSave(raw: unknown): { save: SaveData; repairs: string[]
       const { graph, repairs: rackRepairs } = deserializeGraph(w.rack);
       ws.rack = serializeGraph(graph);
       for (const note of rackRepairs) repairs.push(`[${worldId}] ${note}`);
+      const outputIds = graph.modules.filter(m => m.typeId === 'output').map(m => m.instanceId);
+      if (typeof w.towersByOutputId === 'object' && w.towersByOutputId !== null) {
+        for (const [outputId, raw] of Object.entries(w.towersByOutputId as Record<string, unknown>)) {
+          if (!outputIds.includes(outputId) || typeof raw !== 'object' || raw === null) continue;
+          const t = raw as Record<string, unknown>;
+          if (typeof t.tileX !== 'number' || typeof t.tileY !== 'number') continue;
+          const orient = t.orientation;
+          ws.towersByOutputId[outputId] = {
+            tileX: Math.floor(t.tileX), tileY: Math.floor(t.tileY),
+            orientation: orient === 'east' || orient === 'south' || orient === 'west' ? orient : 'north',
+          };
+        }
+      }
       if (typeof w.tower === 'object' && w.tower !== null) {
         const t = w.tower as Record<string, unknown>;
         const orient = t.orientation;
@@ -197,6 +213,9 @@ export function normalizeSave(raw: unknown): { save: SaveData; repairs: string[]
             tileY: Math.floor(t.tileY),
             orientation: orient === 'east' || orient === 'south' || orient === 'west' ? orient : 'north',
           };
+          if (outputIds.length > 0 && !ws.towersByOutputId[outputIds[0]]) {
+            ws.towersByOutputId[outputIds[0]] = { ...ws.tower };
+          }
         }
       }
       // Claim watermark can never trail an unclaimed best silently downward.
