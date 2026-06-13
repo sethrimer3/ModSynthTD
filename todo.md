@@ -142,6 +142,7 @@ kept only for history.
 - [x] Add persisted graphics controls for wire front/behind layering and wire opacity.
 - [x] Use shared one-shot kicks only as a fallback when a planet has no `kickLoop.ogg`.
 - [x] Schedule planet loop layers on exact four-bar BPM boundaries without cutting reverb tails.
+- [x] Start per-wave OGG audio at the live-wave boundary instead of during count-in.
 - [ ] Keep all visuals readable at the native pixel scale.
 - [x] Add conveyor direction preview ghost for conveyor/extractor tool (Q to rotate tooltip visible in place).
 

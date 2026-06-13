@@ -296,4 +296,5 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] A planet without `kickLoop.ogg` continues playing the fallback `kick_1` and `kick_2` rhythm
 - [ ] At 60 BPM, all planet loop layers restart together every 16 seconds
 - [ ] Loop files with reverb tails continue playing after the next four-bar cycle begins
+- [ ] `wave1.ogg` remains silent during count-in and starts exactly when Wave 1 becomes live
 

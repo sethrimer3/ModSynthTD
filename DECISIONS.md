@@ -316,3 +316,6 @@ Each output module instance owns one independently placed emitter tower. Determi
 Planet music layers are authored as four bars in 4/4 and restart every
 `240 / BPM` seconds. Each restart launches a new one-shot without stopping the
 previous source, keeping layers synchronized while preserving reverb tails.
+
+Per-wave OGG audio begins at the live-wave boundary after count-in. Count-in
+remains a silent visual/transport preview for the upcoming wave audio.

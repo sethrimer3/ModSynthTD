@@ -168,22 +168,8 @@ export class LevelMusicManager {
   }
 
   /**
-   * Returns the next loop cycle boundary at or after ctxTime.
-   * Used so the wave intro OGG aligns to the start of a beat-loop cycle.
-   * Falls back to ctxTime + 0.02 if loops haven't started yet.
-   */
-  nextLoopBoundary(ctxTime: number): number {
-    if (this.loopStartCtxTime === null || this.loopPeriodSec <= 0) {
-      return ctxTime + 0.02;
-    }
-    const elapsed = ctxTime - this.loopStartCtxTime;
-    const cycles = Math.ceil(elapsed / this.loopPeriodSec);
-    return this.loopStartCtxTime + cycles * this.loopPeriodSec;
-  }
-
-  /**
    * Schedule the wave intro OGG to play at the given AudioContext time.
-   * The OGG plays once over the background loops.
+   * The OGG plays once over the background loops when the wave becomes live.
    */
   scheduleIntro(waveIndex: number, atContextTime: number): void {
     const wc = this.config.waveAudio.find(w => w.waveIndex === waveIndex);

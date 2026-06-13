@@ -534,10 +534,9 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       audio.scheduleEvent(e, waveStartCtxTime, world.bpm);
     }
 
-    // Schedule the wave intro OGG at the next loop cycle boundary.
+    // Start the wave OGG at the live-wave boundary, after count-in completes.
     if (hasMidi && levelMusic) {
-      const introCtxStart = levelMusic.nextLoopBoundary(audioNow);
-      levelMusic.scheduleIntro(waveIndex, introCtxStart);
+      levelMusic.scheduleIntro(waveIndex, waveStartCtxTime);
     }
 
     runState = 'countin';
