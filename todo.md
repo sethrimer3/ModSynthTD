@@ -146,6 +146,7 @@ kept only for history.
 - [x] Align count-in to the remaining background-loop cycle and show its phase on sheet music.
 - [x] Restore module body/nameplate dragging without triggering camera panning.
 - [x] Add HUD camera shortcuts to focus the rack or playfield.
+- [x] Scale next-wave sheet music to fit inside its preview box.
 - [ ] Keep all visuals readable at the native pixel scale.
 - [x] Add conveyor direction preview ghost for conveyor/extractor tool (Q to rotate tooltip visible in place).
 

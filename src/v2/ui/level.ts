@@ -305,7 +305,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   const notationWrap = document.createElement('div');
   notationWrap.style.cssText = `
     position:absolute;left:50%;transform:translateX(-50%);top:0;
-    max-width:620px;overflow:hidden;z-index:80;
+    width:min(620px,calc(100vw - 24px));overflow:hidden;z-index:80;box-sizing:border-box;
     background:rgba(6,12,24,0.82);border:1px solid ${world.theme.primary}44;border-radius:10px;
     padding:4px 6px;box-shadow:0 0 18px ${world.theme.primary}22;pointer-events:none;transition:opacity 0.3s;
   `;
@@ -328,6 +328,17 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   const noteEls: HTMLDivElement[] = [];
   const reducedMotion = () => save.settings.reducedMotion;
 
+  function fitNotation(): void {
+    if (!notation) return;
+    const availableWidth = Math.max(1, notationWrap.clientWidth - 12);
+    const scale = Math.min(1, availableWidth / notation.widthPx);
+    notationInner.style.width = `${notation.widthPx}px`;
+    notationInner.style.height = `${notation.heightPx}px`;
+    notationInner.style.transformOrigin = 'top left';
+    notationInner.style.transform = `scale(${scale})`;
+    notationWrap.style.height = `${notation.heightPx * scale + 8}px`;
+  }
+
   function rebuildNotation(score: WaveScore): void {
     notation?.canvas.remove();
     notation = renderNotation(score, world.theme.glow);
@@ -341,6 +352,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       notationEffects.appendChild(el);
       noteEls.push(el);
     }
+    fitNotation();
   }
 
   // ── Overlays ──────────────────────────────────────────────────────────────
@@ -445,6 +457,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     camera.setViewport(r.width, r.height);
     layoutScene();
     applyCamera();
+    fitNotation();
   }
   const ro = new ResizeObserver(() => resize());
   ro.observe(viewport);
