@@ -45,8 +45,6 @@ export interface WorldTheme {
   primary: string;
   /** Secondary glow. */
   glow: string;
-  /** Planet preview gradient pair. */
-  planet: [string, string];
 }
 
 export interface WorldDef {
@@ -90,7 +88,7 @@ const W40: WorldDef = {
   bpm: 40,
   lesson: 'Clock → Oscillator → Output. Your first patch.',
   description: 'A quiet S-bend in deep space. Learn the rack, the score, and the tower.',
-  theme: { primary: '#00ddcc', glow: '#00ffee', planet: ['#00ffcc', '#007766'] },
+  theme: { primary: '#00ddcc', glow: '#00ffee' },
   gridWidth: 16,
   gridHeight: 12,
   lanes: [track([0, 2], [13, 2], [13, 6], [2, 6], [2, 9], [15, 9])],
@@ -118,7 +116,7 @@ const W60: WorldDef = {
   bpm: 60,
   lesson: 'Eighth notes, waveforms, and resonance matching.',
   description: 'Notes orbit the core before collapsing inward. Match bands to cancel them faster.',
-  theme: { primary: '#aa66ff', glow: '#cc88ff', planet: ['#aa66ff', '#440077'] },
+  theme: { primary: '#aa66ff', glow: '#cc88ff' },
   gridWidth: 16,
   gridHeight: 14,
   lanes: [track([8, 0], [8, 2], [13, 2], [13, 11], [3, 11], [3, 2], [7, 2], [7, 7], [8, 7])],
@@ -148,7 +146,7 @@ const W80: WorldDef = {
   bpm: 80,
   lesson: 'Splitters, chords, and two simultaneous routes.',
   description: 'The path forks. Signals — and your attention — must branch with it.',
-  theme: { primary: '#ff8800', glow: '#ffaa44', planet: ['#ff9900', '#883300'] },
+  theme: { primary: '#ff8800', glow: '#ffaa44' },
   gridWidth: 18,
   gridHeight: 12,
   lanes: [
@@ -181,7 +179,7 @@ const W100: WorldDef = {
   bpm: 100,
   lesson: 'Syncopation, rests, phase offsets, and quantized delay.',
   description: 'Everything lands off the beat. Shift your clock — or echo into the gaps.',
-  theme: { primary: '#44aaff', glow: '#66ccff', planet: ['#4488ff', '#112266'] },
+  theme: { primary: '#44aaff', glow: '#66ccff' },
   gridWidth: 18,
   gridHeight: 12,
   lanes: [track([0, 1], [15, 1], [15, 4], [2, 4], [2, 7], [15, 7], [15, 10], [0, 10])],
@@ -211,7 +209,7 @@ const W120: WorldDef = {
   bpm: 120,
   lesson: 'Multiple sources, the mixer, and amplitude balance.',
   description: 'Two rivers of notes merge into one roaring current.',
-  theme: { primary: '#33ff88', glow: '#66ffaa', planet: ['#33ff88', '#005533'] },
+  theme: { primary: '#33ff88', glow: '#66ffaa' },
   gridWidth: 20,
   gridHeight: 12,
   lanes: [
@@ -244,7 +242,7 @@ const W140: WorldDef = {
   bpm: 140,
   lesson: 'Filters, envelopes, clock division — enemies that change.',
   description: 'Accidentals bend resonance mid-flight. Your patch must adapt faster than they do.',
-  theme: { primary: '#ff66ff', glow: '#ff99ff', planet: ['#ff66ff', '#660066'] },
+  theme: { primary: '#ff66ff', glow: '#ff99ff' },
   gridWidth: 20,
   gridHeight: 12,
   lanes: [track([0, 1], [18, 1], [18, 3], [1, 3], [1, 5], [18, 5], [18, 7], [1, 7], [1, 9], [18, 9], [19, 9])],
@@ -274,7 +272,7 @@ const W160: WorldDef = {
   bpm: 160,
   lesson: 'Three lanes, triplets, sequencers — big racks for big waves.',
   description: 'Three approach vectors and tuplet swarms. One shelf will not be enough.',
-  theme: { primary: '#ffee44', glow: '#ffff88', planet: ['#ffee44', '#665500'] },
+  theme: { primary: '#ffee44', glow: '#ffff88' },
   gridWidth: 20,
   gridHeight: 14,
   lanes: [
@@ -310,7 +308,7 @@ const W180: WorldDef = {
   bpm: 180,
   lesson: 'Everything at once — fermatas, ties, and full-rack mastery.',
   description: 'The spiral track funnels every kind of note toward the core. This is the proving ground.',
-  theme: { primary: '#ff3344', glow: '#ff6677', planet: ['#ff3344', '#550011'] },
+  theme: { primary: '#ff3344', glow: '#ff6677' },
   gridWidth: 22,
   gridHeight: 14,
   lanes: [track([0, 1], [20, 1], [20, 12], [2, 12], [2, 3], [17, 3], [17, 9], [5, 9], [5, 6], [12, 6])],
@@ -342,7 +340,7 @@ const W200: WorldDef = {
   bpm: 200,
   lesson: 'The hidden measure. A living score conducts itself.',
   description: 'Beyond the eighth world, a composition wakes. Survive its gauntlet, then face the score itself.',
-  theme: { primary: '#ffffff', glow: '#cceeff', planet: ['#ffffff', '#223355'] },
+  theme: { primary: '#ffffff', glow: '#cceeff' },
   gridWidth: 22,
   gridHeight: 14,
   lanes: [

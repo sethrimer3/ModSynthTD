@@ -129,12 +129,12 @@ function makeWorldCard(world: WorldDef, opts: WorldMapOpts): HTMLElement {
     card.addEventListener('click', () => opts.onEnterWorld(world.worldId));
   }
 
-  // Planet preview.
-  const planet = document.createElement('canvas');
-  planet.width = 96; planet.height = 96;
-  planet.style.cssText = 'width:96px;height:96px;border-radius:50%;';
-  drawPlanet(planet, world, unlocked);
-  card.appendChild(planet);
+  // Level preview.
+  const preview = document.createElement('canvas');
+  preview.width = 132; preview.height = 88;
+  preview.style.cssText = 'width:132px;height:88px;border-radius:10px;display:block;';
+  drawLevelPreview(preview, world, unlocked);
+  card.appendChild(preview);
 
   const name = document.createElement('div');
   name.textContent = unlocked ? world.name : '???';
@@ -267,35 +267,122 @@ function openDevModal(app: HTMLElement, save: SaveData, opts: WorldMapOpts): voi
   app.appendChild(backdrop);
 }
 
-function drawPlanet(canvas: HTMLCanvasElement, world: WorldDef, bright: boolean): void {
+function drawLevelPreview(canvas: HTMLCanvasElement, world: WorldDef, unlocked: boolean): void {
   const ctx = canvas.getContext('2d')!;
-  const w = canvas.width, h = canvas.height, cx = w / 2, cy = h / 2;
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, w, h);
-  let s = (world.bpm * 2654435761) >>> 0;
-  const rng = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 0xffffffff; };
-  for (let i = 0; i < 40; i++) {
-    ctx.fillStyle = `rgba(200,220,255,${0.15 + rng() * 0.4})`;
-    ctx.fillRect(rng() * w, rng() * h, 1, 1);
+  const W = canvas.width, H = canvas.height;
+
+  // Deterministic RNG seeded on worldId + bpm.
+  let seed = 0;
+  for (let i = 0; i < world.worldId.length; i++) seed = (seed * 31 + world.worldId.charCodeAt(i)) >>> 0;
+  seed = (seed ^ (world.bpm * 2654435761)) >>> 0;
+  const rng = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0xffffffff; };
+
+  const primary = world.theme.primary;
+  const glow = world.theme.glow;
+
+  // Dark background.
+  ctx.fillStyle = '#040810';
+  ctx.fillRect(0, 0, W, H);
+
+  // Map world grid coords to canvas px, with a small margin.
+  const mx = 6, my = 5;
+  const scaleX = (W - mx * 2) / world.gridWidth;
+  const scaleY = (H - my * 2) / world.gridHeight;
+  const toX = (gx: number) => mx + gx * scaleX;
+  const toY = (gy: number) => my + gy * scaleY;
+
+  // Subtle grid.
+  ctx.strokeStyle = 'rgba(30,50,80,0.55)';
+  ctx.lineWidth = 0.5;
+  for (let gx = 0; gx <= world.gridWidth; gx++) {
+    ctx.beginPath(); ctx.moveTo(toX(gx), my); ctx.lineTo(toX(gx), H - my); ctx.stroke();
   }
-  const [c1, c2] = world.theme.planet;
-  const grad = ctx.createRadialGradient(cx - 10, cy - 10, 5, cx, cy, 36);
-  grad.addColorStop(0, bright ? c1 : c2);
-  grad.addColorStop(1, '#04070f');
-  ctx.save();
-  ctx.shadowColor = c1;
-  ctx.shadowBlur = bright ? 22 : 0;
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(cx, cy, 34, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-  // Tempo ring (one tick per beat-ish flourish).
-  if (bright) {
-    ctx.strokeStyle = `${c1}66`;
-    ctx.lineWidth = 1.5;
+  for (let gy = 0; gy <= world.gridHeight; gy++) {
+    ctx.beginPath(); ctx.moveTo(mx, toY(gy)); ctx.lineTo(W - mx, toY(gy)); ctx.stroke();
+  }
+
+  // Lanes: draw each as a glowing polyline through tile centers.
+  for (const lane of world.lanes) {
+    if (lane.length < 2) continue;
+    // Outer glow pass.
+    ctx.save();
+    ctx.strokeStyle = `${primary}44`;
+    ctx.lineWidth = 4;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = 6;
     ctx.beginPath();
-    ctx.ellipse(cx, cy, 42, 16, -0.4, 0, Math.PI * 2);
+    ctx.moveTo(toX(lane[0][0] + 0.5), toY(lane[0][1] + 0.5));
+    for (let i = 1; i < lane.length; i++) ctx.lineTo(toX(lane[i][0] + 0.5), toY(lane[i][1] + 0.5));
     ctx.stroke();
+    ctx.restore();
+    // Core bright line.
+    ctx.save();
+    ctx.strokeStyle = unlocked ? primary : `${primary}66`;
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(toX(lane[0][0] + 0.5), toY(lane[0][1] + 0.5));
+    for (let i = 1; i < lane.length; i++) ctx.lineTo(toX(lane[i][0] + 0.5), toY(lane[i][1] + 0.5));
+    ctx.stroke();
+    ctx.restore();
+
+    // Start marker (hollow circle at lane[0]).
+    const sx = toX(lane[0][0] + 0.5), sy = toY(lane[0][1] + 0.5);
+    ctx.save();
+    ctx.strokeStyle = unlocked ? glow : `${glow}55`;
+    ctx.lineWidth = 1.2;
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = unlocked ? 5 : 0;
+    ctx.beginPath(); ctx.arc(sx, sy, 2.8, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+
+    // Finish marker (filled diamond at lane[last]).
+    const last = lane[lane.length - 1];
+    const fx = toX(last[0] + 0.5), fy = toY(last[1] + 0.5);
+    ctx.save();
+    ctx.fillStyle = unlocked ? glow : `${glow}55`;
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = unlocked ? 6 : 0;
+    ctx.beginPath();
+    ctx.moveTo(fx, fy - 3.5); ctx.lineTo(fx + 3, fy); ctx.lineTo(fx, fy + 3.5); ctx.lineTo(fx - 3, fy);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  // Tower-start marker (small cross).
+  const [tx, ty] = world.towerStart;
+  const tpx = toX(tx + 0.5), tpy = toY(ty + 0.5);
+  ctx.save();
+  ctx.strokeStyle = unlocked ? '#ffcc44aa' : '#ffcc4433';
+  ctx.lineWidth = 1.2;
+  ctx.shadowColor = '#ffcc44';
+  ctx.shadowBlur = unlocked ? 4 : 0;
+  const arm = 3;
+  ctx.beginPath(); ctx.moveTo(tpx - arm, tpy); ctx.lineTo(tpx + arm, tpy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(tpx, tpy - arm); ctx.lineTo(tpx, tpy + arm); ctx.stroke();
+  ctx.restore();
+
+  // Ambient theme-colored dots (deterministic).
+  const dotCount = 12 + Math.floor(rng() * 6);
+  for (let i = 0; i < dotCount; i++) {
+    const dx = mx + rng() * (W - mx * 2);
+    const dy = my + rng() * (H - my * 2);
+    const r = 0.8 + rng() * 1.4;
+    const alpha = unlocked ? (0.25 + rng() * 0.45) : (0.08 + rng() * 0.12);
+    ctx.save();
+    ctx.fillStyle = i % 3 === 0 ? `rgba(200,220,255,${alpha * 0.5})` : primary + Math.round(alpha * 255).toString(16).padStart(2, '0');
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = unlocked ? 4 : 0;
+    ctx.beginPath(); ctx.arc(dx, dy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Locked overlay: dim the whole preview.
+  if (!unlocked) {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, W, H);
   }
 }
