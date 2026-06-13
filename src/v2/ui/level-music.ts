@@ -38,6 +38,8 @@ export class LevelMusicManager {
 
   private loopSrcs: AudioBufferSourceNode[] = [];
   private loopsStarted = false;
+  private loopStartCtxTime: number | null = null;
+  private loopDurationSec: number | null = null;
 
   constructor(audio: AudioEngine, config: LevelAudioConfig) {
     this.audio = audio;
@@ -137,10 +139,26 @@ export class LevelMusicManager {
     if (layerBufs.some(b => b === undefined)) return; // not all loaded yet
 
     this.loopsStarted = true;
-    this.loopSrcs.push(this.audio.startLoop(beatBuf, 0.65));
+    this.loopStartCtxTime = this.audio.currentTime;
+    this.loopDurationSec = beatBuf.duration;
+    this.loopSrcs.push(this.audio.startLoop(beatBuf, 'beat'));
     for (const buf of layerBufs) {
-      if (buf) this.loopSrcs.push(this.audio.startLoop(buf, 0.45));
+      if (buf) this.loopSrcs.push(this.audio.startLoop(buf, 'bg'));
     }
+  }
+
+  /**
+   * Returns the next loop cycle boundary at or after ctxTime.
+   * Used so the wave intro OGG aligns to the start of a beat-loop cycle.
+   * Falls back to ctxTime + 0.02 if loops haven't started yet.
+   */
+  nextLoopBoundary(ctxTime: number): number {
+    if (this.loopStartCtxTime === null || this.loopDurationSec === null || this.loopDurationSec <= 0) {
+      return ctxTime + 0.02;
+    }
+    const elapsed = ctxTime - this.loopStartCtxTime;
+    const cycles = Math.ceil(elapsed / this.loopDurationSec);
+    return this.loopStartCtxTime + cycles * this.loopDurationSec;
   }
 
   /**
@@ -152,7 +170,7 @@ export class LevelMusicManager {
     if (!wc) return;
     const buf = this.bufCache.get(wc.introOgg);
     if (!buf) return;
-    this.audio.playBufferAt(buf, atContextTime, 0.75);
+    this.audio.playBufferAt(buf, atContextTime, 'intro');
   }
 
   /** Stop and release all active loop sources. */

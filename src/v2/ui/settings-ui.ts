@@ -1,5 +1,5 @@
 /**
- * settings-ui.ts — Settings overlay: audio, rack position, reduced motion,
+ * settings-ui.ts — Settings overlay: audio mixer, rack position, reduced motion,
  * save export/import/reset.
  */
 
@@ -46,32 +46,28 @@ export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
     return r;
   };
 
+  const sectionHeader = (text: string) => {
+    const s = document.createElement('div');
+    s.textContent = text;
+    s.style.cssText = 'font-size:0.6rem;font-weight:800;letter-spacing:0.15em;color:#446688;border-bottom:1px solid #16243c;padding-bottom:4px;margin-top:0.3rem;';
+    panel.appendChild(s);
+  };
+
   const applyAudio = () => {
+    const s = opts.save.settings;
     getAudioEngine().setPrefs({
-      masterMuted: opts.save.settings.masterMuted,
-      masterVolume: opts.save.settings.masterVolume,
-      percussionVolume: opts.save.settings.percussionVolume,
+      masterMuted: s.masterMuted,
+      masterVolume: s.masterVolume,
+      percussionVolume: s.percussionVolume,
+      sfxVolume: s.sfxVolume,
+      towersVolume: s.towersVolume,
+      beatLoopVolume: s.beatLoopVolume,
+      bgLoopVolume: s.bgLoopVolume,
+      enemyNotesVolume: s.enemyNotesVolume,
     });
     opts.onSaveChanged();
   };
 
-  // Master mute.
-  const muteBtn = document.createElement('button');
-  const styleToggle = (b: HTMLButtonElement, on: boolean, onLabel: string, offLabel: string) => {
-    b.textContent = on ? onLabel : offLabel;
-    b.style.cssText = `${FF}font-size:0.65rem;font-weight:800;padding:4px 12px;border-radius:6px;cursor:pointer;
-      background:${on ? '#11281a' : '#0a1020'};border:1.5px solid ${on ? '#33dd88' : '#2a3d65'};color:${on ? '#33dd88' : '#5577aa'};`;
-  };
-  const refreshMute = () => styleToggle(muteBtn, !opts.save.settings.masterMuted, 'SOUND ON', 'MUTED');
-  muteBtn.addEventListener('click', () => {
-    opts.save.settings.masterMuted = !opts.save.settings.masterMuted;
-    refreshMute();
-    applyAudio();
-  });
-  refreshMute();
-  row('Master audio', muteBtn);
-
-  // Sliders.
   const slider = (value: number, onInput: (v: number) => void) => {
     const s = document.createElement('input');
     s.type = 'range';
@@ -81,10 +77,41 @@ export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
     s.addEventListener('input', () => onInput(parseInt(s.value, 10) / 100));
     return s;
   };
-  row('Master volume', slider(opts.save.settings.masterVolume, v => { opts.save.settings.masterVolume = v; applyAudio(); }));
-  row('Percussion volume', slider(opts.save.settings.percussionVolume, v => { opts.save.settings.percussionVolume = v; applyAudio(); }));
 
-  // Rack position.
+  const styleToggle = (b: HTMLButtonElement, on: boolean, onLabel: string, offLabel: string) => {
+    b.textContent = on ? onLabel : offLabel;
+    b.style.cssText = `${FF}font-size:0.65rem;font-weight:800;padding:4px 12px;border-radius:6px;cursor:pointer;
+      background:${on ? '#11281a' : '#0a1020'};border:1.5px solid ${on ? '#33dd88' : '#2a3d65'};color:${on ? '#33dd88' : '#5577aa'};`;
+  };
+
+  // ── Master ──────────────────────────────────────────────────────────────────
+
+  const muteBtn = document.createElement('button');
+  const refreshMute = () => styleToggle(muteBtn, !opts.save.settings.masterMuted, 'SOUND ON', 'MUTED');
+  muteBtn.addEventListener('click', () => {
+    opts.save.settings.masterMuted = !opts.save.settings.masterMuted;
+    refreshMute();
+    applyAudio();
+  });
+  refreshMute();
+  row('Master audio', muteBtn);
+  row('Master volume', slider(opts.save.settings.masterVolume, v => { opts.save.settings.masterVolume = v; applyAudio(); }));
+
+  // ── Audio Mixer ─────────────────────────────────────────────────────────────
+
+  sectionHeader('MUSIC');
+  row('Beat Loop',       slider(opts.save.settings.beatLoopVolume,   v => { opts.save.settings.beatLoopVolume   = v; applyAudio(); }));
+  row('Background Loop', slider(opts.save.settings.bgLoopVolume,     v => { opts.save.settings.bgLoopVolume     = v; applyAudio(); }));
+  row('Enemy Notes',     slider(opts.save.settings.enemyNotesVolume, v => { opts.save.settings.enemyNotesVolume = v; applyAudio(); }));
+
+  sectionHeader('SOUND EFFECTS');
+  row('SFX',              slider(opts.save.settings.sfxVolume,    v => { opts.save.settings.sfxVolume    = v; applyAudio(); }));
+  row('Emitters/Towers',  slider(opts.save.settings.towersVolume, v => { opts.save.settings.towersVolume = v; applyAudio(); }));
+
+  // ── Visual ───────────────────────────────────────────────────────────────────
+
+  sectionHeader('DISPLAY');
+
   const posWrap = document.createElement('div');
   posWrap.style.cssText = 'display:flex;gap:4px;';
   const positions: RackPosition[] = ['auto', 'left', 'right', 'below'];
@@ -113,7 +140,6 @@ export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
   refreshPos();
   row('Rack position', posWrap);
 
-  // Reduced motion.
   const rmBtn = document.createElement('button');
   const refreshRm = () => styleToggle(rmBtn, opts.save.settings.reducedMotion, 'REDUCED', 'FULL');
   rmBtn.addEventListener('click', () => {
@@ -124,7 +150,8 @@ export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
   refreshRm();
   row('Motion', rmBtn);
 
-  // Save tools.
+  // ── Save tools ───────────────────────────────────────────────────────────────
+
   const tools = document.createElement('div');
   tools.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-top:0.4rem;border-top:1px solid #16243c;padding-top:0.8rem;';
   const toolBtn = (label: string, color: string, fn: () => void) => {

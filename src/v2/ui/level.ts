@@ -60,6 +60,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   host.persist();
 
   const audio = getAudioEngine();
+  // Unlock audio on level entry (this is inside a click/tap gesture handler).
+  void audio.unlock();
 
   // ── Level music (optional: only present when a config exists for this world) ─
   const levelAudioConfig = LEVEL_AUDIO_CONFIGS[worldId] ?? null;
@@ -446,9 +448,10 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       audio.scheduleEvent(e, waveStartCtxTime, world.bpm);
     }
 
-    // Schedule the wave intro OGG to play immediately over the background loops.
+    // Schedule the wave intro OGG at the next loop cycle boundary.
     if (hasMidi && levelMusic) {
-      levelMusic.scheduleIntro(waveIndex, audioNow + 0.02);
+      const introCtxStart = levelMusic.nextLoopBoundary(audioNow);
+      levelMusic.scheduleIntro(waveIndex, introCtxStart);
     }
 
     runState = 'countin';
@@ -822,6 +825,11 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     masterMuted: save.settings.masterMuted,
     masterVolume: save.settings.masterVolume,
     percussionVolume: save.settings.percussionVolume,
+    sfxVolume: save.settings.sfxVolume,
+    towersVolume: save.settings.towersVolume,
+    beatLoopVolume: save.settings.beatLoopVolume,
+    bgLoopVolume: save.settings.bgLoopVolume,
+    enemyNotesVolume: save.settings.enemyNotesVolume,
   });
   refreshHud();
   tut.trigger('camera');
