@@ -13,6 +13,7 @@ import { TICKS_PER_MEASURE, QUARTER_TICKS, EIGHTH_TICKS, SIXTEENTH_TICKS } from 
 import { getEnemyDef } from '../core/enemy-defs';
 import { BAND_COLORS } from './combat';
 import { FrequencyBand } from '../core/events';
+import { bandToHz } from './pitch';
 
 export interface NotationLayout {
   canvas: HTMLCanvasElement;
@@ -26,6 +27,8 @@ export interface NotationNoteLayout extends SpawnEvent {
   x: number;
   y: number;
   color: string;
+  /** Resonance frequency in Hz (derived from band). Used for stat popups and damage display. */
+  hz: number;
 }
 
 const STAFF_LINE_GAP = 6;
@@ -178,6 +181,7 @@ export function renderNotation(score: WaveScore, themeColor: string, dprScale = 
       x: tickToX(spawn.tick),
       y: TOP_PAD + spawn.lane * (STAFF_H + LANE_GAP) + BAND_Y[spawn.band],
       color: def?.color ?? themeColor,
+      hz: bandToHz(spawn.band),
     };
   });
   return { canvas, widthPx, heightPx, notes, tickToX };

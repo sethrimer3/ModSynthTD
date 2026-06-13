@@ -6,7 +6,7 @@
  * same compiled SignalEvents on one integer-tick transport.
  */
 
-import { WorldDef, getWorld, CAMPAIGN_ORDER } from '../data/worlds';
+import { WorldDef, getWorld, CAMPAIGN_ORDER, nearestExteriorWorldTile } from '../data/worlds';
 import { compileScore, WaveScore } from '../core/score';
 import { evaluatePatch, validateGraph, RackGraph } from '../core/graph';
 import { SignalEvent } from '../core/events';
@@ -28,6 +28,7 @@ import { Combat, TowerState, rotateTower, TILE_PX, preloadSprites } from './comb
 import { towerStyleForOutput } from './tower-style';
 import { createRackUI, RackUI, rackWidthPx, rackHeightPx } from './rack-ui';
 import { renderNotation, NotationLayout, NotationNoteLayout } from './notation';
+import { getEnemyDef } from '../core/enemy-defs';
 import { getAudioEngine } from './audio-engine';
 import { LevelMusicManager } from './level-music';
 import { LEVEL_AUDIO_CONFIGS } from './level-audio-assets';
@@ -75,7 +76,14 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   const towerStyles = new Map<string, ReturnType<typeof towerStyleForOutput>>();
   for (const output of graph.modules.filter(m => m.typeId === 'output')) {
     const saved = worldSave.towersByOutputId[output.instanceId];
-    if (saved) towers.set(output.instanceId, { ...saved });
+    if (saved) {
+      const [tileX, tileY] = nearestExteriorWorldTile(world, [saved.tileX, saved.tileY]);
+      towers.set(output.instanceId, { ...saved, tileX, tileY });
+      if (tileX !== saved.tileX || tileY !== saved.tileY) {
+        worldSave.towersByOutputId[output.instanceId] = { ...saved, tileX, tileY };
+        host.persist();
+      }
+    }
     towerStyles.set(output.instanceId, towerStyleForOutput(output.instanceId));
   }
 
@@ -321,8 +329,63 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   playhead.style.cssText = `position:absolute;top:0;bottom:0;width:2px;background:${world.theme.glow};box-shadow:0 0 8px ${world.theme.glow};display:none;pointer-events:none;`;
   const loopPlayhead = document.createElement('div');
   loopPlayhead.style.cssText = `position:absolute;top:0;bottom:0;width:2px;background:${world.theme.glow};box-shadow:0 0 5px ${world.theme.glow};opacity:0.25;pointer-events:none;`;
-  notationInner.append(notationLabel, notationEffects, loopPlayhead, playhead);
+  // Hit-detection layer inside notationInner — children with pointer-events:auto
+  // remain interactive even though ancestor elements are pointer-events:none.
+  const notationHitLayer = document.createElement('div');
+  notationHitLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:5;';
+  notationInner.append(notationLabel, notationEffects, loopPlayhead, playhead, notationHitLayer);
   notationWorld.appendChild(notationWrap);
+
+  // Floating stat popup (screen-space, fixed position, outside scaled rackLayer).
+  const notePopup = document.createElement('div');
+  notePopup.style.cssText = [
+    'position:fixed;z-index:500;display:none;pointer-events:none;',
+    `background:rgba(4,8,20,0.95);border:1px solid transparent;border-radius:8px;`,
+    `padding:8px 12px;min-width:155px;max-width:210px;`,
+    `${FF}font-size:0.6rem;line-height:1.8;`,
+    `box-shadow:0 4px 18px rgba(0,0,0,0.7);`,
+  ].join('');
+  app.appendChild(notePopup);
+
+  let popupPinnedNote: NotationNoteLayout | null = null;
+
+  function showNotePopup(note: NotationNoteLayout, refEl: HTMLElement): void {
+    const def = getEnemyDef(note.enemyTypeId);
+    if (!def) return;
+    const rect = refEl.getBoundingClientRect();
+    notePopup.style.borderColor = note.color;
+    notePopup.style.boxShadow = `0 4px 18px rgba(0,0,0,0.7),0 0 10px ${note.color}44`;
+    notePopup.innerHTML = [
+      `<div style="color:${note.color};font-weight:800;font-size:0.68rem;margin-bottom:3px;">${def.symbol} ${def.label}</div>`,
+      `<div style="color:#5577aa;">HP <span style="color:#c8daf0;">${def.maxHp}</span></div>`,
+      `<div style="color:#5577aa;">Hz <span style="color:#c8daf0;">${note.hz.toFixed(1)}</span></div>`,
+      `<div style="color:#5577aa;">Modifiers <span style="color:#6688aa;">None</span></div>`,
+    ].join('');
+    notePopup.style.display = 'block';
+    // Position to the right of the element; clamp to viewport.
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const popW = 215, popH = 90;
+    let left = rect.right + 8;
+    let top = rect.top - 10;
+    if (left + popW > vw - 8) left = rect.left - popW - 8;
+    if (left < 8) left = 8;
+    if (top + popH > vh - 8) top = vh - popH - 8;
+    if (top < 8) top = 8;
+    notePopup.style.left = `${left}px`;
+    notePopup.style.top = `${top}px`;
+  }
+
+  function hideNotePopup(): void {
+    notePopup.style.display = 'none';
+    popupPinnedNote = null;
+  }
+
+  // Dismiss pinned popup when clicking anywhere outside a note hit-target.
+  const onDocClickForPopup = (e: MouseEvent) => {
+    if (!(e.target as HTMLElement).closest('[data-note-hit]')) hideNotePopup();
+  };
+  document.addEventListener('click', onDocClickForPopup);
+
   let notation: NotationLayout | null = null;
   let effectiveCompiled = compileScore(currentWaveScore());
   const noteEls: HTMLDivElement[] = [];
@@ -345,12 +408,32 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     notationInner.insertBefore(notation.canvas, notationLabel);
     noteEls.length = 0;
     notationEffects.replaceChildren();
+    notationHitLayer.replaceChildren();
+    hideNotePopup();
     for (const note of notation.notes) {
+      // Animated visual indicator.
       const el = document.createElement('div');
       const size = note.durationTicks >= 192 ? 13 : note.durationTicks >= 96 ? 11 : note.durationTicks <= 12 ? 6 : note.durationTicks <= 24 ? 7 : 9;
       el.style.cssText = `position:absolute;width:${size}px;height:${size}px;border:1px solid ${note.color};border-radius:50%;background:${note.color}44;box-shadow:0 0 5px ${note.color};transform:translate(-50%,-50%);will-change:transform,opacity;`;
       notationEffects.appendChild(el);
       noteEls.push(el);
+
+      // Static hit target for stat popup (pointer-events:auto overrides ancestor none).
+      const hit = document.createElement('div');
+      hit.dataset['noteHit'] = '1';
+      hit.style.cssText = `position:absolute;left:${note.x}px;top:${note.y}px;width:24px;height:24px;transform:translate(-50%,-50%);pointer-events:auto;cursor:pointer;border-radius:50%;`;
+      notationHitLayer.appendChild(hit);
+
+      const onEnter = () => { if (!popupPinnedNote) showNotePopup(note, hit); };
+      const onLeave = () => { if (!popupPinnedNote) hideNotePopup(); };
+      const onClick = (e: Event) => {
+        e.stopPropagation();
+        if (popupPinnedNote === note) { hideNotePopup(); }
+        else { popupPinnedNote = note; showNotePopup(note, hit); }
+      };
+      hit.addEventListener('mouseenter', onEnter);
+      hit.addEventListener('mouseleave', onLeave);
+      hit.addEventListener('click', onClick);
     }
     fitNotation();
   }
@@ -517,6 +600,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   // ── Wave flow ─────────────────────────────────────────────────────────────
   function startWave(): void {
     if (runState !== 'ready' && runState !== 'cleared') return;
+    hideNotePopup();
     const v = validateGraph(graph);
     if (v.status === 'cycle' || v.status === 'no-output-route' || v.status === 'missing-starter' || v.status === 'incompatible' || v.status === 'invalid') {
       flashState(`Patch invalid: ${v.status.replace(/-/g, ' ')}`, '#ff6677');
@@ -1022,6 +1106,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     window.removeEventListener('pointermove', onTowerPointerMove);
     window.removeEventListener('pointerup', onTowerPointerUp);
     window.removeEventListener('pointercancel', onTowerPointerUp);
+    document.removeEventListener('click', onDocClickForPopup);
     detachCamera();
     rack.destroy();
     tut.destroy();

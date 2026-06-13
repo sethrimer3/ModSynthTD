@@ -7,6 +7,7 @@
 import { SaveData, SaveStorage, loadSave, persistSave } from './state/save';
 import { showWorldMap } from './ui/worldmap';
 import { enterLevel } from './ui/level';
+import { createLoadingScreen } from './ui/loading-screen';
 
 function getStorage(): SaveStorage {
   try {
@@ -29,34 +30,40 @@ export function startModSynthTD(): void {
   const app = document.getElementById('app');
   if (!app) return;
 
-  const storage = getStorage();
-  const loaded = loadSave(storage);
-  const save: SaveData = loaded.save;
+  void (async () => {
+    const loadingScreen = await createLoadingScreen();
+    app.appendChild(loadingScreen.element);
 
-  let levelCleanup: (() => void) | null = null;
+    const storage = getStorage();
+    const loaded = loadSave(storage);
+    const save: SaveData = loaded.save;
 
-  const persist = () => persistSave(storage, save);
+    let levelCleanup: (() => void) | null = null;
 
-  const goToMap = () => {
-    if (levelCleanup) { levelCleanup(); levelCleanup = null; }
-    showWorldMap(app, {
-      save,
-      storage,
-      onEnterWorld: (worldId) => {
-        if (levelCleanup) { levelCleanup(); levelCleanup = null; }
-        levelCleanup = enterLevel(app, worldId, { save, storage, exitToMap: goToMap, persist });
-      },
-      onSaveChanged: persist,
-      onReset: goToMap,
-    });
-  };
+    const persist = () => persistSave(storage, save);
 
-  goToMap();
+    const goToMap = () => {
+      if (levelCleanup) { levelCleanup(); levelCleanup = null; }
+      showWorldMap(app, {
+        save,
+        storage,
+        onEnterWorld: (worldId) => {
+          if (levelCleanup) { levelCleanup(); levelCleanup = null; }
+          levelCleanup = enterLevel(app, worldId, { save, storage, exitToMap: goToMap, persist });
+        },
+        onSaveChanged: persist,
+        onReset: goToMap,
+      });
+    };
 
-  // Surface a non-destructive recovery / migration notice once.
-  if (loaded.recoveredFromCorrupt || loaded.repairs.length > 0) {
-    showRecoveryNotice(app, loaded.recoveredFromCorrupt, loaded.repairs);
-  }
+    goToMap();
+    await loadingScreen.fadeOut();
+
+    // Surface a non-destructive recovery / migration notice once.
+    if (loaded.recoveredFromCorrupt || loaded.repairs.length > 0) {
+      showRecoveryNotice(app, loaded.recoveredFromCorrupt, loaded.repairs);
+    }
+  })();
 }
 
 function showRecoveryNotice(app: HTMLElement, recovered: boolean, repairs: string[]): void {

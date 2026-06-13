@@ -72,6 +72,58 @@ export interface WorldDef {
   bossPhases?: number;
 }
 
+export function isWorldTrackTile(world: WorldDef, tileX: number, tileY: number): boolean {
+  return world.lanes.some(lane => lane.some(([x, y]) => x === tileX && y === tileY));
+}
+
+function exteriorWorldTiles(world: WorldDef): Set<string> {
+  const exterior = new Set<string>();
+  const queue: Tile[] = [];
+  const add = (x: number, y: number): void => {
+    const key = `${x},${y}`;
+    if (x < 0 || x >= world.gridWidth || y < 0 || y >= world.gridHeight) return;
+    if (exterior.has(key) || isWorldTrackTile(world, x, y)) return;
+    exterior.add(key);
+    queue.push([x, y]);
+  };
+  for (let x = 0; x < world.gridWidth; x++) {
+    add(x, 0);
+    add(x, world.gridHeight - 1);
+  }
+  for (let y = 1; y < world.gridHeight - 1; y++) {
+    add(0, y);
+    add(world.gridWidth - 1, y);
+  }
+  for (let i = 0; i < queue.length; i++) {
+    const [x, y] = queue[i];
+    add(x + 1, y);
+    add(x - 1, y);
+    add(x, y + 1);
+    add(x, y - 1);
+  }
+  return exterior;
+}
+
+/** Repair stale saved positions that became enclosed by changed track topology. */
+export function nearestExteriorWorldTile(world: WorldDef, start: Tile): Tile {
+  const startX = Math.max(0, Math.min(world.gridWidth - 1, Math.floor(start[0])));
+  const startY = Math.max(0, Math.min(world.gridHeight - 1, Math.floor(start[1])));
+  const exterior = exteriorWorldTiles(world);
+  if (exterior.has(`${startX},${startY}`)) return [startX, startY];
+
+  const maxRadius = Math.max(world.gridWidth, world.gridHeight);
+  for (let radius = 1; radius <= maxRadius; radius++) {
+    for (let y = startY - radius; y <= startY + radius; y++) {
+      for (let x = startX - radius; x <= startX + radius; x++) {
+        if (Math.max(Math.abs(x - startX), Math.abs(y - startY)) !== radius) continue;
+        if (x < 0 || x >= world.gridWidth || y < 0 || y >= world.gridHeight) continue;
+        if (exterior.has(`${x},${y}`)) return [x, y];
+      }
+    }
+  }
+  return [startX, startY];
+}
+
 /** Cumulative table from per-wave increments. */
 function cum(...inc: number[]): number[] {
   const out: number[] = [];

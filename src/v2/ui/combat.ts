@@ -13,6 +13,8 @@ import { EnemyDef, getEnemyDef } from '../core/enemy-defs';
 import { PPQ, QUARTER_TICKS, TICKS_PER_MEASURE } from '../core/ticks';
 import { Camera } from './camera';
 import { TowerStyle, traceTowerShape } from './tower-style';
+import { DamageNumber, spawnDamageNumber, updateDamageNumbers, drawDamageNumbers } from './damage-numbers';
+import { bandToHz, pitchOffsetToHz, damageMultiplier } from './pitch';
 
 import quarterNoteUrl from '../../../ASSETS/SPRITES/ENEMIES/enemy_quarterNote.png';
 import halfNoteUrl from '../../../ASSETS/SPRITES/ENEMIES/enemy_halfNote.png';
@@ -175,6 +177,9 @@ class EnemyRt {
     return 'none';
   }
 
+  /** Resonance Hz derived from current band (updates for accidental enemies). */
+  get hz(): number { return bandToHz(this.band); }
+
   damageScale(): number {
     if (this.def.behavior === 'crescendo') {
       return 1 - 0.5 * Math.min(1, this.tileIdx / Math.max(1, this.lane.length - 1));
@@ -223,6 +228,8 @@ interface Projectile {
   waveform: Waveform;
   amplitude: number;
   band: FrequencyBand;
+  /** Resonance Hz derived from band + pitchOffset at fire time. */
+  hz: number;
   color: string;
   attackTicks: number;
   releaseTicks: number;
@@ -270,6 +277,7 @@ export class Combat {
   private signalCursor = 0;
   private projectiles: Projectile[] = [];
   private floaters: FloatingText[] = [];
+  private damageNumbers: DamageNumber[] = [];
   private spawnEffects: SpawnEffect[] = [];
   private stats: WaveCombatStats = { enemiesDefeated: 0, shotsFired: 0, matchedHits: 0, resistedHits: 0 };
   private towerPulse = new Map<string, number>();
@@ -375,6 +383,7 @@ export class Combat {
           waveform: ev.waveform,
           amplitude: ev.amplitude,
           band: ev.band,
+          hz: pitchOffsetToHz(ev.band, ev.pitchOffset),
           color: BAND_COLORS[ev.band],
           attackTicks: ev.attackTicks,
           releaseTicks: ev.releaseTicks,
@@ -402,6 +411,8 @@ export class Combat {
       this.floaters[i].t -= dt;
       if (this.floaters[i].t <= 0) this.floaters.splice(i, 1);
     }
+    const w = this.world;
+    updateDamageNumbers(this.damageNumbers, dt, { x: 0, y: 0, w: w.gridWidth, h: w.gridHeight });
 
     // Projectile positions in tiles: 1 tile per quarter note.
     for (const p of this.projectiles) {
@@ -419,16 +430,23 @@ export class Combat {
         const [etx, ety] = e.logicalTile();
         if (etx === rx && ety === ry) {
           p.dead = true;
-          const isMatch = p.band === e.band;
+          const mult = damageMultiplier(p.hz, e.hz);
           const wasAlive = e.alive;
-          e.hit(p.amplitude * (isMatch ? 2 : 0.5), isMatch);
-          if (isMatch) this.stats.matchedHits++; else this.stats.resistedHits++;
+          const dmgAmount = p.amplitude * mult * e.damageScale();
+          const isGoodHit = mult >= 2;
+          e.hit(p.amplitude * mult, isGoodHit);
+          if (isGoodHit) this.stats.matchedHits++; else this.stats.resistedHits++;
           if (wasAlive && !e.alive) this.stats.enemiesDefeated++;
+          if (dmgAmount > 0) {
+            spawnDamageNumber(this.damageNumbers, etx + 0.5, ety + 0.5, dmgAmount, e.pool.maxHp, BAND_COLORS[p.band]);
+          }
+          // Color: green ≥3×, yellow ≥1.5×, orange ≥0.5×, grey = fizzle
+          const multColor = mult >= 3 ? '#33ff88' : mult >= 1.5 ? '#ffcc00' : mult >= 0.5 ? '#ff8833' : '#556677';
           this.floaters.push({
             x: etx + 0.5 + (Math.random() * 0.5 - 0.25),
             y: ety,
-            text: isMatch ? 'CANCEL ×2' : 'RESIST ×½',
-            color: isMatch ? BAND_COLORS[p.band] : '#667788',
+            text: `×${mult.toFixed(1)}`,
+            color: multColor,
             t: 0.9,
             scale: 0.85 + Math.min(1.5, p.amplitude) * 0.25,
           });
@@ -566,6 +584,8 @@ export class Combat {
       }
       ctx.restore();
     }
+
+    drawDamageNumbers(ctx, this.damageNumbers, tileZ);
 
     ctx.restore();
   }

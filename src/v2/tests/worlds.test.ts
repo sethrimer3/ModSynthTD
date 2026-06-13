@@ -4,7 +4,7 @@
  */
 
 import { test, assert, assertEq } from './harness';
-import { WORLDS, CAMPAIGN_ORDER, SECRET_WORLD_ID, getWorld } from '../data/worlds';
+import { WORLDS, CAMPAIGN_ORDER, SECRET_WORLD_ID, getWorld, isWorldTrackTile, nearestExteriorWorldTile } from '../data/worlds';
 import { validateWaveScore, compileScore } from '../core/score';
 import { MODULE_TYPES } from '../core/modules';
 import { TICKS_PER_MEASURE } from '../core/ticks';
@@ -108,6 +108,16 @@ test('tower start tile is on the grid and off the track', () => {
     const onTrack = w.lanes.some(lane => lane.some(([x, y]) => x === tx && y === ty));
     assert(!onTrack, `${w.worldId} tower start not on the track`);
   }
+});
+
+test('saved positions enclosed by track topology are repaired outside it', () => {
+  const world = getWorld('w60')!;
+  const trapped: [number, number] = [8, 5];
+  const repaired = nearestExteriorWorldTile(world, trapped);
+  assert(!isWorldTrackTile(world, repaired[0], repaired[1]), 'repaired position is outside track topology');
+  assert(repaired[0] !== trapped[0] || repaired[1] !== trapped[1], 'enclosed open position is moved');
+  assert(repaired[0] >= 0 && repaired[0] < world.gridWidth && repaired[1] >= 0 && repaired[1] < world.gridHeight,
+    'repaired position stays in bounds');
 });
 
 test('reward tables match wave counts and increase strictly', () => {
