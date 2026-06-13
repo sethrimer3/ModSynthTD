@@ -27,6 +27,8 @@ import { Combat, TowerState, rotateTower, TILE_PX, preloadSprites } from './comb
 import { createRackUI, RackUI, rackWidthPx, rackHeightPx } from './rack-ui';
 import { renderNotation, NotationLayout } from './notation';
 import { getAudioEngine } from './audio-engine';
+import { LevelMusicManager } from './level-music';
+import { LEVEL_AUDIO_CONFIGS } from './level-audio-assets';
 import { TutorialManager } from './tutorials';
 import { openShop } from './shop-ui';
 import { openSettings } from './settings-ui';
@@ -34,7 +36,8 @@ import { openSettings } from './settings-ui';
 const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
 const MAX_BASE_HP = 10;
 const SCENE_GAP = 60;
-const COUNT_IN_TICKS = TICKS_PER_MEASURE; // one bar lead-in
+const COUNT_IN_TICKS = TICKS_PER_MEASURE;      // default: 1-bar lead-in
+const MIDI_INTRO_BARS = 4;                      // MIDI-wave intro length in bars
 
 type RunState = 'ready' | 'countin' | 'wave' | 'cleared' | 'failed' | 'victory';
 
@@ -58,6 +61,12 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
   const audio = getAudioEngine();
 
+  // ── Level music (optional: only present when a config exists for this world) ─
+  const levelAudioConfig = LEVEL_AUDIO_CONFIGS[worldId] ?? null;
+  const levelMusic = levelAudioConfig
+    ? new LevelMusicManager(audio, levelAudioConfig)
+    : null;
+
   // ── State ─────────────────────────────────────────────────────────────────
   const graph: RackGraph = getWorldRack(save, worldId);
   const tower: TowerState = worldSave.tower
@@ -76,6 +85,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   let lastTick = -1;
   let waveStartTick = -1;
   let waveTotalTicks = 0;
+  let countinStartTick = 0;  // tick when the countin/intro began
+  let activeIntroBars = 1;   // bars of intro for current wave (4 for MIDI, 1 otherwise)
   let placement = { active: false, tile: null as [number, number] | null };
 
   const combat = new Combat(world, tower);
@@ -369,9 +380,11 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     cachedActivity = result.moduleActivity;
     rack.setTraffic(cachedTraffic, cachedActivity);
 
-    // Notation render (cached; only on wave change or structural edit in prep).
+    // Notation render — prefer MIDI score if available, fall back to authored.
+    const midiScore = levelMusic?.getMidiScore(waveIndex) ?? null;
+    const notationScore = midiScore ?? score;
     if (notation) notation.canvas.remove();
-    notation = renderNotation(score, world.theme.glow);
+    notation = renderNotation(notationScore, world.theme.glow);
     notationInner.insertBefore(notation.canvas, playhead);
   }
 
@@ -397,21 +410,47 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       return;
     }
     void audio.unlock();
+
     const nowTick = currentTickFloat();
-    waveStartTick = Math.ceil((nowTick + COUNT_IN_TICKS) / TICKS_PER_MEASURE) * TICKS_PER_MEASURE;
-    const score = currentWaveScore();
-    waveTotalTicks = score.measures * TICKS_PER_MEASURE;
+    countinStartTick = nowTick;
+
+    // Use 4-bar MIDI intro when the wave has a MIDI config, otherwise 1-bar.
+    const hasMidi = levelMusic?.hasMidi(waveIndex) ?? false;
+    activeIntroBars = hasMidi
+      ? (levelAudioConfig?.introBarCount ?? MIDI_INTRO_BARS)
+      : 1;
+    const introTicks = TICKS_PER_MEASURE * activeIntroBars;
+
+    waveStartTick = Math.ceil((nowTick + introTicks) / TICKS_PER_MEASURE) * TICKS_PER_MEASURE;
+
+    // Resolve the wave score: prefer MIDI-derived, fall back to authored.
+    const midiScore = levelMusic?.getMidiScore(waveIndex) ?? null;
+    const effectiveScore = midiScore ?? currentWaveScore();
+    waveTotalTicks = effectiveScore.measures * TICKS_PER_MEASURE;
+
+    // Re-render notation with the MIDI score if available.
+    if (midiScore) {
+      notation?.canvas.remove();
+      notation = renderNotation(midiScore, world.theme.glow);
+      notationInner.insertBefore(notation.canvas, playhead);
+    }
 
     const localEvents = rebuildSignalsForWave();
-    combat.startWave(compileScore(score), waveStartTick);
+    combat.startWave(compileScore(effectiveScore), waveStartTick);
     combat.setSignalEvents(localEvents.map(e => ({ ...e, tick: e.tick + waveStartTick })));
 
-    // Schedule audio for the whole wave.
+    // Schedule synth audio for the whole wave.
     const audioNow = audio.currentTime;
     const waveStartCtxTime = audioNow + ticksToSec(waveStartTick - nowTick, world.bpm);
     for (const e of localEvents) {
       audio.scheduleEvent(e, waveStartCtxTime, world.bpm);
     }
+
+    // Schedule the wave intro OGG to play immediately over the background loops.
+    if (hasMidi && levelMusic) {
+      levelMusic.scheduleIntro(waveIndex, audioNow + 0.02);
+    }
+
     runState = 'countin';
     tut.trigger('live-lock');
     refreshHud();
@@ -444,6 +483,12 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     waveIndex++;
     runState = 'cleared';
     recompilePreview();
+    // Preload MIDI for the newly advanced wave index.
+    if (levelMusic) {
+      levelMusic.waitForMidiScore(waveIndex).then(score => {
+        if (score && (runState === 'ready' || runState === 'cleared')) recompilePreview();
+      });
+    }
     host.persist();
     refreshHud();
   }
@@ -452,6 +497,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     runState = 'failed';
     combat.clearWave();
     audio.cancelAll();
+    // Background loops keep playing after failure — that's intentional.
+    // (The loops stop only on level exit via levelMusic.destroy())
     overlayTitle.textContent = 'BASE OVERWHELMED';
     overlayTitle.style.color = '#ff3344';
     overlaySub.textContent = `Reached ${endlessActive ? 'endless ' : ''}wave ${endlessActive ? endlessCount + 1 : waveIndex + 1} of ${world.name}.`;
@@ -687,12 +734,22 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       combat.updateFrame(dt, tickFloat);
     }
 
+    // Try to start background loops once audio is unlocked and buffers ready.
+    levelMusic?.tryStartLoops();
+
     // Rack pulses use local tick.
     rack.setCurrentTick(runState === 'wave' || runState === 'countin' ? tickFloat - waveStartTick : (tickFloat % (TICKS_PER_MEASURE * 2)));
     rack.update(now);
 
     // Notation playhead.
-    if (notation && (runState === 'wave' || runState === 'countin')) {
+    if (notation && runState === 'countin') {
+      // During the MIDI intro, scan the playhead across the whole wave notation.
+      const introElapsed = Math.max(0, tickFloat - countinStartTick);
+      const totalIntroTicks = activeIntroBars * TICKS_PER_MEASURE;
+      const fraction = Math.min(1, introElapsed / totalIntroTicks);
+      playhead.style.display = 'block';
+      playhead.style.left = `${notation.tickToX(fraction * waveTotalTicks)}px`;
+    } else if (notation && runState === 'wave') {
       const local = tickFloat - waveStartTick;
       if (local >= 0 && local <= waveTotalTicks) {
         playhead.style.display = 'block';
@@ -708,8 +765,38 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     combat.draw(ctx, canvas, camera, tickFloat, placement);
 
+    // Dev overlay.
+    if (debugEl && levelMusic) {
+      const bar = Math.floor(tickFloat / TICKS_PER_MEASURE) + 1;
+      const beat = Math.floor((tickFloat % TICKS_PER_MEASURE) / PPQ) + 1;
+      const introElapsed = Math.max(0, tickFloat - countinStartTick);
+      const midiScore = levelMusic.getMidiScore(waveIndex);
+      const nextNote = midiScore?.notes.find(n => n.tick > (tickFloat - waveStartTick));
+      debugEl.textContent = [
+        `ctx:${audio.currentTime.toFixed(2)}s  tick:${tickFloat.toFixed(0)}`,
+        `bar ${bar} beat ${beat}`,
+        `state:${runState}  intro:${runState === 'countin' ? `${(introElapsed / TICKS_PER_MEASURE).toFixed(2)}/${activeIntroBars}bars` : 'off'}`,
+        levelMusic.debugInfo(waveIndex),
+        nextNote ? `next:${nextNote.enemyTypeId}@tick${nextNote.tick}(${nextNote.durationTicks}t)` : 'next:—',
+      ].join('\n');
+    }
+
     refreshHud();
     rafId = requestAnimationFrame(frame);
+  }
+
+  // ── Dev overlay (add ?dev to the URL to enable) ───────────────────────────
+  const devMode = typeof location !== 'undefined' && new URLSearchParams(location.search).has('dev');
+  let debugEl: HTMLDivElement | null = null;
+  if (devMode) {
+    debugEl = document.createElement('div');
+    debugEl.style.cssText = [
+      'position:absolute;bottom:8px;left:8px;z-index:200;pointer-events:none;',
+      'font-size:0.48rem;color:#44ff88;background:rgba(0,0,0,0.75);',
+      'padding:5px 7px;border-radius:5px;white-space:pre;line-height:1.6;',
+      `font-family:monospace;border:1px solid #44ff8844;`,
+    ].join('');
+    app.appendChild(debugEl);
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────────
@@ -717,6 +804,16 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   camera.centerOn({ minX: 0, minY: 0, maxX: world.gridWidth * TILE_PX, maxY: world.gridHeight * TILE_PX });
   applyCamera();
   recompilePreview();
+
+  // When MIDI loads asynchronously, update notation in the prep phase.
+  if (levelMusic) {
+    levelMusic.waitForMidiScore(waveIndex).then(score => {
+      if (score && (runState === 'ready' || runState === 'cleared')) {
+        recompilePreview();
+      }
+    });
+  }
+
   // Apply persisted synth/audio prefs (silent until a gesture).
   const outMod = graph.modules.find(m => m.typeId === 'output');
   audio.setPrefs({
@@ -743,6 +840,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     detachCamera();
     rack.destroy();
     tut.destroy();
+    levelMusic?.destroy();
     audio.teardown();
     setWorldRack(save, worldId, graph);
     saveTower();

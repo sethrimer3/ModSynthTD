@@ -1,0 +1,43 @@
+/**
+ * level-audio-assets.ts — Webpack-resolved audio asset URLs for level music configs.
+ *
+ * Browser-only (not included in Node.js tests). Imports are processed by
+ * webpack's asset/resource rule so each URL is the final hashed filename.
+ *
+ * Add new level configs here and export them from LEVEL_AUDIO_CONFIGS keyed
+ * by worldId so level.ts can look them up without touching worlds.ts.
+ */
+
+import { LevelAudioConfig } from '../data/level-audio-config';
+
+import beatLoopUrl from '../../../ASSETS/LEVELS/60BPM/beatloop.ogg';
+import bgLayer1Url from '../../../ASSETS/LEVELS/60BPM/backgroundLoop_layer_1.ogg';
+import bgLayer2Url from '../../../ASSETS/LEVELS/60BPM/backgroundLoop_layer_2.ogg';
+import wave1OggUrl from '../../../ASSETS/LEVELS/60BPM/wave1.ogg';
+import wave1MidUrl from '../../../ASSETS/LEVELS/60BPM/wave1.mid';
+
+// ── 60 BPM — Pulse Orbit (w60) ───────────────────────────────────────────────
+
+const LEVEL_60BPM: LevelAudioConfig = {
+  bpm: 60,
+  beatLoop: beatLoopUrl,
+  bgLayers: [bgLayer1Url, bgLayer2Url],
+  introBarCount: 4,
+  waveAudio: [
+    {
+      waveIndex: 0,          // w60-1
+      introOgg: wave1OggUrl,
+      midiUrl: wave1MidUrl,
+    },
+    // Add more waves here as assets are created:
+    // { waveIndex: 1, introOgg: wave2OggUrl, midiUrl: wave2MidUrl },
+  ],
+};
+
+/**
+ * Registry of level audio configs keyed by worldId.
+ * level.ts looks up by worldId — no changes to worlds.ts needed.
+ */
+export const LEVEL_AUDIO_CONFIGS: Readonly<Record<string, LevelAudioConfig>> = {
+  w60: LEVEL_60BPM,
+};

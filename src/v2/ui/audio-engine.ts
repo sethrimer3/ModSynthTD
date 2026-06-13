@@ -51,6 +51,7 @@ export class AudioEngine {
   private limiter: DynamicsCompressorNode | null = null;
   private percBus: GainNode | null = null;
   private synthBus: GainNode | null = null;
+  private musicBus: GainNode | null = null;
   private kick1: AudioBuffer | null = null;
   private kick2: AudioBuffer | null = null;
   private noise: AudioBuffer | null = null;
@@ -85,14 +86,15 @@ export class AudioEngine {
     this.synthBus.gain.setTargetAtTime(this.prefs.synthOn ? this.prefs.synthVolume * 0.7 : 0, t, 0.03);
   }
 
-  /** Must be called from a user-gesture handler. Safe to call repeatedly. */
-  async unlock(): Promise<void> {
-    this.gestureReceived = true;
+  /**
+   * Ensure the AudioContext and all buses exist (context may be suspended).
+   * Safe to call before a user gesture — decoding is allowed in suspended state.
+   */
+  private ensureCtx(): AudioContext {
     if (!this.ctx) {
       this.ctx = new AudioContext();
       this.master = this.ctx.createGain();
       this.limiter = this.ctx.createDynamicsCompressor();
-      // Limiter-style settings: fast, high-ratio, low headroom.
       this.limiter.threshold.value = -10;
       this.limiter.knee.value = 4;
       this.limiter.ratio.value = 16;
@@ -100,17 +102,79 @@ export class AudioEngine {
       this.limiter.release.value = 0.12;
       this.percBus = this.ctx.createGain();
       this.synthBus = this.ctx.createGain();
+      this.musicBus = this.ctx.createGain();
+      this.musicBus.gain.value = 0.75;
       this.percBus.connect(this.master);
       this.synthBus.connect(this.master);
+      this.musicBus.connect(this.master);
       this.master.connect(this.limiter).connect(this.ctx.destination);
       this.applyPrefs();
       this.buildNoise();
       void this.loadKicks();
     }
-    if (this.ctx.state !== 'running') {
-      try { await this.ctx.resume(); } catch { /* stays suspended until next gesture */ }
+    return this.ctx;
+  }
+
+  /** Must be called from a user-gesture handler. Safe to call repeatedly. */
+  async unlock(): Promise<void> {
+    this.gestureReceived = true;
+    const ctx = this.ensureCtx();
+    if (ctx.state !== 'running') {
+      try { await ctx.resume(); } catch { /* stays suspended until next gesture */ }
     }
     this.applyPrefs();
+  }
+
+  // ── OGG / buffer support for level music ─────────────────────────────────
+
+  /**
+   * Fetch and decode an audio file URL. Can be called before unlock (the
+   * AudioContext decodes in its suspended state). Rejects on network/decode error.
+   */
+  async loadBuffer(url: string): Promise<AudioBuffer> {
+    const ctx = this.ensureCtx();
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`loadBuffer: HTTP ${res.status} for ${url}`);
+    const raw = await res.arrayBuffer();
+    return ctx.decodeAudioData(raw);
+  }
+
+  /**
+   * Start a seamlessly looping buffer source connected to the music bus.
+   * Returns the source node — pass it to stopLoop() to stop it.
+   * Requires audio to be unlocked; call from tryStartLoops() after unlock.
+   */
+  startLoop(buffer: AudioBuffer, gain = 1.0): AudioBufferSourceNode {
+    const ctx = this.ensureCtx();
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.loop = true;
+    const g = ctx.createGain();
+    g.gain.value = gain;
+    src.connect(g).connect(this.musicBus!);
+    src.start(0);
+    return src;
+  }
+
+  /** Stop and disconnect a loop source returned by startLoop(). */
+  stopLoop(src: AudioBufferSourceNode): void {
+    try { src.stop(); } catch { /* already stopped */ }
+    try { src.disconnect(); } catch { /* already disconnected */ }
+  }
+
+  /**
+   * Play a buffer once at the given AudioContext time.
+   * Used to schedule the wave intro OGG over the background loops.
+   */
+  playBufferAt(buffer: AudioBuffer, when: number, gain = 1.0): void {
+    const ctx = this.ensureCtx();
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const g = ctx.createGain();
+    g.gain.value = gain;
+    src.connect(g).connect(this.musicBus!);
+    src.onended = () => { src.disconnect(); g.disconnect(); };
+    src.start(Math.max(ctx.currentTime, when));
   }
 
   private async loadKicks(): Promise<void> {
