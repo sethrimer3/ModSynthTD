@@ -143,6 +143,7 @@ kept only for history.
 - [x] Use shared one-shot kicks only as a fallback when a planet has no `kickLoop.ogg`.
 - [x] Schedule planet loop layers on exact four-bar BPM boundaries without cutting reverb tails.
 - [x] Start per-wave OGG audio at the live-wave boundary instead of during count-in.
+- [x] Align count-in to the remaining background-loop cycle and show its phase on sheet music.
 - [ ] Keep all visuals readable at the native pixel scale.
 - [x] Add conveyor direction preview ghost for conveyor/extractor tool (Q to rotate tooltip visible in place).
 

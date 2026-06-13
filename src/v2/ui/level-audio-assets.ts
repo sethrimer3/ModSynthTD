@@ -38,7 +38,6 @@ const LEVEL_60BPM: LevelAudioConfig = {
   beatLoop: beatLoopUrl,
   kickLoop: findKickLoop(60),
   bgLayers: [bgLayer1Url, bgLayer2Url],
-  introBarCount: 4,
   waveAudio: [
     {
       waveIndex: 0,          // w60-1

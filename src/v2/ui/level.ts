@@ -38,8 +38,6 @@ import { openSettings } from './settings-ui';
 const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
 const MAX_BASE_HP = 10;
 const SCENE_GAP = 60;
-const COUNT_IN_TICKS = TICKS_PER_MEASURE;      // default: 1-bar lead-in
-const MIDI_INTRO_BARS = 4;                      // MIDI-wave intro length in bars
 
 type RunState = 'ready' | 'countin' | 'wave' | 'cleared' | 'failed' | 'victory';
 
@@ -304,7 +302,9 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   notationWrap.appendChild(notationInner);
   const playhead = document.createElement('div');
   playhead.style.cssText = `position:absolute;top:0;bottom:0;width:2px;background:${world.theme.glow};box-shadow:0 0 8px ${world.theme.glow};display:none;pointer-events:none;`;
-  notationInner.append(notationLabel, notationEffects, playhead);
+  const loopPlayhead = document.createElement('div');
+  loopPlayhead.style.cssText = `position:absolute;top:0;bottom:0;width:2px;background:${world.theme.glow};box-shadow:0 0 5px ${world.theme.glow};opacity:0.25;pointer-events:none;`;
+  notationInner.append(notationLabel, notationEffects, loopPlayhead, playhead);
   notationWorld.appendChild(notationWrap);
   let notation: NotationLayout | null = null;
   let effectiveCompiled = compileScore(currentWaveScore());
@@ -497,14 +497,13 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     const nowTick = currentTickFloat();
     countinStartTick = nowTick;
 
-    // Use 4-bar MIDI intro when the wave has a MIDI config, otherwise 1-bar.
     const hasMidi = levelMusic?.hasMidi(waveIndex) ?? false;
-    activeIntroBars = hasMidi
-      ? (levelAudioConfig?.introBarCount ?? MIDI_INTRO_BARS)
-      : 1;
-    const introTicks = TICKS_PER_MEASURE * activeIntroBars;
-
-    waveStartTick = Math.ceil((nowTick + introTicks) / TICKS_PER_MEASURE) * TICKS_PER_MEASURE;
+    const audioNow = audio.currentTime;
+    const waveStartCtxTime = levelMusic?.nextLoopBoundary(audioNow)
+      ?? audioNow + ticksToSec(TICKS_PER_MEASURE, world.bpm);
+    const countinTicks = Math.max(1, (waveStartCtxTime - audioNow) * world.bpm * PPQ / 60);
+    activeIntroBars = countinTicks / TICKS_PER_MEASURE;
+    waveStartTick = nowTick + countinTicks;
 
     // Resolve the wave score: prefer MIDI-derived, fall back to authored.
     const midiScore = levelMusic?.getMidiScore(waveIndex) ?? null;
@@ -528,8 +527,6 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     combat.setSignalEvents(new Map([...evaluation.eventsByOutput].map(([id, events]) => [id, events.map(e => ({ ...e, tick: e.tick + waveStartTick }))])));
 
     // Schedule synth audio for the whole wave.
-    const audioNow = audio.currentTime;
-    const waveStartCtxTime = audioNow + ticksToSec(waveStartTick - nowTick, world.bpm);
     for (const e of localEvents) {
       audio.scheduleEvent(e, waveStartCtxTime, world.bpm);
     }
@@ -846,8 +843,12 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     rack.update(now);
 
     // Notation playhead.
+    if (notation) {
+      const loopPhase = levelMusic?.loopPhase(audio.currentTime)
+        ?? (((tickFloat % (TICKS_PER_MEASURE * 4)) + TICKS_PER_MEASURE * 4) % (TICKS_PER_MEASURE * 4)) / (TICKS_PER_MEASURE * 4);
+      loopPlayhead.style.left = `${notation.tickToX(loopPhase * waveTotalTicks)}px`;
+    }
     if (notation && runState === 'countin') {
-      // During the MIDI intro, scan the playhead across the whole wave notation.
       const introElapsed = Math.max(0, tickFloat - countinStartTick);
       const totalIntroTicks = activeIntroBars * TICKS_PER_MEASURE;
       const fraction = Math.min(1, introElapsed / totalIntroTicks);

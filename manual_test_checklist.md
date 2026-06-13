@@ -297,4 +297,6 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] At 60 BPM, all planet loop layers restart together every 16 seconds
 - [ ] Loop files with reverb tails continue playing after the next four-bar cycle begins
 - [ ] `wave1.ogg` remains silent during count-in and starts exactly when Wave 1 becomes live
+- [ ] Count-in lasts only until the next four-bar background-loop boundary
+- [ ] A 25%-opacity playhead always shows the current background-loop position on the sheet music
 

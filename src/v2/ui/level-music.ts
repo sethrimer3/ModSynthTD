@@ -119,6 +119,20 @@ export class LevelMusicManager {
     return !this.config.kickLoop;
   }
 
+  /** Next exact four-bar loop boundary, or a short fallback before loops start. */
+  nextLoopBoundary(ctxTime: number): number {
+    if (this.loopStartCtxTime === null) return ctxTime + 0.05;
+    const elapsed = Math.max(0, ctxTime - this.loopStartCtxTime);
+    const cycleIndex = Math.floor(elapsed / this.loopPeriodSec) + 1;
+    return this.loopStartCtxTime + cycleIndex * this.loopPeriodSec;
+  }
+
+  /** Current position through the planet's four-bar music loop, from 0 to 1. */
+  loopPhase(ctxTime: number): number {
+    if (this.loopStartCtxTime === null || ctxTime < this.loopStartCtxTime) return 0;
+    return ((ctxTime - this.loopStartCtxTime) % this.loopPeriodSec) / this.loopPeriodSec;
+  }
+
   /**
    * Synchronous cache lookup. Returns null if not loaded yet or no MIDI configured.
    * Call waitForMidiScore() to wait for loading to finish.

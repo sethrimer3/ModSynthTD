@@ -22,8 +22,6 @@ export interface LevelAudioConfig {
   kickLoop?: string;
   /** Melodic/harmonic loop layers stacked over the beat. */
   bgLayers: string[];
-  /** How many bars of MIDI intro to play before the physical wave begins. */
-  introBarCount: number;
   /** Per-wave audio overrides. Waves not listed use the standard 1-bar countin. */
   waveAudio: WaveAudioConfig[];
 }

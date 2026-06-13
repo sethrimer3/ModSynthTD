@@ -319,3 +319,7 @@ previous source, keeping layers synchronized while preserving reverb tails.
 
 Per-wave OGG audio begins at the live-wave boundary after count-in. Count-in
 remains a silent visual/transport preview for the upcoming wave audio.
+
+Wave count-in ends at the next four-bar planet-music boundary, regardless of
+how much of the current cycle remains. A persistent dim sheet-music playhead
+shows the current phase of the beat/background loops.
