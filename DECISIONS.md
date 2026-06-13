@@ -1,5 +1,15 @@
 # Implementation Decisions
 
+## D-036: Canonical Signal Events Drive Combat Readability
+
+**Decision**: Projectile visuals, tower firing pulses, and transient wave
+diagnostics derive from the same canonical `SignalEvent` stream used by audio
+and cable pulses. Combat feedback remains capped and does not persist in saves.
+
+**Reason**: The patch must visibly explain its effect on rhythm, waveform,
+band, direction, damage, envelope, and repeats without creating a second
+combat model.
+
 This document records important implementation choices, tradeoffs, and design decisions that are not obvious from the code alone. Update it when making significant system changes.
 
 ---

@@ -80,6 +80,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   let waveIndex = worldSave.completed ? 0 : Math.min(worldSave.bestWave, world.waves.length - 1);
   let endlessActive = false;
   let endlessCount = worldSave.endlessBest;
+  let waveEscapes = 0;
+  let lastWaveSummary = '';
   const runSeed = (Date.now() & 0xffff);
 
   // Transport.
@@ -441,6 +443,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       return;
     }
     void audio.unlock();
+    waveEscapes = 0;
 
     const nowTick = currentTickFloat();
     countinStartTick = nowTick;
@@ -484,10 +487,16 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
     runState = 'countin';
     tut.trigger('live-lock');
+    tut.trigger('bands');
+    tut.trigger('osc-combat');
+    tut.trigger('clock-combat');
+    if (graph.modules.some(m => m.typeId === 'delay')) tut.trigger('delay-combat');
     refreshHud();
   }
 
   function onWaveCleared(): void {
+    const stats = combat.getWaveStats();
+    lastWaveSummary = `KO ${stats.enemiesDefeated} · ESC ${waveEscapes} · SHOTS ${stats.shotsFired} · MATCH ${stats.matchedHits} · RESIST ${stats.resistedHits}`;
     combat.clearWave();
     if (endlessActive) {
       endlessCount++;
@@ -684,6 +693,9 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       stateEl.textContent = labels[runState];
       stateEl.style.color = colors[runState];
     }
+    if (runState === 'cleared' && lastWaveSummary && performance.now() >= stateFlashUntil) {
+      stateEl.textContent = lastWaveSummary;
+    }
 
     const canStart = runState === 'ready' || runState === 'cleared';
     startBtn.style.display = canStart ? 'block' : 'none';
@@ -740,6 +752,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
           const outcome = combat.processTick(t);
           for (const spawned of outcome.spawnedEvents) flashResolvedNote(spawned.spawnIndex);
           if (outcome.escapes > 0) {
+            waveEscapes += outcome.escapes;
             baseHp = Math.max(0, baseHp - outcome.escapes);
             if (baseHp <= 0) { onFailed(); break; }
           }

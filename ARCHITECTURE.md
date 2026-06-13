@@ -143,3 +143,9 @@ before a user gesture.
 the node harness: 81 deterministic tests across timing/RNG, graph
 validation+evaluation, score compilation, economy, save/migration, and world
 data. `npm run build` validates the full browser bundle.
+
+## 9. Combat feedback
+
+`ui/combat.ts` derives projectile band color, waveform shape/motion, amplitude
+intensity, envelope trail length, echo styling, tower route pulses, and
+transient wave diagnostics directly from canonical `SignalEvent` data.

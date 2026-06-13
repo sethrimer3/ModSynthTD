@@ -21,6 +21,7 @@ The factory-defense items below are **legacy** (superseded by the campaign) and
 kept only for history.
 
 ### Done
+- [x] Make canonical SignalEvent properties visibly affect combat projectiles, tower fire feedback, hit results, and transient wave summaries.
 - [x] Pure core: integer-tick timing (PPQ 48), canonical SignalEvent, typed
   ports, data-driven module registry, deterministic bounded graph
   validate/evaluate, score schema/compiler, enemy registry. (81 unit tests)

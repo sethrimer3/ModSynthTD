@@ -28,14 +28,6 @@ export const BAND_COLORS: Record<FrequencyBand, string> = {
   high: '#cc88ff',
 };
 
-const WAVEFORM_COLORS: Record<Waveform, string> = {
-  pulse: '#cc44ff',
-  sine: '#00ddcc',
-  square: '#ff8800',
-  saw: '#ffee44',
-  triangle: '#66ffcc',
-};
-
 const SPRITES: Record<string, string> = {
   sixteenth: sixteenthNoteUrl,
   eighth: eighthNoteUrl,
@@ -231,6 +223,9 @@ interface Projectile {
   amplitude: number;
   band: FrequencyBand;
   color: string;
+  attackTicks: number;
+  releaseTicks: number;
+  isEcho: boolean;
   dead: boolean;
 }
 
@@ -240,10 +235,18 @@ interface FloatingText {
   text: string;
   color: string;
   t: number;
+  scale: number;
 }
 
 interface SpawnEffect extends SpawnEvent {
   absTick: number;
+}
+
+export interface WaveCombatStats {
+  enemiesDefeated: number;
+  shotsFired: number;
+  matchedHits: number;
+  resistedHits: number;
 }
 
 // ── Combat system ───────────────────────────────────────────────────────────
@@ -265,6 +268,10 @@ export class Combat {
   private projectiles: Projectile[] = [];
   private floaters: FloatingText[] = [];
   private spawnEffects: SpawnEffect[] = [];
+  private stats: WaveCombatStats = { enemiesDefeated: 0, shotsFired: 0, matchedHits: 0, resistedHits: 0 };
+  private towerPulse = 0;
+  private routePulse = 0;
+  private lastFireDirections: Array<[number, number]> = [];
   finishFlash = 0;
   private trackSets: Set<string>[];
 
@@ -282,7 +289,10 @@ export class Combat {
     this.pendingSpawns = compiled.spawns.map(s => ({ ...s, absTick: waveStartTick + s.tick }));
     this.spawnEffects = [];
     this.signalCursor = 0;
+    this.stats = { enemiesDefeated: 0, shotsFired: 0, matchedHits: 0, resistedHits: 0 };
   }
+
+  getWaveStats(): WaveCombatStats { return { ...this.stats }; }
 
   setSignalEvents(events: SignalEvent[]): void {
     this.signalEvents = events;
@@ -355,9 +365,16 @@ export class Combat {
           amplitude: ev.amplitude,
           band: ev.band,
           color: BAND_COLORS[ev.band],
+          attackTicks: ev.attackTicks,
+          releaseTicks: ev.releaseTicks,
+          isEcho: ev.tags.includes('echo'),
           dead: false,
         });
+        this.stats.shotsFired++;
       }
+      this.lastFireDirections = ev.directions.map(rel => orientedDir(rel, this.tower.orientation));
+      this.towerPulse = 1;
+      this.routePulse = 1;
       out.fired = true;
     }
 
@@ -367,6 +384,8 @@ export class Combat {
   /** Per-frame: animation, collision, culling. tickFloat = fractional tick. */
   updateFrame(dt: number, tickFloat: number): void {
     this.finishFlash = Math.max(0, this.finishFlash - dt);
+    this.towerPulse = Math.max(0, this.towerPulse - dt * 5);
+    this.routePulse = Math.max(0, this.routePulse - dt * 3);
     for (const e of this.enemies) e.updateAnim(dt);
     for (let i = this.floaters.length - 1; i >= 0; i--) {
       this.floaters[i].t -= dt;
@@ -390,14 +409,19 @@ export class Combat {
         if (etx === rx && ety === ry) {
           p.dead = true;
           const isMatch = p.band === e.band;
+          const wasAlive = e.alive;
           e.hit(p.amplitude * (isMatch ? 2 : 0.5), isMatch);
+          if (isMatch) this.stats.matchedHits++; else this.stats.resistedHits++;
+          if (wasAlive && !e.alive) this.stats.enemiesDefeated++;
           this.floaters.push({
             x: etx + 0.5 + (Math.random() * 0.5 - 0.25),
             y: ety,
             text: isMatch ? 'CANCEL ×2' : 'RESIST ×½',
             color: isMatch ? BAND_COLORS[p.band] : '#667788',
             t: 0.9,
+            scale: 0.85 + Math.min(1.5, p.amplitude) * 0.25,
           });
+          if (!e.alive) this.floaters.push({ x: etx + 0.5, y: ety + 0.35, text: 'NOTE OFF', color: BAND_COLORS[e.band], t: 0.7, scale: 0.9 });
           break;
         }
       }
@@ -521,10 +545,9 @@ export class Combat {
     // Floating text.
     if (this.floaters.length > 0) {
       ctx.save();
-      const fontSize = Math.max(8, tileZ * 0.2);
-      ctx.font = `bold ${fontSize}px 'Pixelify Sans',sans-serif`;
       ctx.textAlign = 'center';
       for (const f of this.floaters) {
+        ctx.font = `bold ${Math.max(8, tileZ * 0.2) * f.scale}px 'Pixelify Sans',sans-serif`;
         ctx.globalAlpha = Math.min(1, f.t / 0.9);
         ctx.fillStyle = f.color;
         ctx.fillText(f.text, f.x * tileZ, (f.y - (0.9 - f.t)) * tileZ);
@@ -589,8 +612,7 @@ export class Combat {
   private drawTower(ctx: CanvasRenderingContext2D, tileZ: number, z: number, tickFloat: number): void {
     const t = this.tower;
     const px = t.tileX * tileZ + tileZ / 2, py = t.tileY * tileZ + tileZ / 2;
-    const beatFrac = (tickFloat / QUARTER_TICKS) % 1;
-    const pulse = Math.pow(1 - beatFrac, 2) * 0.6;
+    const pulse = this.towerPulse;
     const color = '#ffcc00';
     const half = tileZ * 0.3;
     ctx.save();
@@ -606,6 +628,14 @@ export class Combat {
     const cr = Math.max(2, tileZ * 0.06);
     ctx.fillStyle = hexAlpha(color, 0.9);
     ctx.beginPath(); ctx.arc(0, 0, cr, 0, Math.PI * 2); ctx.fill();
+    if (this.routePulse > 0) {
+      ctx.strokeStyle = hexAlpha(color, this.routePulse * 0.8);
+      ctx.beginPath(); ctx.arc(0, 0, half * (1.2 + (1 - this.routePulse)), 0, Math.PI * 2); ctx.stroke();
+    }
+    for (const [dx, dy] of this.lastFireDirections) {
+      ctx.strokeStyle = hexAlpha(color, this.towerPulse * 0.9);
+      ctx.beginPath(); ctx.moveTo(dx * half * 0.7, dy * half * 0.7); ctx.lineTo(dx * half * 1.5, dy * half * 1.5); ctx.stroke();
+    }
     // Facing arrow.
     const [ax, ay] = orientedDir('north', t.orientation);
     const tip = half * 0.65, base = half * 0.3, hw = half * 0.2;
@@ -624,18 +654,18 @@ export class Combat {
     const ageTiles = (tickFloat - p.spawnTick) / QUARTER_TICKS;
     let vx = p.originX + ageTiles * p.dirX;
     let vy = p.originY + ageTiles * p.dirY;
-    if (p.waveform === 'sine' || p.waveform === 'triangle') {
+    if (p.waveform === 'sine') {
       const off = Math.sin(ageTiles * Math.PI * 2) * 0.3;
       vx += -p.dirY * off;
       vy += p.dirX * off;
     }
     const hx = vx * tileZ + tileZ / 2;
     const hy = vy * tileZ + tileZ / 2;
-    const wfColor = WAVEFORM_COLORS[p.waveform];
+    const wfColor = p.color;
     const r = Math.max(2.5, tileZ * 0.1) * (0.8 + p.amplitude * 0.25);
 
     // Tail.
-    const tailTiles = Math.min(ageTiles, 2.4);
+    const tailTiles = Math.min(ageTiles, 0.45 + Math.min(3, (p.attackTicks + p.releaseTicks) / QUARTER_TICKS));
     const tx2 = hx - p.dirX * tailTiles * tileZ;
     const ty2 = hy - p.dirY * tailTiles * tileZ;
     const grad = ctx.createLinearGradient(hx, hy, tx2, ty2);
@@ -647,11 +677,22 @@ export class Combat {
 
     // Head.
     ctx.save();
+    ctx.globalAlpha = p.isEcho ? 0.55 : 1;
     ctx.shadowColor = wfColor;
-    ctx.shadowBlur = 8 * z;
-    if (p.waveform === 'square' || p.waveform === 'saw') {
+    ctx.shadowBlur = (5 + p.amplitude * 5) * z;
+    if (p.waveform === 'square') {
       ctx.fillStyle = wfColor;
       ctx.fillRect(hx - r * 0.8, hy - r * 0.8, r * 1.6, r * 1.6);
+    } else if (p.waveform === 'pulse') {
+      ctx.translate(hx, hy); ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = wfColor; ctx.fillRect(-r * 0.7, -r * 0.7, r * 1.4, r * 1.4);
+    } else if (p.waveform === 'saw' || p.waveform === 'triangle') {
+      const px = -p.dirY, py = p.dirX;
+      ctx.fillStyle = wfColor; ctx.beginPath();
+      ctx.moveTo(hx + p.dirX * r * 1.4, hy + p.dirY * r * 1.4);
+      ctx.lineTo(hx - p.dirX * r + px * r, hy - p.dirY * r + py * r);
+      ctx.lineTo(hx - p.dirX * r - px * r, hy - p.dirY * r - py * r);
+      ctx.closePath(); ctx.fill();
     } else {
       const cg = ctx.createRadialGradient(hx, hy, 0, hx, hy, r);
       cg.addColorStop(0, '#ffffff');

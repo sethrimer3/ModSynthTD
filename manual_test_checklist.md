@@ -280,4 +280,8 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Long notes have weightier previews/telegraphs and short notes have sharper previews
 - [ ] MIDI and authored-score waves both use the same visible spawn timing
 - [ ] Reduced motion keeps playhead, note glow, and telegraphs readable without travel animation
+- [ ] OSC waveform visibly changes projectile shape/motion and OSC band changes projectile color
+- [ ] AMP changes projectile intensity and hit-text scale; DELAY echoes appear ghosted
+- [ ] Splitter/Router multi-direction fire is visible at the output tower
+- [ ] Cleared waves show KO, escapes, shots, matched hits, and resisted hits
 

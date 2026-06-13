@@ -709,6 +709,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
 
     const title = document.createElement('div');
     title.textContent = `⠿ ${def.shortName} ⠿`;
+    title.title = def.tooltip;
     title.style.cssText = `
       text-align:center;margin-top:7px;font-size:10px;font-weight:800;
       letter-spacing:0.14em;color:${def.color};text-shadow:0 0 8px ${def.color}66;
