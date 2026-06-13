@@ -5,12 +5,13 @@
  */
 
 import { WORLDS, CAMPAIGN_ORDER, SECRET_WORLD_ID, WorldDef, getWorld } from '../data/worlds';
-import { SaveData, getWorldSave, SaveStorage } from '../state/save';
+import { SaveData, getWorldSave, SaveStorage, defaultWorldSave } from '../state/save';
 import {
   isWorldUnlocked, isWorldVisible, secretHintLevel, SECRET_HINTS, completedWorldCount,
+  blueprintsUnlockedBy,
 } from '../state/progression';
 import { CURRENCY_SYMBOL } from '../state/economy';
-import { getModuleType } from '../core/modules';
+import { getModuleType, MODULE_TYPES } from '../core/modules';
 import { openSettings } from './settings-ui';
 import { getAudioEngine } from './audio-engine';
 
@@ -63,7 +64,12 @@ export function showWorldMap(app: HTMLElement, opts: WorldMapOpts): void {
       onReset: opts.onReset,
     });
   });
-  topBar.append(currency, settingsBtn);
+  const devBtn = document.createElement('button');
+  devBtn.textContent = 'DEV';
+  devBtn.title = 'Dev mode: unlock everything + infinite money';
+  devBtn.style.cssText = `${FF}font-size:0.56rem;font-weight:700;background:rgba(8,15,28,0.85);border:1px solid #2a2a1a;color:#665500;border-radius:6px;padding:5px 10px;cursor:pointer;letter-spacing:0.08em;`;
+  devBtn.addEventListener('click', () => openDevModal(app, save, opts));
+  topBar.append(currency, settingsBtn, devBtn);
   root.appendChild(topBar);
 
   // Progress + secret hint.
@@ -180,6 +186,84 @@ function makeWorldCard(world: WorldDef, opts: WorldMapOpts): HTMLElement {
   }
 
   return card;
+}
+
+// ── Dev mode ──────────────────────────────────────────────────────────────────
+
+function applyDevMode(save: SaveData): void {
+  // Infinite money.
+  save.resonance = 99999;
+
+  // Unlock all worlds: mark every campaign world completed + claim rewards.
+  for (const worldId of CAMPAIGN_ORDER) {
+    const ws = getWorldSave(save, worldId);
+    const world = getWorld(worldId);
+    if (!ws.completed) {
+      ws.completed = true;
+      ws.completionClaimed = true;
+      if (world) {
+        ws.bestWave = world.waves.length;
+        ws.claimedWaveReward = world.rewardTable[world.rewardTable.length - 1] ?? 0;
+      }
+      if (ws.shelfCount < 2) ws.shelfCount = 2;
+    }
+  }
+
+  // Unlock all blueprints from the module registry.
+  for (const mod of MODULE_TYPES) {
+    if (mod.unlockAfterWorld !== null && !save.blueprints.includes(mod.typeId)) {
+      save.blueprints.push(mod.typeId);
+    }
+  }
+
+  // Reveal secret world and cipher.
+  save.secretRevealed = true;
+  save.cipherChallengeUnlocked = true;
+}
+
+function openDevModal(app: HTMLElement, save: SaveData, opts: WorldMapOpts): void {
+  const backdrop = document.createElement('div');
+  backdrop.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:300;display:flex;align-items:center;justify-content:center;';
+
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    background:#080f1e;border:1.5px solid #665500;border-radius:14px;
+    padding:1.6rem 2rem;display:flex;flex-direction:column;align-items:center;gap:0.9rem;
+    max-width:320px;text-align:center;${FF}
+    box-shadow:0 0 40px #ffcc0022;
+  `;
+
+  const title = document.createElement('div');
+  title.textContent = '⚠ DEV MODE';
+  title.style.cssText = 'font-size:1rem;font-weight:800;color:#ffcc00;letter-spacing:0.1em;';
+
+  const desc = document.createElement('div');
+  desc.style.cssText = 'font-size:0.64rem;color:#88aacc;line-height:1.6;';
+  desc.innerHTML = 'This will:<br>• Set Resonance to <b style="color:#ffcc00">99,999</b><br>• Mark all worlds <b style="color:#33dd88">complete</b><br>• Unlock all <b style="color:#aa66ff">module blueprints</b><br>• Reveal the <b style="color:#88ccff">secret world</b>';
+
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:0.8rem;margin-top:0.3rem;';
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.textContent = 'APPLY';
+  confirmBtn.style.cssText = `${FF}font-size:0.7rem;font-weight:800;letter-spacing:0.08em;background:#ffcc0022;border:1.5px solid #ffcc00;color:#ffcc00;border-radius:8px;padding:7px 20px;cursor:pointer;`;
+  confirmBtn.addEventListener('click', () => {
+    applyDevMode(save);
+    opts.onSaveChanged();
+    backdrop.remove();
+    showWorldMap(app, opts); // re-render with updated state
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'CANCEL';
+  cancelBtn.style.cssText = `${FF}font-size:0.7rem;font-weight:700;letter-spacing:0.08em;background:transparent;border:1.5px solid #2a3d65;color:#5577aa;border-radius:8px;padding:7px 20px;cursor:pointer;`;
+  cancelBtn.addEventListener('click', () => backdrop.remove());
+
+  btnRow.append(confirmBtn, cancelBtn);
+  modal.append(title, desc, btnRow);
+  backdrop.appendChild(modal);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  app.appendChild(backdrop);
 }
 
 function drawPlanet(canvas: HTMLCanvasElement, world: WorldDef, bright: boolean): void {
