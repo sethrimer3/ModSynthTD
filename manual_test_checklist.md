@@ -286,4 +286,8 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Cleared waves show KO, escapes, shots, matched hits, and resisted hits
 - [ ] Buying an additional OUT module succeeds and selling it removes its saved tower placement
 - [ ] Old single-tower saves load with the placement assigned to the first OUT module
+- [ ] Each OUT faceplate shows a deterministic shape/color tower slot and placement state
+- [ ] Dragging an OUT tower silhouette places or repositions only that output's tower
+- [ ] A contributing unplaced OUT blocks wave start; an unpatched extra OUT does not
+- [ ] Different patched OUT routes fire from their own placed tower locations
 

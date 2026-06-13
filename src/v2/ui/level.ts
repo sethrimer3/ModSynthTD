@@ -24,6 +24,7 @@ import {
 } from '../state/progression';
 import { Camera, attachCameraControls } from './camera';
 import { Combat, TowerState, rotateTower, TILE_PX, preloadSprites } from './combat';
+import { towerStyleForOutput } from './tower-style';
 import { createRackUI, RackUI, rackWidthPx, rackHeightPx } from './rack-ui';
 import { renderNotation, NotationLayout, NotationNoteLayout } from './notation';
 import { getAudioEngine } from './audio-engine';
@@ -71,9 +72,13 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
   // ── State ─────────────────────────────────────────────────────────────────
   const graph: RackGraph = getWorldRack(save, worldId);
-  const tower: TowerState = worldSave.tower
-    ? { tileX: worldSave.tower.tileX, tileY: worldSave.tower.tileY, orientation: worldSave.tower.orientation }
-    : { tileX: world.towerStart[0], tileY: world.towerStart[1], orientation: 'north' };
+  const towers = new Map<string, TowerState>();
+  const towerStyles = new Map<string, ReturnType<typeof towerStyleForOutput>>();
+  for (const output of graph.modules.filter(m => m.typeId === 'output')) {
+    const saved = worldSave.towersByOutputId[output.instanceId];
+    if (saved) towers.set(output.instanceId, { ...saved });
+    towerStyles.set(output.instanceId, towerStyleForOutput(output.instanceId));
+  }
 
   let runState: RunState = 'ready';
   let baseHp = MAX_BASE_HP;
@@ -91,9 +96,9 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   let waveTotalTicks = 0;
   let countinStartTick = 0;  // tick when the countin/intro began
   let activeIntroBars = 1;   // bars of intro for current wave (4 for MIDI, 1 otherwise)
-  let placement = { active: false, tile: null as [number, number] | null };
+  let placement = { active: false, tile: null as [number, number] | null, outputModuleId: null as string | null };
 
-  const combat = new Combat(world, tower);
+  const combat = new Combat(world, towers, towerStyles);
   let graphDirty = false;
   let persistTimer = 0;
 
@@ -177,7 +182,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     onSellModule: (id) => {
       if (runState === 'wave' || runState === 'countin') return;
       const r = sellModule(save, worldId, id);
-      if (r.ok) { setWorldRack(save, worldId, graph); rack.rebuild(); markGraphDirty(); host.persist(); }
+      if (r.ok) { towers.delete(id); towerStyles.delete(id); setWorldRack(save, worldId, graph); rack.rebuild(); markGraphDirty(); host.persist(); }
     },
     onBuyShelf: () => {
       const r = purchaseShelf(save, worldId);
@@ -198,14 +203,19 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       return !graph.modules.some(m => m.shelfIndex === sc - 1);
     },
     onModuleSelected: () => undefined,
-    onTowerMove: () => {
-      placement.active = !placement.active;
-      viewport.style.cursor = placement.active ? 'crosshair' : 'grab';
+    onBeginTowerDrag: (outputModuleId, clientX, clientY) => {
+      placement.active = true;
+      placement.outputModuleId = outputModuleId;
+      updateTowerDrag(clientX, clientY);
       tut.trigger('tower');
     },
-    onTowerRotate: () => { rotateTower(tower); saveTower(); host.persist(); },
+    onRotateTower: (outputModuleId) => {
+      const tower = towers.get(outputModuleId);
+      if (tower) { rotateTower(tower); saveTowers(); host.persist(); }
+    },
     onSynthToggle: () => toggleSynth(),
     onTestPulse: () => sendTestPulse(),
+    getTowerState: (outputModuleId) => ({ isPlaced: towers.has(outputModuleId), style: towerStyles.get(outputModuleId) ?? towerStyleForOutput(outputModuleId) }),
     getSynthState: () => {
       const out = graph.modules.find(m => m.typeId === 'output');
       const on = out?.settings['synthOn'] === true;
@@ -353,26 +363,55 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       // Tower selection / placement happens in battlefield world space.
       const tx = Math.floor(wx / TILE_PX);
       const ty = Math.floor(wy / TILE_PX);
-      if (placement.active) {
+      if (placement.active && placement.outputModuleId) {
         const valid = tx >= 0 && tx < world.gridWidth && ty >= 0 && ty < world.gridHeight && !combat.isTrackTile(tx, ty);
         if (valid) {
-          tower.tileX = tx; tower.tileY = ty;
+          const previous = towers.get(placement.outputModuleId);
+          towers.set(placement.outputModuleId, { tileX: tx, tileY: ty, orientation: previous?.orientation ?? 'north' });
           placement.active = false;
+          placement.outputModuleId = null;
           viewport.style.cursor = 'grab';
-          saveTower();
+          saveTowers();
           host.persist();
+          rack.rebuild();
         }
       }
     },
     onChanged: applyCamera,
   });
 
+  function updateTowerDrag(clientX: number, clientY: number): void {
+    const r = viewport.getBoundingClientRect();
+    const w = camera.screenToWorld(clientX - r.left, clientY - r.top);
+    placement.tile = [Math.floor(w.x / TILE_PX), Math.floor(w.y / TILE_PX)];
+    viewport.style.cursor = 'crosshair';
+  }
   viewport.addEventListener('pointermove', (e) => {
     if (!placement.active) return;
-    const r = viewport.getBoundingClientRect();
-    const w = camera.screenToWorld(e.clientX - r.left, e.clientY - r.top);
-    placement.tile = [Math.floor(w.x / TILE_PX), Math.floor(w.y / TILE_PX)];
+    updateTowerDrag(e.clientX, e.clientY);
   });
+  const onTowerPointerMove = (e: PointerEvent) => {
+    if (placement.active) updateTowerDrag(e.clientX, e.clientY);
+  };
+  const onTowerPointerUp = () => {
+    if (!placement.active || !placement.outputModuleId || !placement.tile) return;
+    const [tx, ty] = placement.tile;
+    const valid = tx >= 0 && tx < world.gridWidth && ty >= 0 && ty < world.gridHeight && !combat.isTrackTile(tx, ty);
+    if (valid) {
+      const previous = towers.get(placement.outputModuleId);
+      towers.set(placement.outputModuleId, { tileX: tx, tileY: ty, orientation: previous?.orientation ?? 'north' });
+      saveTowers();
+      host.persist();
+    }
+    placement.active = false;
+    placement.outputModuleId = null;
+    placement.tile = null;
+    viewport.style.cursor = 'grab';
+    rack.rebuild();
+  };
+  window.addEventListener('pointermove', onTowerPointerMove);
+  window.addEventListener('pointerup', onTowerPointerUp);
+  window.addEventListener('pointercancel', onTowerPointerUp);
 
   // ── Resize ────────────────────────────────────────────────────────────────
   function resize(): void {
@@ -389,8 +428,11 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   window.addEventListener('orientationchange', onOrient);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-  function saveTower(): void {
-    worldSave.tower = { tileX: tower.tileX, tileY: tower.tileY, orientation: tower.orientation as SaveTowerOrient };
+  function saveTowers(): void {
+    worldSave.towersByOutputId = {};
+    for (const [outputId, tower] of towers) {
+      worldSave.towersByOutputId[outputId] = { tileX: tower.tileX, tileY: tower.tileY, orientation: tower.orientation as SaveTowerOrient };
+    }
   }
 
   function currentWaveScore(): WaveScore {
@@ -423,7 +465,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
   function markGraphDirty(): void { graphDirty = true; }
 
-  function rebuildSignalsForWave(): SignalEvent[] {
+  function rebuildSignalsForWave(): ReturnType<typeof evaluatePatch> {
     const score = currentWaveScore();
     const total = score.measures * TICKS_PER_MEASURE;
     const seed = waveSeed();
@@ -431,7 +473,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     cachedTraffic = result.cableTraffic;
     cachedActivity = result.moduleActivity;
     rack.setTraffic(cachedTraffic, cachedActivity);
-    return result.events;
+    return result;
   }
 
   // ── Wave flow ─────────────────────────────────────────────────────────────
@@ -468,9 +510,15 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       rebuildNotation(midiScore);
     }
 
-    const localEvents = rebuildSignalsForWave();
+    const evaluation = rebuildSignalsForWave();
+    const missing = [...evaluation.eventsByOutput.keys()].filter(outputId => !towers.has(outputId));
+    if (missing.length > 0) {
+      flashState(`Place tower for ${missing.map(id => graph.modules.find(m => m.instanceId === id)?.typeId.toUpperCase() ?? 'OUT').join(', ')}`, '#ff6677');
+      return;
+    }
+    const localEvents = evaluation.events;
     combat.startWave(effectiveCompiled, waveStartTick);
-    combat.setSignalEvents(localEvents.map(e => ({ ...e, tick: e.tick + waveStartTick })));
+    combat.setSignalEvents(new Map([...evaluation.eventsByOutput].map(([id, events]) => [id, events.map(e => ({ ...e, tick: e.tick + waveStartTick }))])));
 
     // Schedule synth audio for the whole wave.
     const audioNow = audio.currentTime;
@@ -651,6 +699,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       isLive: () => runState === 'wave' || runState === 'countin',
       onBuy: (typeId) => {
         const r = purchaseModule(save, worldId, typeId);
+        if (r.ok && typeId === 'output' && r.instanceId) towerStyles.set(r.instanceId, towerStyleForOutput(r.instanceId));
         if (r.ok) { setWorldRack(save, worldId, graph); rack.rebuild(); markGraphDirty(); host.persist(); refreshHud(); }
         return r;
       },
@@ -729,8 +778,9 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       } else if (runState === 'wave' || runState === 'countin') {
         // Live knob change: recompute future events.
         const localNow = Math.max(0, intTick - waveStartTick);
-        const localEvents = rebuildSignalsForWave();
-        combat.replaceFutureSignalEvents(localEvents.map(e => ({ ...e, tick: e.tick + waveStartTick })), intTick);
+        const evaluation = rebuildSignalsForWave();
+        const localEvents = evaluation.events;
+        combat.replaceFutureSignalEvents(new Map([...evaluation.eventsByOutput].map(([id, events]) => [id, events.map(e => ({ ...e, tick: e.tick + waveStartTick }))])), intTick);
         const audioNow = audio.currentTime;
         const waveStartCtxTime = audioNow + ticksToSec(waveStartTick - tickFloat, world.bpm);
         for (const e of localEvents) if (e.tick > localNow) audio.scheduleEvent(e, waveStartCtxTime, world.bpm);
@@ -928,13 +978,16 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     cancelAnimationFrame(rafId);
     ro.disconnect();
     window.removeEventListener('orientationchange', onOrient);
+    window.removeEventListener('pointermove', onTowerPointerMove);
+    window.removeEventListener('pointerup', onTowerPointerUp);
+    window.removeEventListener('pointercancel', onTowerPointerUp);
     detachCamera();
     rack.destroy();
     tut.destroy();
     levelMusic?.destroy();
     audio.teardown();
     setWorldRack(save, worldId, graph);
-    saveTower();
+    saveTowers();
     host.persist();
     app.innerHTML = '';
     app.style.cssText = '';

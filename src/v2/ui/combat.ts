@@ -12,6 +12,7 @@ import { SignalEvent, FrequencyBand, Waveform, SignalDirection } from '../core/e
 import { EnemyDef, getEnemyDef } from '../core/enemy-defs';
 import { PPQ, QUARTER_TICKS, TICKS_PER_MEASURE } from '../core/ticks';
 import { Camera } from './camera';
+import { TowerStyle, traceTowerShape } from './tower-style';
 
 import quarterNoteUrl from '../../../ASSETS/SPRITES/ENEMIES/enemy_quarterNote.png';
 import halfNoteUrl from '../../../ASSETS/SPRITES/ENEMIES/enemy_halfNote.png';
@@ -228,6 +229,7 @@ interface Projectile {
   isEcho: boolean;
   dead: boolean;
 }
+export type TowersByOutputId = Map<string, TowerState>;
 
 interface FloatingText {
   x: number;
@@ -260,24 +262,26 @@ export interface TickOutcome {
 
 export class Combat {
   readonly world: WorldDef;
-  readonly tower: TowerState;
+  readonly towers: TowersByOutputId;
+  readonly towerStyles: Map<string, TowerStyle>;
   enemies: EnemyRt[] = [];
   private pendingSpawns: Array<SpawnEvent & { absTick: number }> = [];
-  private signalEvents: SignalEvent[] = [];
+  private signalEvents: Array<{ outputId: string; event: SignalEvent }> = [];
   private signalCursor = 0;
   private projectiles: Projectile[] = [];
   private floaters: FloatingText[] = [];
   private spawnEffects: SpawnEffect[] = [];
   private stats: WaveCombatStats = { enemiesDefeated: 0, shotsFired: 0, matchedHits: 0, resistedHits: 0 };
-  private towerPulse = 0;
-  private routePulse = 0;
-  private lastFireDirections: Array<[number, number]> = [];
+  private towerPulse = new Map<string, number>();
+  private routePulse = new Map<string, number>();
+  private lastFireDirections = new Map<string, Array<[number, number]>>();
   finishFlash = 0;
   private trackSets: Set<string>[];
 
-  constructor(world: WorldDef, tower: TowerState) {
+  constructor(world: WorldDef, towers: TowersByOutputId, towerStyles: Map<string, TowerStyle>) {
     this.world = world;
-    this.tower = tower;
+    this.towers = towers;
+    this.towerStyles = towerStyles;
     this.trackSets = world.lanes.map(lane => new Set(lane.map(([x, y]) => `${x},${y}`)));
   }
 
@@ -294,15 +298,19 @@ export class Combat {
 
   getWaveStats(): WaveCombatStats { return { ...this.stats }; }
 
-  setSignalEvents(events: SignalEvent[]): void {
-    this.signalEvents = events;
+  setSignalEvents(eventsByOutput: Map<string, SignalEvent[]>): void {
+    this.signalEvents = [];
+    for (const [outputId, events] of eventsByOutput) for (const event of events) this.signalEvents.push({ outputId, event });
+    this.signalEvents.sort((a, b) => a.event.tick - b.event.tick);
     this.signalCursor = 0;
   }
 
   /** Replace not-yet-fired events after a live knob change. */
-  replaceFutureSignalEvents(events: SignalEvent[], afterTick: number): void {
-    const past = this.signalEvents.filter(e => e.tick <= afterTick);
-    const future = events.filter(e => e.tick > afterTick);
+  replaceFutureSignalEvents(eventsByOutput: Map<string, SignalEvent[]>, afterTick: number): void {
+    const past = this.signalEvents.filter(e => e.event.tick <= afterTick);
+    const future: Array<{ outputId: string; event: SignalEvent }> = [];
+    for (const [outputId, events] of eventsByOutput) for (const event of events) if (event.tick > afterTick) future.push({ outputId, event });
+    future.sort((a, b) => a.event.tick - b.event.tick);
     this.signalEvents = [...past, ...future];
     this.signalCursor = past.length;
   }
@@ -351,15 +359,18 @@ export class Combat {
     }
 
     // Tower fire from canonical SignalEvents.
-    while (this.signalCursor < this.signalEvents.length && this.signalEvents[this.signalCursor].tick <= tick) {
-      const ev = this.signalEvents[this.signalCursor++];
+    while (this.signalCursor < this.signalEvents.length && this.signalEvents[this.signalCursor].event.tick <= tick) {
+      const queued = this.signalEvents[this.signalCursor++];
+      const ev = queued.event;
+      const tower = this.towers.get(queued.outputId);
+      if (!tower) continue;
       if (ev.tick < tick - QUARTER_TICKS) continue; // stale after suspension
       for (const rel of ev.directions) {
-        const [dx, dy] = orientedDir(rel, this.tower.orientation);
+        const [dx, dy] = orientedDir(rel, tower.orientation);
         this.projectiles.push({
           spawnTick: ev.tick,
-          originX: this.tower.tileX,
-          originY: this.tower.tileY,
+          originX: tower.tileX,
+          originY: tower.tileY,
           dirX: dx, dirY: dy,
           waveform: ev.waveform,
           amplitude: ev.amplitude,
@@ -372,9 +383,9 @@ export class Combat {
         });
         this.stats.shotsFired++;
       }
-      this.lastFireDirections = ev.directions.map(rel => orientedDir(rel, this.tower.orientation));
-      this.towerPulse = 1;
-      this.routePulse = 1;
+      this.lastFireDirections.set(queued.outputId, ev.directions.map(rel => orientedDir(rel, tower.orientation)));
+      this.towerPulse.set(queued.outputId, 1);
+      this.routePulse.set(queued.outputId, 1);
       out.fired = true;
     }
 
@@ -384,8 +395,8 @@ export class Combat {
   /** Per-frame: animation, collision, culling. tickFloat = fractional tick. */
   updateFrame(dt: number, tickFloat: number): void {
     this.finishFlash = Math.max(0, this.finishFlash - dt);
-    this.towerPulse = Math.max(0, this.towerPulse - dt * 5);
-    this.routePulse = Math.max(0, this.routePulse - dt * 3);
+    for (const [id, pulse] of this.towerPulse) this.towerPulse.set(id, Math.max(0, pulse - dt * 5));
+    for (const [id, pulse] of this.routePulse) this.routePulse.set(id, Math.max(0, pulse - dt * 3));
     for (const e of this.enemies) e.updateAnim(dt);
     for (let i = this.floaters.length - 1; i >= 0; i--) {
       this.floaters[i].t -= dt;
@@ -434,7 +445,7 @@ export class Combat {
 
   // ── Rendering ─────────────────────────────────────────────────────────────
 
-  draw(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, camera: Camera, tickFloat: number, placement: { active: boolean; tile: Tile | null }): void {
+  draw(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, camera: Camera, tickFloat: number, placement: { active: boolean; tile: Tile | null; outputModuleId: string | null }): void {
     const dpr = devicePixelRatio;
     const z = camera.zoom * dpr;
     const tileZ = TILE_PX * z;
@@ -519,18 +530,19 @@ export class Combat {
       const valid = ptx >= 0 && ptx < w.gridWidth && pty >= 0 && pty < w.gridHeight && !this.isTrackTile(ptx, pty);
       ctx.save();
       ctx.globalAlpha = 0.55;
-      ctx.strokeStyle = valid ? '#ffcc00' : '#ff3344';
+      const style = placement.outputModuleId ? this.towerStyles.get(placement.outputModuleId) : undefined;
+      ctx.strokeStyle = valid ? (style?.color ?? '#ffcc00') : '#ff3344';
       ctx.lineWidth = Math.max(1.5, 2 * z);
       const px = ptx * tileZ + tileZ / 2, py = pty * tileZ + tileZ / 2;
       ctx.translate(px, py);
-      ctx.rotate(Math.PI / 4);
       const half = tileZ * 0.24;
-      ctx.strokeRect(-half, -half, half * 2, half * 2);
+      traceTowerShape(ctx, style?.shape ?? 'diamond', half);
+      ctx.stroke();
       ctx.restore();
     }
 
     // Tower.
-    this.drawTower(ctx, tileZ, z, tickFloat);
+    for (const [outputId, tower] of this.towers) this.drawTower(ctx, outputId, tower, tileZ, z);
 
     // Projectiles.
     for (const p of this.projectiles) {
@@ -609,11 +621,11 @@ export class Combat {
     ctx.restore();
   }
 
-  private drawTower(ctx: CanvasRenderingContext2D, tileZ: number, z: number, tickFloat: number): void {
-    const t = this.tower;
+  private drawTower(ctx: CanvasRenderingContext2D, outputId: string, t: TowerState, tileZ: number, z: number): void {
     const px = t.tileX * tileZ + tileZ / 2, py = t.tileY * tileZ + tileZ / 2;
-    const pulse = this.towerPulse;
-    const color = '#ffcc00';
+    const pulse = this.towerPulse.get(outputId) ?? 0;
+    const style = this.towerStyles.get(outputId) ?? { color: '#ffcc00', shape: 'diamond' as const };
+    const color = style.color;
     const half = tileZ * 0.3;
     ctx.save();
     ctx.translate(px, py);
@@ -621,19 +633,19 @@ export class Combat {
     ctx.shadowBlur = (6 + pulse * 14) * z;
     ctx.strokeStyle = hexAlpha(color, 0.8 + pulse * 0.2);
     ctx.lineWidth = Math.max(1, 1.4 * z);
-    ctx.rotate(Math.PI / 4);
-    ctx.strokeRect(-half * 0.8, -half * 0.8, half * 1.6, half * 1.6);
-    ctx.rotate(-Math.PI / 4);
+    traceTowerShape(ctx, style.shape, half);
+    ctx.stroke();
     ctx.shadowBlur = 0;
     const cr = Math.max(2, tileZ * 0.06);
     ctx.fillStyle = hexAlpha(color, 0.9);
     ctx.beginPath(); ctx.arc(0, 0, cr, 0, Math.PI * 2); ctx.fill();
-    if (this.routePulse > 0) {
-      ctx.strokeStyle = hexAlpha(color, this.routePulse * 0.8);
-      ctx.beginPath(); ctx.arc(0, 0, half * (1.2 + (1 - this.routePulse)), 0, Math.PI * 2); ctx.stroke();
+    const routePulse = this.routePulse.get(outputId) ?? 0;
+    if (routePulse > 0) {
+      ctx.strokeStyle = hexAlpha(color, routePulse * 0.8);
+      ctx.beginPath(); ctx.arc(0, 0, half * (1.2 + (1 - routePulse)), 0, Math.PI * 2); ctx.stroke();
     }
-    for (const [dx, dy] of this.lastFireDirections) {
-      ctx.strokeStyle = hexAlpha(color, this.towerPulse * 0.9);
+    for (const [dx, dy] of this.lastFireDirections.get(outputId) ?? []) {
+      ctx.strokeStyle = hexAlpha(color, pulse * 0.9);
       ctx.beginPath(); ctx.moveTo(dx * half * 0.7, dy * half * 0.7); ctx.lineTo(dx * half * 1.5, dy * half * 1.5); ctx.stroke();
     }
     // Facing arrow.

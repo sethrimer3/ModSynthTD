@@ -198,7 +198,8 @@ export function sellModule(save: SaveData, worldId: string, instanceId: string):
   if (idx === -1) return { ok: false, error: 'Module not found.' };
   const def = getModuleType(ws.rack.modules[idx].typeId);
   if (!def) return { ok: false, error: 'Unknown module type.' };
-  if (def.isStarter && (def.typeId !== 'output' || ws.rack.modules.filter(m => m.typeId === 'output').length <= 1)) {
+  const starterOutputId = ws.rack.modules.find(m => m.typeId === 'output')?.instanceId;
+  if (def.isStarter && (def.typeId !== 'output' || instanceId === starterOutputId)) {
     return { ok: false, error: 'The last starter module cannot be sold.' };
   }
   // Atomic: remove module + its cables + refund in one step.

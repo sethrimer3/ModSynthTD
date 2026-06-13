@@ -307,3 +307,6 @@ The global `turretFireCooldownSec` is retained to throttle the fire cadence; the
 
 **Weather scope**: Weather remains clear by default. Rain and snow are documented as no-op scaffolding for future background tint and foreground particle passes.
 
+# D-026: Output Modules Own Emitter Towers
+
+Each output module instance owns one independently placed emitter tower. Deterministic tower shape/color is derived from the module instance id, and only outputs with contributing graph events require placement before wave start. The original starter output is never sellable; purchased outputs cost and refund 45 Resonance.

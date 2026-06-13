@@ -126,6 +126,28 @@ test('additional output can be bought and selling removes its tower', () => {
   assertEq(ws.towersByOutputId[bought.instanceId!], undefined, 'tower placement removed with output');
 });
 
+test('starter output cannot be sold for free Resonance profit', () => {
+  const save = defaultSave();
+  ensureStarterRack(save, 'w40');
+  const ws = getWorldSave(save, 'w40');
+  const starter = ws.rack.modules.find(m => m.typeId === 'output')!;
+  const before = save.resonance;
+  const result = sellModule(save, 'w40', starter.instanceId);
+  assertEq(result.ok, false, 'starter output is not sellable');
+  assertEq(save.resonance, before, 'failed sale grants no Resonance');
+});
+
+test('purchased output costs and refunds exactly its purchase cost', () => {
+  const save = defaultSave();
+  save.resonance = 100;
+  ensureStarterRack(save, 'w40');
+  const result = purchaseModule(save, 'w40', 'output');
+  assertEq(result.ok, true, 'additional output purchase succeeds');
+  assertEq(save.resonance, 55, 'output cost deducted');
+  assertEq(sellModule(save, 'w40', result.instanceId!).ok, true, 'purchased output sells');
+  assertEq(save.resonance, 100, 'sale only restores paid cost');
+});
+
 test('starter modules cannot be sold and starter repair is idempotent', () => {
   const save = defaultSave();
   const changed1 = ensureStarterRack(save, 'w40');

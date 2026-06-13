@@ -15,6 +15,7 @@ import { SignalEvent } from '../core/events';
 import { SHELF_SLOTS, MAX_SHELVES, shelfCost, checkPlacement } from '../state/economy';
 import { hashString } from '../core/rng';
 import { createSoftWireRenderer, SoftWireData } from '../../version2-soft-wire';
+import { TowerStyle } from './tower-style';
 
 // ── Metrics ─────────────────────────────────────────────────────────────────
 
@@ -59,10 +60,11 @@ export interface RackUIOpts {
   canRefundShelf(): boolean;
   onModuleSelected(instanceId: string | null): void;
   /** Output-module action buttons. */
-  onTowerMove(): void;
-  onTowerRotate(): void;
+  onBeginTowerDrag(outputModuleId: string, clientX: number, clientY: number): void;
+  onRotateTower(outputModuleId: string): void;
   onSynthToggle(): void;
-  onTestPulse(): void;
+  onTestPulse(outputModuleId: string): void;
+  getTowerState(outputModuleId: string): { isPlaced: boolean; style: TowerStyle };
   getSynthState(): { configured: boolean; active: boolean; needsGesture: boolean };
 }
 
@@ -790,6 +792,28 @@ export function createRackUI(opts: RackUIOpts): RackUI {
 
     // Output-module extras: tower + synth + test pulse.
     if (def.typeId === 'output') {
+      const towerState = opts.getTowerState(inst.instanceId);
+      const slot = document.createElement('button');
+      slot.title = 'Drag this emitter tower onto the battlefield';
+      slot.style.cssText = `${FF}height:35px;position:relative;cursor:grab;background:#050914;border:3px solid ${towerState.style.color};border-radius:6px;color:${towerState.style.color};touch-action:none;`;
+      const silhouette = document.createElement('span');
+      const clip = towerState.style.shape === 'circle' ? 'circle(45%)'
+        : towerState.style.shape === 'triangle' ? 'polygon(50% 0,100% 100%,0 100%)'
+        : towerState.style.shape === 'hexagon' ? 'polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)'
+        : towerState.style.shape === 'chevron' ? 'polygon(0 0,100% 50%,0 100%,35% 50%)'
+        : towerState.style.shape === 'diamond' ? 'polygon(50% 0,100% 50%,50% 100%,0 50%)'
+        : 'polygon(0 0,100% 0,100% 100%,0 100%)';
+      silhouette.style.cssText = `position:absolute;left:8px;top:6px;width:18px;height:18px;background:${towerState.style.color};clip-path:${clip};filter:drop-shadow(0 0 4px ${towerState.style.color});`;
+      const slotLabel = document.createElement('span');
+      slotLabel.textContent = towerState.isPlaced ? 'PLACED' : 'DRAG TOWER';
+      slotLabel.style.cssText = 'position:absolute;right:4px;top:11px;font-size:6px;font-weight:800;letter-spacing:0.06em;';
+      slot.append(silhouette, slotLabel);
+      slot.addEventListener('pointerdown', (e: PointerEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        opts.onBeginTowerDrag(inst.instanceId, e.clientX, e.clientY);
+      });
+      controls.appendChild(slot);
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;gap:3px;justify-content:center;flex-wrap:wrap;';
       const mkBtn = (txt: string, title: string, fn: () => void) => {
@@ -801,9 +825,8 @@ export function createRackUI(opts: RackUIOpts): RackUI {
         row.appendChild(b);
         return b;
       };
-      mkBtn('MOVE', 'Place / move the output tower on the battlefield', () => opts.onTowerMove());
-      mkBtn('↻ROT', 'Rotate the tower clockwise', () => opts.onTowerRotate());
-      mkBtn('PULSE', 'Send a test pulse through the patch (preparation only)', () => opts.onTestPulse());
+      mkBtn('↻ROT', 'Rotate this output tower clockwise', () => opts.onRotateTower(inst.instanceId));
+      mkBtn('PULSE', 'Send a test pulse through the patch (preparation only)', () => opts.onTestPulse(inst.instanceId));
       controls.appendChild(row);
 
       const synthState = document.createElement('div');

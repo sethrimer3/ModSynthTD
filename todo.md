@@ -148,3 +148,4 @@ kept only for history.
 - [ ] Move checklist-style progress tracking out of `design.md` over time.
 - [ ] Keep this file ordered by implementation priority.
 - [ ] When a feature is implemented, mark it here and update `design.md` only if the actual design changed.
+- [x] Finish per-output draggable emitter towers, grouped combat routing, save migration, and output economy protection.

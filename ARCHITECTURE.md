@@ -149,3 +149,6 @@ data. `npm run build` validates the full browser bundle.
 `ui/combat.ts` derives projectile band color, waveform shape/motion, amplitude
 intensity, envelope trail length, echo styling, tower route pulses, and
 transient wave diagnostics directly from canonical `SignalEvent` data.
+# Per-Output Emitter Towers
+
+Each V2 `output` module instance owns an optional placement in `WorldSave.towersByOutputId`. Graph evaluation groups final events in `eventsByOutput`; level wave setup validates contributing outputs and passes those grouped events to combat, where projectile origin, orientation, pulse state, shape, and color are keyed by output module instance id.

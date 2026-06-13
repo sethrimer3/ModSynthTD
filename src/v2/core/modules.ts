@@ -207,7 +207,7 @@ const OUTPUT: ModuleTypeDef = {
   isStarter: true,
   shopBuyable: true,
   unlockAfterWorld: null,
-  tooltip: 'The single combat output. Drives the tower — and, when enabled, the audible synth.',
+  tooltip: 'Owns one emitter tower. Routed events fire from its placed tower and can drive the audible synth.',
   kind: 'sink',
   inputs: [makeInput('in', 'voice', 'IN', 'Final voiced signal. Needs an oscillator somewhere upstream.')],
   outputs: [],
