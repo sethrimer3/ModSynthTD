@@ -127,11 +127,11 @@ export function createRackUI(opts: RackUIOpts): RackUI {
 
   const soft = createSoftWireRenderer(root);
   root.appendChild(soft.svgEl);
-  soft.svgEl.style.zIndex = '30';
+  soft.svgEl.style.zIndex = '18';
 
-  // Invisible-but-clickable hit layer for cables sits above modules.
+  // Full-cable hit paths stay below modules; endpoint handles remain above.
   const hitSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  hitSvg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:31;';
+  hitSvg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:19;';
   root.appendChild(hitSvg);
 
   const pulseSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
