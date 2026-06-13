@@ -146,7 +146,7 @@ interface PulseDot {
 export function createRackUI(opts: RackUIOpts): RackUI {
   const { root, graph } = opts;
   root.innerHTML = '';
-  root.style.cssText = `position:absolute;${FF}touch-action:none;user-select:none;`;
+  root.style.cssText = `position:absolute;pointer-events:auto;${FF}touch-action:none;user-select:none;`;
   root.dataset.rackInteractive = 'true';
 
   const shelvesEl = document.createElement('div');

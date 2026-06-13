@@ -144,6 +144,7 @@ kept only for history.
 - [x] Schedule planet loop layers on exact four-bar BPM boundaries without cutting reverb tails.
 - [x] Start per-wave OGG audio at the live-wave boundary instead of during count-in.
 - [x] Align count-in to the remaining background-loop cycle and show its phase on sheet music.
+- [x] Restore module body/nameplate dragging without triggering camera panning.
 - [ ] Keep all visuals readable at the native pixel scale.
 - [x] Add conveyor direction preview ghost for conveyor/extractor tool (Q to rotate tooltip visible in place).
 

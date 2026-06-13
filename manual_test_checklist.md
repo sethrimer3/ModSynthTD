@@ -269,6 +269,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 ## 26. Rack, Patch Cable, and Sheet Music UX
 
 - [ ] Module nameplate/body clearly communicates dragging and snaps to a valid shelf slot
+- [ ] Dragging a module nameplate/body moves the module instead of panning the scene
 - [ ] Module controls and ports do not accidentally move the module or pan the camera
 - [ ] Invalid/locked module movement gives visible red feedback
 - [ ] Cable drag connects to a valid port and cancels cleanly on empty space
