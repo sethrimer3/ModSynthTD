@@ -50,6 +50,7 @@ export interface SaveSettings {
   reducedMotion: boolean;
   wireLayer: WireLayer;
   wireOpacity: number;
+  zoomSensitivity: number;   // 0.5..2.0
   // Audio mixer channels (added after v1 initial release):
   beatLoopVolume: number;     // 0..1
   bgLoopVolume: number;       // 0..1
@@ -111,6 +112,7 @@ export function defaultSave(): SaveData {
       reducedMotion: false,
       wireLayer: 'front',
       wireOpacity: 1,
+      zoomSensitivity: 1,
       beatLoopVolume: 0.70,
       bgLoopVolume: 0.50,
       enemyNotesVolume: 0.80,
@@ -241,6 +243,9 @@ export function normalizeSave(raw: unknown): { save: SaveData; repairs: string[]
     d.settings.reducedMotion = asBool(s.reducedMotion, false);
     d.settings.wireLayer = s.wireLayer === 'behind' ? 'behind' : 'front';
     d.settings.wireOpacity = clamp01(s.wireOpacity, 1);
+    d.settings.zoomSensitivity = typeof s.zoomSensitivity === 'number' && Number.isFinite(s.zoomSensitivity)
+      ? Math.min(2, Math.max(0.5, s.zoomSensitivity))
+      : 1;
     d.settings.beatLoopVolume = clamp01(s.beatLoopVolume, 0.70);
     d.settings.bgLoopVolume = clamp01(s.bgLoopVolume, 0.50);
     d.settings.enemyNotesVolume = clamp01(s.enemyNotesVolume, 0.80);

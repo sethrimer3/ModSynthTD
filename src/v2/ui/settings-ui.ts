@@ -151,6 +151,26 @@ export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
   refreshRm();
   row('Motion', rmBtn);
 
+  sectionHeader('CONTROLS');
+  const zoomSensitivity = document.createElement('input');
+  zoomSensitivity.type = 'range';
+  zoomSensitivity.min = '50'; zoomSensitivity.max = '200'; zoomSensitivity.step = '5';
+  zoomSensitivity.value = String(Math.round(opts.save.settings.zoomSensitivity * 100));
+  zoomSensitivity.style.cssText = 'width:150px;accent-color:#00ddcc;';
+  const zoomValue = document.createElement('span');
+  zoomValue.style.cssText = 'min-width:38px;font-size:0.62rem;color:#00ddcc;text-align:right;';
+  const zoomWrap = document.createElement('div');
+  zoomWrap.style.cssText = 'display:flex;align-items:center;gap:8px;';
+  zoomWrap.append(zoomSensitivity, zoomValue);
+  const refreshZoomValue = () => { zoomValue.textContent = `${Math.round(opts.save.settings.zoomSensitivity * 100)}%`; };
+  zoomSensitivity.addEventListener('input', () => {
+    opts.save.settings.zoomSensitivity = parseInt(zoomSensitivity.value, 10) / 100;
+    refreshZoomValue();
+    opts.onSaveChanged();
+  });
+  refreshZoomValue();
+  row('Zoom sensitivity', zoomWrap);
+
   sectionHeader('GRAPHICS');
   const wireLayer = document.createElement('input');
   wireLayer.type = 'range';

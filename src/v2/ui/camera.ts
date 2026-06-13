@@ -111,6 +111,7 @@ export interface CameraControllerOpts {
   /** Return true if a pointerdown at this target should NOT start a pan
    *  (module drags, plugs, knobs, buttons handle themselves). */
   isInteractive(target: EventTarget | null): boolean;
+  zoomSensitivity(): number;
   /** Called on a tap/click that did not pan (world coords). */
   onTap?(wx: number, wy: number, ev: PointerEvent): void;
   onChanged?(): void;
@@ -133,7 +134,8 @@ export function attachCameraControls(viewport: HTMLElement, camera: Camera, opts
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     const r = rectOf();
-    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const step = 0.05 * Math.min(2, Math.max(0.5, opts.zoomSensitivity()));
+    const factor = e.deltaY < 0 ? 1 + step : 1 / (1 + step);
     camera.zoomAt(e.clientX - r.left, e.clientY - r.top, factor);
     opts.onChanged?.();
   };

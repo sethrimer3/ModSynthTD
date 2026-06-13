@@ -391,6 +391,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
   // ── Camera controls ───────────────────────────────────────────────────────
   const detachCamera = attachCameraControls(viewport, camera, {
+    zoomSensitivity: () => save.settings.zoomSensitivity,
     isInteractive: (target) => {
       const el = target as HTMLElement | null;
       return !!el && !!el.closest && !!el.closest('button,input,[data-rack-interactive="true"]');
