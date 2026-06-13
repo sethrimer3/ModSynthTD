@@ -60,7 +60,7 @@ export function recordWorldCompleted(save: SaveData, worldId: string, completion
 // ── Rack dimensions ──────────────────────────────────────────────────────────
 
 /** Cost of buying a new rack row (row n, 1-based; row 1 is free and mandatory). */
-export const SHELF_COSTS: readonly number[] = [0, 60, 120, 200];
+export const SHELF_COSTS: readonly number[] = [0, 30, 60, 90, 120, 150, 180, 200];
 // Legacy aliases — prefer MAX_ROWS / RACK_COLS (re-exported from rack-layout.ts above).
 export { MAX_ROWS as MAX_SHELVES, RACK_COLS as SHELF_SLOTS } from '../core/rack-layout';
 
@@ -75,7 +75,7 @@ export function shelfCost(shelfNumber: number): number {
 
 export function purchaseShelf(save: SaveData, worldId: string): EconomyResult {
   const ws = getWorldSave(save, worldId);
-  if (ws.shelfCount >= MAX_ROWS) return { ok: false, error: 'Rack already has the maximum four rows.' };
+  if (ws.shelfCount >= MAX_ROWS) return { ok: false, error: 'Rack already has the maximum eight rows.' };
   const cost = shelfCost(ws.shelfCount + 1);
   if (save.resonance < cost) return { ok: false, error: `Needs ${cost} ${CURRENCY_NAME}.` };
   save.resonance -= cost;

@@ -206,7 +206,7 @@ function applyDevMode(save: SaveData): void {
         ws.bestWave = world.waves.length;
         ws.claimedWaveReward = world.rewardTable[world.rewardTable.length - 1] ?? 0;
       }
-      if (ws.shelfCount < 2) ws.shelfCount = 2;
+      if (ws.shelfCount < 4) ws.shelfCount = 4;
     }
   }
 

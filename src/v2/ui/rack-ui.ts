@@ -20,8 +20,10 @@ import { TowerStyle } from './tower-style';
 // ── Metrics ─────────────────────────────────────────────────────────────────
 
 export const SLOT_PX = 36;
-export const SHELF_H = 148;
-export const SHELF_GAP = 14;
+/** Row height = 2 × SLOT_PX so each grid cell is 36 × 72 px. */
+export const SHELF_H = SLOT_PX * 2;
+/** No gap between rows; the grid is continuous. */
+export const SHELF_GAP = 0;
 export const RACK_PAD = 16;
 
 // ── Module face layout regions ───────────────────────────────────────────────
@@ -995,10 +997,8 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       box-shadow:inset 0 0 60px rgba(0,0,0,0.55),0 4px 24px rgba(0,0,0,0.6);
     `;
 
-    // 2D slot grid: vertical column lines every SLOT_PX, horizontal shelf-row
-    // lines every (SHELF_H + SHELF_GAP). The horizontal period matches shelf
-    // geometry so lines land at the top and bottom edge of each shelf row.
-    const rowPeriod = SHELF_H + SHELF_GAP;
+    // 2D slot grid: vertical lines every SLOT_PX, horizontal lines every SHELF_H.
+    // With SHELF_GAP=0 the period is exactly SHELF_H, giving square-ish cells.
     const colGrid = document.createElement('div');
     colGrid.style.cssText = `
       position:absolute;inset:0;border-radius:6px;pointer-events:none;overflow:hidden;
@@ -1012,27 +1012,11 @@ export function createRackUI(opts: RackUIOpts): RackUI {
           0deg,
           rgba(18,42,82,0.35) 0 1px,
           transparent 1px ${SHELF_H - 1}px,
-          rgba(18,42,82,0.25) ${SHELF_H - 1}px ${SHELF_H}px,
-          transparent ${SHELF_H}px ${rowPeriod}px
+          rgba(18,42,82,0.25) ${SHELF_H - 1}px ${SHELF_H}px
         );
       background-position:8px 0, 0 0;
     `;
     caseEl.appendChild(colGrid);
-
-    // Horizontal seam at each inter-row gap.
-    for (let i = 0; i < count - 1; i++) {
-      const seamY = i * (SHELF_H + SHELF_GAP) + SHELF_H;
-      const seam = document.createElement('div');
-      seam.style.cssText = `
-        position:absolute;left:0;top:${seamY}px;width:100%;height:${SHELF_GAP}px;
-        background:linear-gradient(180deg,
-          rgba(0,0,0,0.35) 0%,#04080f 30%,#04080f 70%,rgba(0,0,0,0.35) 100%);
-        border-top:1px solid rgba(10,20,44,0.9);
-        border-bottom:1px solid rgba(10,20,44,0.9);
-        pointer-events:none;
-      `;
-      caseEl.appendChild(seam);
-    }
 
     // Top and bottom eurorack mounting rails.
     for (const barTop of [0, caseH - 8]) {

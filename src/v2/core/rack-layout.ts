@@ -8,8 +8,8 @@
 
 /** Number of columns in the rack grid. */
 export const RACK_COLS = 16;
-/** Maximum number of rack rows. */
-export const MAX_ROWS = 4;
+/** Maximum number of rack rows. Each row is 2 × SLOT_PX tall. */
+export const MAX_ROWS = 8;
 
 /** A rectangle placed in the rack grid. */
 export interface PlacedRect {

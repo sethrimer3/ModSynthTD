@@ -12,7 +12,7 @@ import { RACK_COLS, MAX_ROWS, checkRackFit, findRackSlot } from '../core/rack-la
 
 export const SAVE_KEY = 'modsynth-td-save';
 export const SAVE_BACKUP_PREFIX = 'modsynth-td-save-corrupt-';
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 // ── Schema ──────────────────────────────────────────────────────────────────
 
@@ -32,7 +32,7 @@ export interface WorldSave {
   completed: boolean;
   /** Best endless wave beyond the campaign (0 = none). */
   endlessBest: number;
-  shelfCount: number; // 1..4
+  shelfCount: number; // 1..8
   rack: SerializedGraph;
   towersByOutputId: Record<string, TowerSave>;
   /** Deprecated single-tower field, retained only while old UI/save data migrates. */
@@ -264,7 +264,7 @@ export function normalizeSave(raw: unknown): { save: SaveData; repairs: string[]
       ws.bestWave = asNonNegInt(w.bestWave, 0);
       ws.completed = asBool(w.completed, false);
       ws.endlessBest = asNonNegInt(w.endlessBest, 0);
-      ws.shelfCount = Math.min(4, Math.max(1, asNonNegInt(w.shelfCount, 1)));
+      ws.shelfCount = Math.min(8, Math.max(1, asNonNegInt(w.shelfCount, 1)));
       ws.claimedWaveReward = asNonNegInt(w.claimedWaveReward, 0);
       ws.completionClaimed = asBool(w.completionClaimed, false);
       const { graph, repairs: rackRepairs } = deserializeGraph(w.rack);
@@ -275,7 +275,7 @@ export function normalizeSave(raw: unknown): { save: SaveData; repairs: string[]
         const h = def?.rackSize.h ?? 1;
         const needed = m.gridY + h;
         if (needed > ws.shelfCount) {
-          ws.shelfCount = Math.min(4, needed); // 4 = MAX_ROWS (not imported to avoid circular dep)
+          ws.shelfCount = Math.min(8, needed); // 8 = MAX_ROWS (not imported to avoid circular dep)
         }
       }
       // Pass 2: repair overlaps caused by rackSize changes between versions
@@ -342,6 +342,27 @@ export const MIGRATIONS: Record<number, Migration> = {
         const mod = m as Record<string, unknown>;
         if ('slotX' in mod && !('gridX' in mod)) { mod['gridX'] = mod['slotX']; delete mod['slotX']; }
         if ('shelfIndex' in mod && !('gridY' in mod)) { mod['gridY'] = mod['shelfIndex']; delete mod['shelfIndex']; }
+      }
+    }
+    return data;
+  },
+  /** v2 → v3: grid row height halved (SHELF_H 148→72), so each module's gridY
+   *  and each world's shelfCount are doubled to preserve approximate positions. */
+  2: (data) => {
+    const worlds = (data as Record<string, unknown>).worlds;
+    if (typeof worlds !== 'object' || worlds === null) return data;
+    for (const ws of Object.values(worlds as Record<string, unknown>)) {
+      if (typeof ws !== 'object' || ws === null) continue;
+      const w = ws as Record<string, unknown>;
+      if (typeof w.shelfCount === 'number') w.shelfCount = Math.min(8, w.shelfCount * 2);
+      const rack = w.rack;
+      if (typeof rack !== 'object' || rack === null) continue;
+      const modules = (rack as Record<string, unknown>).modules;
+      if (!Array.isArray(modules)) continue;
+      for (const m of modules) {
+        if (typeof m !== 'object' || m === null) continue;
+        const mod = m as Record<string, unknown>;
+        if (typeof mod.gridY === 'number') mod.gridY = mod.gridY * 2;
       }
     }
     return data;
