@@ -41,9 +41,15 @@ export interface WorldSave {
 export interface SaveSettings {
   rackPosition: RackPosition;
   masterMuted: boolean;
-  masterVolume: number;     // 0..1
-  percussionVolume: number; // 0..1
+  masterVolume: number;       // 0..1
+  percussionVolume: number;   // 0..1 — legacy field kept for save compat
   reducedMotion: boolean;
+  // Audio mixer channels (added after v1 initial release):
+  beatLoopVolume: number;     // 0..1
+  bgLoopVolume: number;       // 0..1
+  enemyNotesVolume: number;   // 0..1  (wave intro OGG)
+  sfxVolume: number;          // 0..1  (kick/hihat — replaces percussionVolume)
+  towersVolume: number;       // 0..1  (rack synth output)
 }
 
 export interface SaveData {
@@ -96,6 +102,11 @@ export function defaultSave(): SaveData {
       masterVolume: 0.8,
       percussionVolume: 0.7,
       reducedMotion: false,
+      beatLoopVolume: 0.70,
+      bgLoopVolume: 0.50,
+      enemyNotesVolume: 0.80,
+      sfxVolume: 0.70,
+      towersVolume: 1.00,
     },
     worlds: {},
   };
@@ -153,6 +164,15 @@ export function normalizeSave(raw: unknown): { save: SaveData; repairs: string[]
     d.settings.masterVolume = clamp01(s.masterVolume, 0.8);
     d.settings.percussionVolume = clamp01(s.percussionVolume, 0.7);
     d.settings.reducedMotion = asBool(s.reducedMotion, false);
+    d.settings.beatLoopVolume = clamp01(s.beatLoopVolume, 0.70);
+    d.settings.bgLoopVolume = clamp01(s.bgLoopVolume, 0.50);
+    d.settings.enemyNotesVolume = clamp01(s.enemyNotesVolume, 0.80);
+    // sfxVolume falls back to legacy percussionVolume on old saves.
+    d.settings.sfxVolume = clamp01(
+      s.sfxVolume !== undefined ? s.sfxVolume : s.percussionVolume,
+      0.70,
+    );
+    d.settings.towersVolume = clamp01(s.towersVolume, 1.00);
   }
   if (typeof r.worlds === 'object' && r.worlds !== null) {
     for (const [worldId, rawWorld] of Object.entries(r.worlds as Record<string, unknown>)) {

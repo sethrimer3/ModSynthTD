@@ -1,9 +1,14 @@
 /**
  * audio-engine.ts — Web Audio synthesis driven by canonical SignalEvents.
  *
- * One AudioContext, one master bus with a limiter, separate percussion and
- * synth buses. Voices are scheduled by event id (no duplicates after
- * suspend/resume), capped in polyphony, and fully disconnected when done.
+ * Signal graph:
+ *   beatLoopBus ─┐
+ *   bgLoopBus   ─┤
+ *   waveIntroBus─┤
+ *   percBus ─────┤→ master → limiter → destination
+ *   synthBus ────┘
+ *
+ * Each bus has its own gain node so the audio mixer controls are independent.
  */
 
 import { SignalEvent, FrequencyBand, Waveform } from '../core/events';
@@ -39,11 +44,21 @@ interface ActiveVoice {
 export interface SynthPrefs {
   /** Player's per-world synth switch (output module setting). */
   synthOn: boolean;
+  /** Per-module synth loudness (from output module setting). */
   synthVolume: number;
   masterMuted: boolean;
   masterVolume: number;
+  /** Legacy compat — use sfxVolume for new code. */
   percussionVolume: number;
+  // ── Mixer channels ────────────────────────────────────────────────────────
+  sfxVolume: number;         // kick / hihat
+  towersVolume: number;      // rack synth output
+  beatLoopVolume: number;    // beatloop.ogg
+  bgLoopVolume: number;      // backgroundLoop_layer_*.ogg
+  enemyNotesVolume: number;  // wave intro OGG
 }
+
+export type MusicBusType = 'beat' | 'bg' | 'intro';
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -51,16 +66,23 @@ export class AudioEngine {
   private limiter: DynamicsCompressorNode | null = null;
   private percBus: GainNode | null = null;
   private synthBus: GainNode | null = null;
-  private musicBus: GainNode | null = null;
+  private beatLoopBus: GainNode | null = null;
+  private bgLoopBus: GainNode | null = null;
+  private waveIntroBus: GainNode | null = null;
   private kick1: AudioBuffer | null = null;
   private kick2: AudioBuffer | null = null;
   private noise: AudioBuffer | null = null;
   private voices: ActiveVoice[] = [];
   private scheduledIds = new Set<string>();
-  private prefs: SynthPrefs = { synthOn: false, synthVolume: 0.5, masterMuted: false, masterVolume: 0.8, percussionVolume: 0.7 };
+  private prefs: SynthPrefs = {
+    synthOn: false, synthVolume: 0.5,
+    masterMuted: false, masterVolume: 0.8,
+    percussionVolume: 0.7,
+    sfxVolume: 0.7, towersVolume: 1.0,
+    beatLoopVolume: 0.7, bgLoopVolume: 0.5, enemyNotesVolume: 0.8,
+  };
   private gestureReceived = false;
 
-  /** True once a user gesture has unlocked audio in this browser session. */
   get unlocked(): boolean {
     return this.gestureReceived && this.ctx !== null && this.ctx.state === 'running';
   }
@@ -81,15 +103,18 @@ export class AudioEngine {
   private applyPrefs(): void {
     if (!this.ctx || !this.master || !this.percBus || !this.synthBus) return;
     const t = this.ctx.currentTime;
-    this.master.gain.setTargetAtTime(this.prefs.masterMuted ? 0 : this.prefs.masterVolume * 0.8, t, 0.03);
-    this.percBus.gain.setTargetAtTime(this.prefs.percussionVolume * 0.8, t, 0.03);
-    this.synthBus.gain.setTargetAtTime(this.prefs.synthOn ? this.prefs.synthVolume * 0.7 : 0, t, 0.03);
+    this.master.gain.setTargetAtTime(
+      this.prefs.masterMuted ? 0 : this.prefs.masterVolume * 0.8, t, 0.03);
+    this.percBus.gain.setTargetAtTime(this.prefs.sfxVolume * 0.8, t, 0.03);
+    this.synthBus.gain.setTargetAtTime(
+      this.prefs.synthOn ? this.prefs.synthVolume * this.prefs.towersVolume * 0.7 : 0, t, 0.03);
+    this.beatLoopBus?.gain.setTargetAtTime(this.prefs.beatLoopVolume, t, 0.03);
+    this.bgLoopBus?.gain.setTargetAtTime(this.prefs.bgLoopVolume, t, 0.03);
+    this.waveIntroBus?.gain.setTargetAtTime(this.prefs.enemyNotesVolume, t, 0.03);
   }
 
-  /**
-   * Ensure the AudioContext and all buses exist (context may be suspended).
-   * Safe to call before a user gesture — decoding is allowed in suspended state.
-   */
+  // ── Context bootstrap ────────────────────────────────────────────────────
+
   private ensureCtx(): AudioContext {
     if (!this.ctx) {
       this.ctx = new AudioContext();
@@ -102,11 +127,14 @@ export class AudioEngine {
       this.limiter.release.value = 0.12;
       this.percBus = this.ctx.createGain();
       this.synthBus = this.ctx.createGain();
-      this.musicBus = this.ctx.createGain();
-      this.musicBus.gain.value = 0.75;
+      this.beatLoopBus = this.ctx.createGain();
+      this.bgLoopBus = this.ctx.createGain();
+      this.waveIntroBus = this.ctx.createGain();
       this.percBus.connect(this.master);
       this.synthBus.connect(this.master);
-      this.musicBus.connect(this.master);
+      this.beatLoopBus.connect(this.master);
+      this.bgLoopBus.connect(this.master);
+      this.waveIntroBus.connect(this.master);
       this.master.connect(this.limiter).connect(this.ctx.destination);
       this.applyPrefs();
       this.buildNoise();
@@ -115,7 +143,7 @@ export class AudioEngine {
     return this.ctx;
   }
 
-  /** Must be called from a user-gesture handler. Safe to call repeatedly. */
+  /** Resume from a user-gesture handler. Safe to call repeatedly. */
   async unlock(): Promise<void> {
     this.gestureReceived = true;
     const ctx = this.ensureCtx();
@@ -125,12 +153,9 @@ export class AudioEngine {
     this.applyPrefs();
   }
 
-  // ── OGG / buffer support for level music ─────────────────────────────────
+  // ── OGG / buffer loading ──────────────────────────────────────────────────
 
-  /**
-   * Fetch and decode an audio file URL. Can be called before unlock (the
-   * AudioContext decodes in its suspended state). Rejects on network/decode error.
-   */
+  /** Fetch + decode an audio URL. Works before unlock (suspended ctx can decode). */
   async loadBuffer(url: string): Promise<AudioBuffer> {
     const ctx = this.ensureCtx();
     const res = await fetch(url);
@@ -139,43 +164,40 @@ export class AudioEngine {
     return ctx.decodeAudioData(raw);
   }
 
-  /**
-   * Start a seamlessly looping buffer source connected to the music bus.
-   * Returns the source node — pass it to stopLoop() to stop it.
-   * Requires audio to be unlocked; call from tryStartLoops() after unlock.
-   */
-  startLoop(buffer: AudioBuffer, gain = 1.0): AudioBufferSourceNode {
+  private getBus(busType: MusicBusType): GainNode {
+    return (busType === 'beat' ? this.beatLoopBus
+      : busType === 'bg' ? this.bgLoopBus
+      : this.waveIntroBus)!;
+  }
+
+  /** Start a seamlessly looping source on the specified music bus. */
+  startLoop(buffer: AudioBuffer, busType: MusicBusType): AudioBufferSourceNode {
     const ctx = this.ensureCtx();
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     src.loop = true;
-    const g = ctx.createGain();
-    g.gain.value = gain;
-    src.connect(g).connect(this.musicBus!);
+    src.connect(this.getBus(busType));
     src.start(0);
     return src;
   }
 
-  /** Stop and disconnect a loop source returned by startLoop(). */
+  /** Stop and disconnect a loop source. */
   stopLoop(src: AudioBufferSourceNode): void {
     try { src.stop(); } catch { /* already stopped */ }
     try { src.disconnect(); } catch { /* already disconnected */ }
   }
 
-  /**
-   * Play a buffer once at the given AudioContext time.
-   * Used to schedule the wave intro OGG over the background loops.
-   */
-  playBufferAt(buffer: AudioBuffer, when: number, gain = 1.0): void {
+  /** Schedule a one-shot buffer play on the specified music bus. */
+  playBufferAt(buffer: AudioBuffer, when: number, busType: MusicBusType = 'intro'): void {
     const ctx = this.ensureCtx();
     const src = ctx.createBufferSource();
     src.buffer = buffer;
-    const g = ctx.createGain();
-    g.gain.value = gain;
-    src.connect(g).connect(this.musicBus!);
-    src.onended = () => { src.disconnect(); g.disconnect(); };
+    src.connect(this.getBus(busType));
+    src.onended = () => { try { src.disconnect(); } catch { /* ok */ } };
     src.start(Math.max(ctx.currentTime, when));
   }
+
+  // ── Percussion ────────────────────────────────────────────────────────────
 
   private async loadKicks(): Promise<void> {
     if (!this.ctx) return;
@@ -197,15 +219,11 @@ export class AudioEngine {
     for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
   }
 
-  suspend(): void {
-    void this.ctx?.suspend();
-  }
+  suspend(): void { void this.ctx?.suspend(); }
 
   async resume(): Promise<void> {
     if (this.gestureReceived) await this.unlock();
   }
-
-  // ── Percussion ────────────────────────────────────────────────────────────
 
   playKick(beatIndex: number, when: number): void {
     if (!this.ctx || !this.percBus) return;
@@ -236,23 +254,17 @@ export class AudioEngine {
     src.start(t);
   }
 
-  // ── Synth voices from SignalEvents ────────────────────────────────────────
+  // ── Synth voices ──────────────────────────────────────────────────────────
 
-  /**
-   * Schedule one SignalEvent as a synth voice.
-   * waveStartCtxTime: AudioContext time of wave tick 0.
-   * Duplicate event ids are ignored (suspension-safe).
-   */
   scheduleEvent(e: SignalEvent, waveStartCtxTime: number, bpm: number): void {
     if (!this.ctx || !this.synthBus) return;
     if (!this.prefs.synthOn || this.prefs.masterMuted) return;
     if (this.scheduledIds.has(e.id)) return;
     const start = waveStartCtxTime + ticksToSec(e.tick, bpm);
     const now = this.ctx.currentTime;
-    if (start < now - 0.05) return; // expired — never replay the past
+    if (start < now - 0.05) return;
     this.scheduledIds.add(e.id);
 
-    // Polyphony cap: steal the oldest voice.
     while (this.voices.length >= MAX_AUDIO_VOICES) {
       const oldest = this.voices.shift();
       oldest?.stop();
@@ -293,19 +305,16 @@ export class AudioEngine {
     };
     this.voices.push(voice);
     osc.onended = () => {
-      osc.disconnect();
-      g.disconnect();
+      osc.disconnect(); g.disconnect();
       const idx = this.voices.indexOf(voice);
       if (idx !== -1) this.voices.splice(idx, 1);
     };
   }
 
-  /** A single immediate test-pulse blip (preparation mode). */
   playTestBlip(e: SignalEvent): void {
     if (!this.ctx) return;
     const copy = { ...e, id: `test:${Date.now()}`, tick: 0 };
     const wasOn = this.prefs.synthOn;
-    // Test pulses are audible even with the synth switch off (quietly).
     if (!wasOn && this.synthBus && this.ctx) {
       this.synthBus.gain.setTargetAtTime(0.25, this.ctx.currentTime, 0.01);
       setTimeout(() => this.applyPrefs(), 600);
@@ -313,13 +322,11 @@ export class AudioEngine {
     this.scheduleEvent(copy, this.ctx.currentTime + 0.02, 120);
   }
 
-  /** Cancel all pending voices and forget scheduled ids (wave restart/exit). */
   cancelAll(): void {
     for (const v of this.voices.splice(0)) v.stop();
     this.scheduledIds.clear();
   }
 
-  /** Full teardown on level exit. */
   teardown(): void {
     this.cancelAll();
     this.suspend();
