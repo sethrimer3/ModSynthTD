@@ -118,7 +118,8 @@ interface PulseDot {
 export function createRackUI(opts: RackUIOpts): RackUI {
   const { root, graph } = opts;
   root.innerHTML = '';
-  root.style.cssText = `position:absolute;${FF}`;
+  root.style.cssText = `position:absolute;${FF}touch-action:none;user-select:none;`;
+  root.dataset.rackInteractive = 'true';
 
   const shelvesEl = document.createElement('div');
   shelvesEl.style.cssText = 'position:absolute;inset:0;';
@@ -255,6 +256,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
 
   function setCableEmphasis(view: CableView, widthScale: number): void {
     view.wire.polyline.setAttribute('stroke-width', String(3 * widthScale));
+    view.wire.glowPolyline.setAttribute('stroke-opacity', widthScale > 1 ? '0.42' : '0.22');
   }
 
   function removeCable(cableId: string, slurp: boolean): void {
@@ -331,7 +333,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
   }
 
   function beginPlugDrag(mv: ModuleView, pv: PlugView, e: PointerEvent): void {
-    if (opts.isLive()) return;
+    if (opts.isLive() || moduleDrag || drag) return;
     // Output port at max fan-out: grab its existing cable instead.
     const existing = graph.cables.filter(c => c.fromModuleId === pv.moduleId && c.fromPortId === pv.spec.portId);
     if (existing.length >= pv.spec.maxConnections && existing.length > 0) {
@@ -346,6 +348,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
   }
 
   function beginCableDragFromExisting(view: CableView, e: PointerEvent): void {
+    if (opts.isLive() || moduleDrag || drag) return;
     const fromMv = moduleViews.get(view.cable.fromModuleId);
     const fromPv = findPlug(view.cable.fromModuleId, view.cable.fromPortId);
     if (!fromMv || !fromPv) return;
@@ -386,6 +389,13 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     setTargetHighlights(false);
   }
 
+  function cancelCableDrag(): void {
+    if (!drag) return;
+    drag = null;
+    soft.hideDragPreview();
+    setTargetHighlights(false);
+  }
+
   // ── Module drag (rearranging) ─────────────────────────────────────────────
 
   interface ModuleDrag {
@@ -402,7 +412,11 @@ export function createRackUI(opts: RackUIOpts): RackUI {
   let moduleDrag: ModuleDrag | null = null;
 
   function beginModuleDrag(mv: ModuleView, e: PointerEvent): void {
-    if (opts.isLive()) return;
+    if (opts.isLive() || drag || moduleDrag) {
+      mv.rootEl.style.borderColor = '#ff3344';
+      setTimeout(() => { if (!moduleDrag) mv.rootEl.style.borderColor = '#1a2a44'; }, 350);
+      return;
+    }
     const local = localPoint(e.clientX, e.clientY);
     const pos = modulePos(mv.inst);
     const ghost = document.createElement('div');
@@ -449,6 +463,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     md.ghost.style.left = `${RACK_PAD + slot * SLOT_PX}px`;
     md.ghost.style.top = `${shelfTop(shelf) + 10}px`;
     md.ghost.style.borderColor = md.valid ? opts.themeColor : '#ff3344';
+    md.mv.rootEl.style.borderColor = md.valid ? opts.themeColor : '#ff3344';
   }
 
   function recomputePlugCentersAt(mv: ModuleView, x: number, y: number): void {
@@ -470,6 +485,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     md.ghost.remove();
     md.mv.rootEl.style.zIndex = '';
     md.mv.rootEl.style.opacity = '';
+    md.mv.rootEl.style.borderColor = md.valid ? '#1a2a44' : '#ff3344';
     if (md.moved && md.valid) {
       md.mv.inst.shelfIndex = md.targetShelf;
       md.mv.inst.slotX = md.targetSlot;
@@ -478,6 +494,18 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     // Always settle onto the (possibly restored) grid slot.
     positionModule(md.mv);
     if (!md.moved) selectModule(md.mv.inst.instanceId);
+    if (!md.valid) setTimeout(() => { md.mv.rootEl.style.borderColor = '#1a2a44'; }, 450);
+  }
+
+  function cancelModuleDrag(): void {
+    if (!moduleDrag) return;
+    const md = moduleDrag;
+    moduleDrag = null;
+    md.ghost.remove();
+    md.mv.rootEl.style.zIndex = '';
+    md.mv.rootEl.style.opacity = '';
+    md.mv.rootEl.style.borderColor = '#1a2a44';
+    positionModule(md.mv);
   }
 
   function positionModule(mv: ModuleView): void {
@@ -521,6 +549,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     const inst = mv.inst;
     const wrap = document.createElement('div');
     wrap.style.cssText = 'display:flex;align-items:center;gap:3px;justify-content:space-between;';
+    wrap.dataset.rackControl = 'true';
     const label = document.createElement('span');
     label.textContent = spec.label;
     label.style.cssText = 'font-size:8px;color:#44608a;letter-spacing:0.08em;';
@@ -634,11 +663,11 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     }
 
     const title = document.createElement('div');
-    title.textContent = def.shortName;
+    title.textContent = `⠿ ${def.shortName} ⠿`;
     title.style.cssText = `
       text-align:center;margin-top:7px;font-size:10px;font-weight:800;
       letter-spacing:0.14em;color:${def.color};text-shadow:0 0 8px ${def.color}66;
-      pointer-events:none;
+      cursor:grab;
     `;
     el.appendChild(title);
 
@@ -654,10 +683,11 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       const off = plugLocal(def, spec, idx, list.length);
       const wrapEl = document.createElement('div');
       wrapEl.style.cssText = `
-        position:absolute;left:${off.x - 13}px;top:${off.y - 13}px;width:26px;height:26px;
+        position:absolute;left:${off.x - 16}px;top:${off.y - 16}px;width:32px;height:32px;
         display:flex;align-items:center;justify-content:center;touch-action:none;
         cursor:crosshair;z-index:33;
       `;
+      wrapEl.dataset.rackControl = 'true';
       const color = DOMAIN_COLORS[spec.domain];
       const plugEl = document.createElement('div');
       const shadow = `0 0 6px ${color}99`;
@@ -702,6 +732,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       display:flex;flex-direction:column;gap:3px;justify-content:center;
       overflow:hidden;
     `;
+    controls.dataset.rackControl = 'true';
     el.appendChild(controls);
 
     const settingEls: HTMLElement[] = [];
@@ -778,7 +809,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     };
 
     el.addEventListener('pointerdown', (e: PointerEvent) => {
-      if (drag) return;
+      if (drag || (e.target as HTMLElement).closest('[data-rack-control="true"]')) return;
       e.stopPropagation();
       beginModuleDrag(mv, e);
     });
@@ -886,20 +917,23 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     if (root.hasPointerCapture(e.pointerId)) root.releasePointerCapture(e.pointerId);
   };
   const onRootCancel = (e: PointerEvent) => {
-    if (drag) { drag = null; soft.hideDragPreview(); setTargetHighlights(false); }
-    if (moduleDrag) {
-      // Cancelled drag restores the previous valid position.
-      moduleDrag.ghost.remove();
-      moduleDrag.mv.rootEl.style.zIndex = '';
-      moduleDrag.mv.rootEl.style.opacity = '';
-      positionModule(moduleDrag.mv);
-      moduleDrag = null;
-    }
+    cancelCableDrag();
+    cancelModuleDrag();
     if (root.hasPointerCapture(e.pointerId)) root.releasePointerCapture(e.pointerId);
+  };
+  const onLostPointerCapture = () => { cancelCableDrag(); cancelModuleDrag(); };
+  const onWindowBlur = () => { cancelCableDrag(); cancelModuleDrag(); };
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    cancelCableDrag();
+    cancelModuleDrag();
   };
   root.addEventListener('pointermove', onRootMove);
   root.addEventListener('pointerup', onRootUp);
   root.addEventListener('pointercancel', onRootCancel);
+  root.addEventListener('lostpointercapture', onLostPointerCapture);
+  window.addEventListener('blur', onWindowBlur);
+  window.addEventListener('keydown', onKeyDown);
   root.addEventListener('pointerdown', () => {
     if (!drag && !moduleDrag) selectModule(null);
   });
@@ -1017,6 +1051,9 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       root.removeEventListener('pointermove', onRootMove);
       root.removeEventListener('pointerup', onRootUp);
       root.removeEventListener('pointercancel', onRootCancel);
+      root.removeEventListener('lostpointercapture', onLostPointerCapture);
+      window.removeEventListener('blur', onWindowBlur);
+      window.removeEventListener('keydown', onKeyDown);
       root.innerHTML = '';
     },
   };

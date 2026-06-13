@@ -266,3 +266,13 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Core and placed buildings visibly glow through night darkness
 - [ ] Canvas warning overlays, build watermark, and DOM HUD remain readable after the darkness pass
 
+## 26. Rack, Patch Cable, and Sheet Music UX
+
+- [ ] Module nameplate/body clearly communicates dragging and snaps to a valid shelf slot
+- [ ] Module controls and ports do not accidentally move the module or pan the camera
+- [ ] Invalid/locked module movement gives visible red feedback
+- [ ] Cable drag connects to a valid port and cancels cleanly on empty space
+- [ ] Cable dragging still works after Escape, window blur, pointer cancel, and panning/zooming
+- [ ] Patch cables have deterministic natural slack and remain readable
+- [ ] Next-wave sheet music stays above the battlefield and pans/zooms with the level
+

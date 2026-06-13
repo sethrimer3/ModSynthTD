@@ -115,6 +115,10 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   rackLayer.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;transform-origin:0 0;pointer-events:none;';
   viewport.appendChild(rackLayer);
 
+  const notationWorld = document.createElement('div');
+  notationWorld.style.cssText = 'position:absolute;pointer-events:none;';
+  rackLayer.appendChild(notationWorld);
+
   const rackRoot = document.createElement('div');
   rackRoot.style.cssText = 'position:absolute;pointer-events:auto;';
   rackLayer.appendChild(rackRoot);
@@ -143,9 +147,12 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     rackRoot.style.top = `${rackWorldY}px`;
     rackRoot.style.width = `${rW}px`;
     rackRoot.style.height = `${rH}px`;
+    notationWorld.style.left = '0px';
+    notationWorld.style.top = '-150px';
+    notationWorld.style.width = `${bfW}px`;
 
     const minX = Math.min(0, rackWorldX);
-    const minY = Math.min(0, rackWorldY);
+    const minY = Math.min(-150, rackWorldY);
     const maxX = Math.max(bfW, rackWorldX + rW);
     const maxY = Math.max(bfH, rackWorldY + rH);
     camera.setBounds({ minX, minY, maxX, maxY });
@@ -263,10 +270,10 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   // ── Notation preview ──────────────────────────────────────────────────────
   const notationWrap = document.createElement('div');
   notationWrap.style.cssText = `
-    position:absolute;left:50%;transform:translateX(-50%);bottom:64px;
-    max-width:min(620px,94%);overflow-x:auto;overflow-y:hidden;z-index:80;
+    position:absolute;left:50%;transform:translateX(-50%);top:0;
+    max-width:620px;overflow:hidden;z-index:80;
     background:rgba(6,12,24,0.82);border:1px solid ${world.theme.primary}44;border-radius:10px;
-    padding:4px 6px;box-shadow:0 0 18px ${world.theme.primary}22;pointer-events:auto;transition:opacity 0.3s;
+    padding:4px 6px;box-shadow:0 0 18px ${world.theme.primary}22;pointer-events:none;transition:opacity 0.3s;
   `;
   const notationInner = document.createElement('div');
   notationInner.style.cssText = 'position:relative;';
@@ -274,7 +281,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   const playhead = document.createElement('div');
   playhead.style.cssText = `position:absolute;top:0;bottom:0;width:2px;background:${world.theme.glow};box-shadow:0 0 8px ${world.theme.glow};display:none;pointer-events:none;`;
   notationInner.appendChild(playhead);
-  app.appendChild(notationWrap);
+  notationWorld.appendChild(notationWrap);
   let notation: NotationLayout | null = null;
 
   // ── Overlays ──────────────────────────────────────────────────────────────
@@ -315,7 +322,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   const detachCamera = attachCameraControls(viewport, camera, {
     isInteractive: (target) => {
       const el = target as HTMLElement | null;
-      return !!el && !!el.closest && !!el.closest('button,input');
+      return !!el && !!el.closest && !!el.closest('button,input,[data-rack-interactive="true"]');
     },
     onTap: (wx, wy) => {
       // Tower selection / placement happens in battlefield world space.

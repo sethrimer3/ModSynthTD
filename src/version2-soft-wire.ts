@@ -8,10 +8,10 @@
  */
 
 const ROPE_N            = 24;
-const ROPE_GRAVITY      = 0.35;
+const ROPE_GRAVITY      = 0.55;
 const ROPE_DAMPING      = 0.97;
 const ROPE_ITERS        = 5;
-const ROPE_SLACK        = 1.25;
+const ROPE_SLACK        = 1.42;
 const SLURP_MS_PER_LINK = 20;
 const SLURP_TOTAL_MS    = SLURP_MS_PER_LINK * ROPE_N;
 const SLURP_RATE        = 1 / SLURP_TOTAL_MS;
@@ -23,21 +23,23 @@ export interface RopeNode {
 }
 
 export interface SoftWireData {
-  nodes:       RopeNode[];
-  segLen:      number;
-  /** Per-wire slack multiplier (0.9–1.3) for natural cable-tangle variation. */
-  slackScale?: number;
-  polyline:    SVGPolylineElement;
-  gradient:    SVGLinearGradientElement;
-  gradStop0:   SVGStopElement;
-  gradStop1:   SVGStopElement;
-  gradStop2:   SVGStopElement;
-  tipHandle:   HTMLDivElement;
-  srcColor:    string;
-  dstColor:    string;
-  colorBleedT: number;
-  isSlurping:  boolean;
-  slurpMs:     number;
+  nodes:        RopeNode[];
+  segLen:       number;
+  /** Per-wire slack multiplier (0.88–1.28) for natural cable-tangle variation. */
+  slackScale?:  number;
+  polyline:     SVGPolylineElement;
+  /** Wide, low-opacity copy of polyline for a neon glow effect. */
+  glowPolyline: SVGPolylineElement;
+  gradient:     SVGLinearGradientElement;
+  gradStop0:    SVGStopElement;
+  gradStop1:    SVGStopElement;
+  gradStop2:    SVGStopElement;
+  tipHandle:    HTMLDivElement;
+  srcColor:     string;
+  dstColor:     string;
+  colorBleedT:  number;
+  isSlurping:   boolean;
+  slurpMs:      number;
 }
 
 export interface SoftWireRenderer {
@@ -120,6 +122,16 @@ export function createSoftWireRenderer(panelEl: HTMLElement): SoftWireRenderer {
   const defs = document.createElementNS(SVG_NS, 'defs') as SVGDefsElement;
   svgEl.appendChild(defs);
 
+  // Drag-preview glow layer (rendered behind the dashed line).
+  const dragPreviewGlow = document.createElementNS(SVG_NS, 'polyline') as SVGPolylineElement;
+  dragPreviewGlow.setAttribute('fill', 'none');
+  dragPreviewGlow.setAttribute('stroke-width', '8');
+  dragPreviewGlow.setAttribute('stroke-linecap', 'round');
+  dragPreviewGlow.setAttribute('stroke-linejoin', 'round');
+  dragPreviewGlow.setAttribute('stroke-opacity', '0.18');
+  dragPreviewGlow.style.display = 'none';
+  svgEl.appendChild(dragPreviewGlow);
+
   const dragPreviewPolyline = document.createElementNS(SVG_NS, 'polyline') as SVGPolylineElement;
   dragPreviewPolyline.setAttribute('fill', 'none');
   dragPreviewPolyline.setAttribute('stroke-width', '2.5');
@@ -139,13 +151,15 @@ export function createSoftWireRenderer(panelEl: HTMLElement): SoftWireRenderer {
     x1: number, y1: number,
     visibleCount: number,
   ): void {
-    if (wire.nodes.length < ROPE_N) { wire.polyline.style.display = 'none'; return; }
+    if (wire.nodes.length < ROPE_N) { wire.polyline.style.display = 'none'; wire.glowPolyline.style.display = 'none'; return; }
     const pts = wire.nodes
       .slice(0, visibleCount)
       .map(n => `${n.x.toFixed(1)},${n.y.toFixed(1)}`)
       .join(' ');
     wire.polyline.setAttribute('points', pts);
     wire.polyline.style.display = '';
+    wire.glowPolyline.setAttribute('points', pts);
+    wire.glowPolyline.style.display = '';
     wire.gradient.setAttribute('x1', x0.toFixed(1));
     wire.gradient.setAttribute('y1', y0.toFixed(1));
     wire.gradient.setAttribute('x2', x1.toFixed(1));
@@ -182,6 +196,18 @@ export function createSoftWireRenderer(panelEl: HTMLElement): SoftWireRenderer {
     gradient.appendChild(gs2);
     defs.appendChild(gradient);
 
+    // Glow layer: wide, semi-transparent copy rendered behind the main wire.
+    const glowPolyline = document.createElementNS(SVG_NS, 'polyline') as SVGPolylineElement;
+    glowPolyline.setAttribute('fill', 'none');
+    glowPolyline.setAttribute('stroke', `url(#${gradId})`);
+    glowPolyline.setAttribute('stroke-width', '8');
+    glowPolyline.setAttribute('stroke-linecap', 'round');
+    glowPolyline.setAttribute('stroke-linejoin', 'round');
+    glowPolyline.setAttribute('stroke-opacity', '0.22');
+    glowPolyline.style.display = 'none';
+    glowPolyline.style.pointerEvents = 'none';
+    svgEl.appendChild(glowPolyline);
+
     const polyline = document.createElementNS(SVG_NS, 'polyline') as SVGPolylineElement;
     polyline.setAttribute('fill', 'none');
     polyline.setAttribute('stroke', `url(#${gradId})`);
@@ -189,8 +215,6 @@ export function createSoftWireRenderer(panelEl: HTMLElement): SoftWireRenderer {
     polyline.setAttribute('stroke-linecap', 'round');
     polyline.setAttribute('stroke-linejoin', 'round');
     polyline.style.display = 'none';
-    // Neon glow filter via SVG filter would be ideal but inline filter is complex;
-    // use stroke-width layering instead (two polylines share same data but different width/opacity).
     svgEl.appendChild(polyline);
 
     const tipHandle = document.createElement('div') as HTMLDivElement;
@@ -210,7 +234,7 @@ export function createSoftWireRenderer(panelEl: HTMLElement): SoftWireRenderer {
 
     return {
       nodes: [], segLen: 1,
-      polyline, gradient,
+      polyline, glowPolyline, gradient,
       gradStop0: gs0, gradStop1: gs1, gradStop2: gs2,
       tipHandle,
       srcColor, dstColor,
@@ -222,6 +246,7 @@ export function createSoftWireRenderer(panelEl: HTMLElement): SoftWireRenderer {
 
   function finalizeWireRemoval(wire: SoftWireData): void {
     wire.polyline.remove();
+    wire.glowPolyline.remove();
     wire.gradient.remove();
     wire.tipHandle.remove();
   }
@@ -279,9 +304,12 @@ export function createSoftWireRenderer(panelEl: HTMLElement): SoftWireRenderer {
       dragSegLen = initRope(dragNodes, ax, ay, bx, by);
     }
     dragPreviewPolyline.setAttribute('stroke', color);
+    dragPreviewGlow.setAttribute('stroke', color);
     const pts = dragNodes.map(n => `${n.x.toFixed(1)},${n.y.toFixed(1)}`).join(' ');
     dragPreviewPolyline.setAttribute('points', pts);
     dragPreviewPolyline.style.display = '';
+    dragPreviewGlow.setAttribute('points', pts);
+    dragPreviewGlow.style.display = '';
   }
 
   function updateDragPreviewPhysics(ax: number, ay: number, bx: number, by: number): void {
@@ -289,10 +317,12 @@ export function createSoftWireRenderer(panelEl: HTMLElement): SoftWireRenderer {
     updateRope(dragNodes, dragSegLen, ax, ay, bx, by);
     const pts = dragNodes.map(n => `${n.x.toFixed(1)},${n.y.toFixed(1)}`).join(' ');
     dragPreviewPolyline.setAttribute('points', pts);
+    dragPreviewGlow.setAttribute('points', pts);
   }
 
   function hideDragPreview(): void {
     dragPreviewPolyline.style.display = 'none';
+    dragPreviewGlow.style.display = 'none';
     dragNodes.length = 0;
   }
 

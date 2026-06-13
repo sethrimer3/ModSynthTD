@@ -92,7 +92,7 @@ enemy spawn schedule, the notation layout, and preview audio from one source.
 `ui/level.ts` builds one camera-driven scene:
 - a viewport-sized battlefield `<canvas>` (camera applied inside `combat.draw`),
 - a CSS-transformed rack layer (`translate(pan) scale(zoom)`) holding the DOM
-  rack, SVG cables, and pulse overlay.
+  rack, SVG cables, pulse overlay, and world-anchored next-wave notation.
 
 Both use the one `Camera` (`ui/camera.ts`): wheel zoom, drag pan, touch pan,
 pinch, fit-scene, soft clamping. Rack placement (Auto/Left/Right/Below) only
