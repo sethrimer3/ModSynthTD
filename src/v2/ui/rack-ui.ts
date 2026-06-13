@@ -219,6 +219,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
   }
 
   function addCableView(c: Cable): void {
+    if (cableViews.has(c.cableId)) return;
     const { src, dst } = cableColor(c);
     const wire = soft.createWire(src, dst);
     // Per-cable slack variation for the organized-yet-messy tangle.
@@ -299,29 +300,53 @@ export function createRackUI(opts: RackUIOpts): RackUI {
 
   // ── Plug drag (patching) ──────────────────────────────────────────────────
 
-  interface DragState {
+  type DragState = null | {
+    kind: 'newCable';
     fromModuleId: string;
     fromPort: PortSpec;
     curX: number;
     curY: number;
     pointerId: number;
-  }
-  let drag: DragState | null = null;
+  } | {
+    kind: 'rerouteCable';
+    originalCable: Cable;
+    fromModuleId: string;
+    fromPort: PortSpec;
+    curX: number;
+    curY: number;
+    pointerId: number;
+  };
+  let drag: DragState = null;
 
-  function compatibleTarget(pv: PlugView): boolean {
+  function isPortDirectionAndDomainCompatible(pv: PlugView): boolean {
     if (!drag) return false;
     if (pv.spec.direction !== 'in') return false;
     if (pv.moduleId === drag.fromModuleId) return false;
-    if (!arePortsCompatible(drag.fromPort, pv.spec)) return false;
-    const fanIn = graph.cables.filter(c => c.toModuleId === pv.moduleId && c.toPortId === pv.spec.portId).length;
-    if (fanIn >= pv.spec.maxConnections) return false;
-    return true;
+    return arePortsCompatible(drag.fromPort, pv.spec);
+  }
+
+  function inputOccupancy(pv: PlugView): Cable[] {
+    return graph.cables.filter(c => c.toModuleId === pv.moduleId && c.toPortId === pv.spec.portId);
+  }
+
+  function canReplaceTarget(pv: PlugView): boolean {
+    if (!isPortDirectionAndDomainCompatible(pv)) return false;
+    const existing = inputOccupancy(pv);
+    return existing.length >= pv.spec.maxConnections && pv.spec.maxConnections === 1 && existing.length === 1;
+  }
+
+  function canConnectToTarget(pv: PlugView): boolean {
+    if (!isPortDirectionAndDomainCompatible(pv)) return false;
+    return inputOccupancy(pv).length < pv.spec.maxConnections || canReplaceTarget(pv);
   }
 
   function setTargetHighlights(active: boolean): void {
     for (const mv of moduleViews.values()) {
       for (const pv of mv.plugs) {
-        if (active && compatibleTarget(pv)) {
+        if (active && canReplaceTarget(pv)) {
+          pv.el.style.boxShadow = '0 0 10px 3px #ffb347, 0 0 0 2px #ffd28a';
+          pv.el.style.transform = 'scale(1.4)';
+        } else if (active && canConnectToTarget(pv)) {
           pv.el.style.boxShadow = `0 0 10px 3px ${DOMAIN_COLORS[pv.spec.domain]}, 0 0 0 2px #fff`;
           pv.el.style.transform = 'scale(1.4)';
         } else {
@@ -341,7 +366,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       if (view) { beginCableDragFromExisting(view, e); return; }
     }
     const local = localPoint(e.clientX, e.clientY);
-    drag = { fromModuleId: pv.moduleId, fromPort: pv.spec, curX: local.x, curY: local.y, pointerId: e.pointerId };
+    drag = { kind: 'newCable', fromModuleId: pv.moduleId, fromPort: pv.spec, curX: local.x, curY: local.y, pointerId: e.pointerId };
     root.setPointerCapture(e.pointerId);
     soft.setDragPreview(pv.cx, pv.cy, local.x, local.y, mv.def.color);
     setTargetHighlights(true);
@@ -352,10 +377,11 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     const fromMv = moduleViews.get(view.cable.fromModuleId);
     const fromPv = findPlug(view.cable.fromModuleId, view.cable.fromPortId);
     if (!fromMv || !fromPv) return;
-    removeCable(view.cable.cableId, false);
+    const originalCable = { ...view.cable };
+    removeCable(originalCable.cableId, false);
     graphChanged();
     const local = localPoint(e.clientX, e.clientY);
-    drag = { fromModuleId: fromPv.moduleId, fromPort: fromPv.spec, curX: local.x, curY: local.y, pointerId: e.pointerId };
+    drag = { kind: 'rerouteCable', originalCable, fromModuleId: fromPv.moduleId, fromPort: fromPv.spec, curX: local.x, curY: local.y, pointerId: e.pointerId };
     root.setPointerCapture(e.pointerId);
     soft.setDragPreview(fromPv.cx, fromPv.cy, local.x, local.y, fromMv.def.color);
     setTargetHighlights(true);
@@ -373,27 +399,46 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     return null;
   }
 
-  function endPlugDrag(e: PointerEvent): void {
-    if (!drag) return;
-    const target = plugUnder(e.clientX, e.clientY, true);
-    if (target && compatibleTarget(target)) {
-      // Bump an existing cable on a single-input port.
-      const existing = graph.cables.filter(c => c.toModuleId === target.moduleId && c.toPortId === target.spec.portId);
-      if (existing.length >= target.spec.maxConnections) {
-        removeCable(existing[0].cableId, true);
-      }
-      tryConnect(drag.fromModuleId, drag.fromPort.portId, target.moduleId, target.spec.portId);
+  function restoreCable(cable: Cable): void {
+    if (!graph.cables.some(c => c.cableId === cable.cableId)) graph.cables.push({ ...cable });
+    const restored = graph.cables.find(c => c.cableId === cable.cableId);
+    if (restored && !cableViews.has(cable.cableId)) addCableView(restored);
+  }
+
+  function cleanupCableDrag(shouldRestoreOriginal: boolean): void {
+    const currentDrag = drag;
+    if (shouldRestoreOriginal && currentDrag?.kind === 'rerouteCable') {
+      restoreCable(currentDrag.originalCable);
+      graphChanged();
     }
     drag = null;
     soft.hideDragPreview();
     setTargetHighlights(false);
   }
 
+  function endPlugDrag(e: PointerEvent): void {
+    const currentDrag = drag;
+    if (!currentDrag) return;
+    const target = plugUnder(e.clientX, e.clientY, true);
+    if (target && canConnectToTarget(target)) {
+      const replacedCable = canReplaceTarget(target) ? { ...inputOccupancy(target)[0] } : null;
+      if (replacedCable) removeCable(replacedCable.cableId, false);
+      const connected = tryConnect(currentDrag.fromModuleId, currentDrag.fromPort.portId, target.moduleId, target.spec.portId);
+      if (connected) {
+        cleanupCableDrag(false);
+        return;
+      }
+      if (replacedCable) {
+        restoreCable(replacedCable);
+        if (currentDrag.kind === 'newCable') graphChanged();
+      }
+    }
+    cleanupCableDrag(true);
+  }
+
   function cancelCableDrag(): void {
     if (!drag) return;
-    drag = null;
-    soft.hideDragPreview();
-    setTargetHighlights(false);
+    cleanupCableDrag(true);
   }
 
   // ── Module drag (rearranging) ─────────────────────────────────────────────
