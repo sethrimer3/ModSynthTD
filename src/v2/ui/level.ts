@@ -168,6 +168,21 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     rackLayer.style.transform = `translate(${camera.panX}px, ${camera.panY}px) scale(${camera.zoom})`;
   }
 
+  function focusGrid(): void {
+    camera.centerOn({ minX: 0, minY: 0, maxX: world.gridWidth * TILE_PX, maxY: world.gridHeight * TILE_PX });
+    applyCamera();
+  }
+
+  function focusRack(): void {
+    camera.centerOn({
+      minX: rackWorldX,
+      minY: rackWorldY,
+      maxX: rackWorldX + rackWidthPx(),
+      maxY: rackWorldY + rackHeightPx(worldSave.shelfCount, true),
+    });
+    applyCamera();
+  }
+
   // ── Rack UI ───────────────────────────────────────────────────────────────
   const rack: RackUI = createRackUI({
     root: rackRoot,
@@ -279,6 +294,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   mkHudBtn('🛒 Shop', 'Buy and sell modules', openShopUI);
   mkHudBtn('⚙', 'Settings', openSettingsUI);
   mkHudBtn('⤢ Fit', 'Fit the whole scene', () => { camera.fitScene(); applyCamera(); });
+  mkHudBtn('Rack', 'Focus camera on the rack', focusRack);
+  mkHudBtn('Grid', 'Focus camera on the playfield', focusGrid);
   mkHudBtn('↩ Map', 'Return to the world map', () => host.exitToMap());
   hudRight.append(hpEl, resEl, btnRow);
 
