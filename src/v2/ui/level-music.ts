@@ -36,14 +36,15 @@ export class LevelMusicManager {
   private readonly midiCache = new Map<number, WaveScore | null>();
   private readonly midiLoading = new Map<number, Promise<WaveScore | null>>();
 
-  private loopSrcs: AudioBufferSourceNode[] = [];
   private loopsStarted = false;
   private loopStartCtxTime: number | null = null;
-  private loopDurationSec: number | null = null;
+  private readonly loopPeriodSec: number;
+  private nextLoopCycleIndex = 0;
 
   constructor(audio: AudioEngine, config: LevelAudioConfig) {
     this.audio = audio;
     this.config = config;
+    this.loopPeriodSec = 240 / config.bpm;
     this.preloadAll();
   }
 
@@ -136,7 +137,7 @@ export class LevelMusicManager {
    * Loops only start when: (a) audio is unlocked, and (b) all loop buffers loaded.
    */
   tryStartLoops(): void {
-    if (this.loopsStarted || !this.audio.unlocked) return;
+    if (!this.audio.unlocked) return;
 
     const beatBuf = this.bufCache.get(this.config.beatLoop);
     if (!beatBuf) return;
@@ -146,13 +147,23 @@ export class LevelMusicManager {
     const layerBufs = this.config.bgLayers.map(url => this.bufCache.get(url));
     if (layerBufs.some(b => b === undefined)) return; // not all loaded yet
 
-    this.loopsStarted = true;
-    this.loopStartCtxTime = this.audio.currentTime;
-    this.loopDurationSec = beatBuf.duration;
-    this.loopSrcs.push(this.audio.startLoop(beatBuf, 'beat'));
-    if (kickBuf) this.loopSrcs.push(this.audio.startLoop(kickBuf, 'beat'));
-    for (const buf of layerBufs) {
-      if (buf) this.loopSrcs.push(this.audio.startLoop(buf, 'bg'));
+    if (!this.loopsStarted) {
+      this.loopsStarted = true;
+      this.loopStartCtxTime = this.audio.currentTime + 0.05;
+      this.nextLoopCycleIndex = 0;
+    }
+
+    const loopStartCtxTime = this.loopStartCtxTime;
+    if (loopStartCtxTime === null) return;
+    const scheduleUntil = this.audio.currentTime + 0.25;
+    while (loopStartCtxTime + this.nextLoopCycleIndex * this.loopPeriodSec <= scheduleUntil) {
+      const startTime = loopStartCtxTime + this.nextLoopCycleIndex * this.loopPeriodSec;
+      this.audio.playBufferAt(beatBuf, startTime, 'beat');
+      if (kickBuf) this.audio.playBufferAt(kickBuf, startTime, 'beat');
+      for (const buf of layerBufs) {
+        if (buf) this.audio.playBufferAt(buf, startTime, 'bg');
+      }
+      this.nextLoopCycleIndex++;
     }
   }
 
@@ -162,12 +173,12 @@ export class LevelMusicManager {
    * Falls back to ctxTime + 0.02 if loops haven't started yet.
    */
   nextLoopBoundary(ctxTime: number): number {
-    if (this.loopStartCtxTime === null || this.loopDurationSec === null || this.loopDurationSec <= 0) {
+    if (this.loopStartCtxTime === null || this.loopPeriodSec <= 0) {
       return ctxTime + 0.02;
     }
     const elapsed = ctxTime - this.loopStartCtxTime;
-    const cycles = Math.ceil(elapsed / this.loopDurationSec);
-    return this.loopStartCtxTime + cycles * this.loopDurationSec;
+    const cycles = Math.ceil(elapsed / this.loopPeriodSec);
+    return this.loopStartCtxTime + cycles * this.loopPeriodSec;
   }
 
   /**
@@ -184,9 +195,9 @@ export class LevelMusicManager {
 
   /** Stop and release all active loop sources. */
   stopLoops(): void {
-    for (const src of this.loopSrcs) this.audio.stopLoop(src);
-    this.loopSrcs = [];
     this.loopsStarted = false;
+    this.loopStartCtxTime = null;
+    this.nextLoopCycleIndex = 0;
   }
 
   /** Full teardown — call on level exit. */

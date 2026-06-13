@@ -143,6 +143,11 @@ Per-planet music automatically discovers `ASSETS/LEVELS/<BPM>BPM/kickLoop.ogg`.
 When present, that loop replaces the shared `kick_1` and `kick_2` one-shot
 fallback while the planet is active.
 
+Every planet music layer represents four bars in 4/4. Layers restart as
+overlapping one-shots on exact `240 / BPM` second boundaries rather than using
+each file's encoded duration, so all layers stay synchronized while reverb
+tails are allowed to finish naturally.
+
 ---
 
 ## 8. Tests

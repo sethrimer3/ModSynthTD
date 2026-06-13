@@ -170,23 +170,6 @@ export class AudioEngine {
       : this.waveIntroBus)!;
   }
 
-  /** Start a seamlessly looping source on the specified music bus. */
-  startLoop(buffer: AudioBuffer, busType: MusicBusType): AudioBufferSourceNode {
-    const ctx = this.ensureCtx();
-    const src = ctx.createBufferSource();
-    src.buffer = buffer;
-    src.loop = true;
-    src.connect(this.getBus(busType));
-    src.start(0);
-    return src;
-  }
-
-  /** Stop and disconnect a loop source. */
-  stopLoop(src: AudioBufferSourceNode): void {
-    try { src.stop(); } catch { /* already stopped */ }
-    try { src.disconnect(); } catch { /* already disconnected */ }
-  }
-
   /** Schedule a one-shot buffer play on the specified music bus. */
   playBufferAt(buffer: AudioBuffer, when: number, busType: MusicBusType = 'intro'): void {
     const ctx = this.ensureCtx();

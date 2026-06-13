@@ -310,3 +310,9 @@ The global `turretFireCooldownSec` is retained to throttle the fire cadence; the
 # D-026: Output Modules Own Emitter Towers
 
 Each output module instance owns one independently placed emitter tower. Deterministic tower shape/color is derived from the module instance id, and only outputs with contributing graph events require placement before wave start. The original starter output is never sellable; purchased outputs cost and refund 45 Resonance.
+
+# D-027: BPM-Locked Overlapping Music Loops
+
+Planet music layers are authored as four bars in 4/4 and restart every
+`240 / BPM` seconds. Each restart launches a new one-shot without stopping the
+previous source, keeping layers synchronized while preserving reverb tails.

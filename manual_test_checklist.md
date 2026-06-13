@@ -294,4 +294,6 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Wire opacity updates cables, cable glow, drag previews, hit paths, and cable pulses immediately and persists after reload
 - [ ] A planet with `ASSETS/LEVELS/<BPM>BPM/kickLoop.ogg` plays that loop without layering `kick_1` or `kick_2`
 - [ ] A planet without `kickLoop.ogg` continues playing the fallback `kick_1` and `kick_2` rhythm
+- [ ] At 60 BPM, all planet loop layers restart together every 16 seconds
+- [ ] Loop files with reverb tails continue playing after the next four-bar cycle begins
 
