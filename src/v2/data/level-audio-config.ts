@@ -18,6 +18,11 @@ export interface LevelAudioConfig {
   bpm: number;
   /** Beat/percussion loop — plays constantly in a seamless loop. */
   beatLoop: string;
+  /**
+   * Per-wave beat loop overrides keyed by 0-based waveIndex.
+   * When present for the active wave, replaces beatLoop for that wave's duration.
+   */
+  beatLoopOverrides?: Record<number, string>;
   /** Optional kick loop. When present, it replaces the fallback one-shot kicks. */
   kickLoop?: string;
   /** Melodic/harmonic loop layers stacked over the beat. */

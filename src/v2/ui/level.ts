@@ -665,6 +665,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   }
 
   function onWaveCleared(): void {
+    levelMusic?.setActiveWave(null);
     const stats = combat.getWaveStats();
     lastWaveSummary = `KO ${stats.enemiesDefeated} · ESC ${waveEscapes} · SHOTS ${stats.shotsFired} · MATCH ${stats.matchedHits} · RESIST ${stats.resistedHits}`;
     combat.clearWave();
@@ -704,6 +705,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   }
 
   function onFailed(): void {
+    levelMusic?.setActiveWave(null);
     runState = 'failed';
     combat.clearWave();
     audio.cancelAll();
@@ -920,7 +922,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     if (gap > 0) {
       const from = gap > 64 ? intTick : lastTick + 1; // resync after suspension
       for (let t = from; t <= intTick; t++) {
-        if (runState === 'countin' && t >= waveStartTick) runState = 'wave';
+        if (runState === 'countin' && t >= waveStartTick) { runState = 'wave'; levelMusic?.setActiveWave(waveIndex); }
         if (runState === 'wave') {
           const outcome = combat.processTick(t);
           for (const spawned of outcome.spawnedEvents) flashResolvedNote(spawned.spawnIndex);

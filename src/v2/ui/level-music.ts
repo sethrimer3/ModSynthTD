@@ -40,6 +40,7 @@ export class LevelMusicManager {
   private loopStartCtxTime: number | null = null;
   private readonly loopPeriodSec: number;
   private nextLoopCycleIndex = 0;
+  private activeWaveIndex: number | null = null;
 
   constructor(audio: AudioEngine, config: LevelAudioConfig) {
     this.audio = audio;
@@ -55,6 +56,9 @@ export class LevelMusicManager {
     this.loadBuffer(this.config.beatLoop);
     if (this.config.kickLoop) this.loadBuffer(this.config.kickLoop);
     for (const url of this.config.bgLayers) this.loadBuffer(url);
+    if (this.config.beatLoopOverrides) {
+      for (const url of Object.values(this.config.beatLoopOverrides)) this.loadBuffer(url);
+    }
     // Wave intros + MIDI
     for (const wc of this.config.waveAudio) {
       this.loadBuffer(wc.introOgg);
@@ -112,6 +116,15 @@ export class LevelMusicManager {
    */
   hasMidi(waveIndex: number): boolean {
     return this.config.waveAudio.some(w => w.waveIndex === waveIndex);
+  }
+
+  /**
+   * Notify the music manager which wave is currently active (0-based), or null
+   * between waves. Causes the next scheduled beat loop cycle to use the
+   * wave-specific beatLoop_wave<N>.ogg if one exists, otherwise the default.
+   */
+  setActiveWave(waveIndex: number | null): void {
+    this.activeWaveIndex = waveIndex;
   }
 
   /** One-shot kick samples are only used when this planet has no kickLoop.ogg. */
@@ -172,7 +185,11 @@ export class LevelMusicManager {
     const scheduleUntil = this.audio.currentTime + 0.25;
     while (loopStartCtxTime + this.nextLoopCycleIndex * this.loopPeriodSec <= scheduleUntil) {
       const startTime = loopStartCtxTime + this.nextLoopCycleIndex * this.loopPeriodSec;
-      this.audio.playBufferAt(beatBuf, startTime, 'beat');
+      const overrideUrl = this.activeWaveIndex !== null
+        ? this.config.beatLoopOverrides?.[this.activeWaveIndex]
+        : undefined;
+      const activeBeatBuf = (overrideUrl && this.bufCache.get(overrideUrl)) ?? beatBuf;
+      this.audio.playBufferAt(activeBeatBuf, startTime, 'beat');
       if (kickBuf) this.audio.playBufferAt(kickBuf, startTime, 'beat');
       for (const buf of layerBufs) {
         if (buf) this.audio.playBufferAt(buf, startTime, 'bg');
