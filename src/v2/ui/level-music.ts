@@ -188,7 +188,7 @@ export class LevelMusicManager {
       const overrideUrl = this.activeWaveIndex !== null
         ? this.config.beatLoopOverrides?.[this.activeWaveIndex]
         : undefined;
-      const activeBeatBuf = (overrideUrl && this.bufCache.get(overrideUrl)) ?? beatBuf;
+      const activeBeatBuf = (overrideUrl ? this.bufCache.get(overrideUrl) : null) ?? beatBuf;
       this.audio.playBufferAt(activeBeatBuf, startTime, 'beat');
       if (kickBuf) this.audio.playBufferAt(kickBuf, startTime, 'beat');
       for (const buf of layerBufs) {

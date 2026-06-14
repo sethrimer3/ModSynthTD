@@ -17,7 +17,7 @@ import { hashString } from '../core/rng';
 import { createSoftWireRenderer, SoftWireData } from '../../version2-soft-wire';
 import { TowerStyle } from './tower-style';
 import { createMaskedFillCanvas } from '../render/masked-fill-renderer';
-import plantDesignUrl from '../../../ASSETS/modules/designs/plantDesign.png';
+import { buildModuleFaceVisual, ModuleFaceVisualHandle } from './module-face-visuals';
 import mountainDesignUrl from '../../../ASSETS/modules/designs/mountainDesign.png';
 import sunDesignUrl from '../../../ASSETS/modules/designs/sunDesign.png';
 
@@ -134,6 +134,7 @@ interface ModuleView {
   ledEl: HTMLElement | null;
   flashUntil: number;
   refreshSettings: () => void;
+  visual?: ModuleFaceVisualHandle | null;
 }
 
 interface CableView {
@@ -787,47 +788,17 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     `;
     bgEl.appendChild(led);
 
-    // ── Clock design: animated masked fill in bottom-right corner ─────────────
-    if (def.typeId === 'clock') {
-      const designW = Math.round(panelW * 0.72);
-      const designH = Math.round(panelH * 0.45);
-      const designX = panelW - designW - 2;
-      const designY = panelH - designH - 4;
-
-      const clockDesignCanvas = createMaskedFillCanvas({
-        maskPath: plantDesignUrl,
-        width: designW,
-        height: designH,
-        colors: [
-          { color: '#00c8ff', weight: 0.55 },
-          { color: '#00ff88', weight: 0.35 },
-          { color: '#0044ff', weight: 0.10 },
-        ],
-        seed: 0x1c10c,
-        luminanceMask: true,
-        getColors: () => {
-          const act = activity.get(inst.instanceId) ?? 0;
-          if (act > 0) {
-            return [
-              { color: '#44eeff', weight: 0.45 },
-              { color: '#88ffcc', weight: 0.40 },
-              { color: '#0088ff', weight: 0.15 },
-            ];
-          }
-          return [
-            { color: '#00c8ff', weight: 0.55 },
-            { color: '#00ff88', weight: 0.35 },
-            { color: '#0044ff', weight: 0.10 },
-          ];
-        },
-      });
-      clockDesignCanvas.style.cssText = `
-        position:absolute;left:${designX}px;top:${designY}px;
-        pointer-events:none;opacity:0.55;border-radius:4px;
-        z-index:1;
-      `;
-      bgEl.appendChild(clockDesignCanvas);
-    }
+    // ── Module-specific face visual (z=2, behind controls) ───────────────────
+    const visual = buildModuleFaceVisual({
+      typeId: def.typeId,
+      def,
+      inst,
+      panelW,
+      panelH,
+      color: def.color,
+      reducedMotion: opts.reducedMotion,
+    });
+    if (visual) bgEl.appendChild(visual.el);
 
     // ── Content overlay (z=34): above cables AND plugs ───────────────────────
     // pointer-events:none on the container; interactive children re-enable it.
@@ -853,7 +824,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     contentEl.appendChild(title);
 
     // Placeholder mv so closures can reference it before controls are wired up.
-    const mv: ModuleView = { inst, def, rootEl: bgEl, contentEl, plugs: [], ledEl: led, flashUntil: 0, refreshSettings: () => undefined };
+    const mv: ModuleView = { inst, def, rootEl: bgEl, contentEl, plugs: [], ledEl: led, flashUntil: 0, refreshSettings: () => undefined, visual };
 
     // ── Plug wraps (root-level, z=33) — above front-cables (30), below content (34) ──
     const allPorts: Array<{ spec: PortSpec; list: PortSpec[] }> = [
@@ -1008,6 +979,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
         const fn = (s as HTMLElement & { __refresh?: () => void }).__refresh;
         if (fn) fn();
       }
+      mv.visual?.refreshSettings?.();
     };
 
     // Drag initiates from bgEl (clicks not landing on controls fall through since
@@ -1156,7 +1128,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
 
   function rebuild(): void {
     // Remove module DOM (both bg and content overlay).
-    for (const mv of moduleViews.values()) { mv.rootEl.remove(); mv.contentEl.remove(); }
+    for (const mv of moduleViews.values()) { mv.visual?.destroy?.(); mv.rootEl.remove(); mv.contentEl.remove(); }
     moduleViews.clear();
     for (const view of cableViews.values()) {
       view.hitPath.remove();
@@ -1304,6 +1276,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
         mv.rootEl.style.borderColor = '#1a2a44';
         mv.rootEl.style.boxShadow = '0 2px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(120,160,255,0.07)';
       }
+      mv.visual?.update?.(nowMs, act, currentTick);
     }
   }
 
