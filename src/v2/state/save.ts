@@ -63,6 +63,10 @@ export interface SaveData {
   schemaVersion: number;
   /** Global meta-currency: Resonance. */
   resonance: number;
+  /** Endless-mode meta-currency: InfinityLoops. Spent on module upgrades. */
+  infinityLoops: number;
+  /** Global per-module-type upgrade level (typeId → level 1..MAX_UPGRADE_LEVEL). */
+  moduleUpgrades: Record<string, number>;
   /** Unlocked non-starter blueprint typeIds. */
   blueprints: string[];
   secretRevealed: boolean;
@@ -99,6 +103,8 @@ export function defaultSave(): SaveData {
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     resonance: 0,
+    infinityLoops: 0,
+    moduleUpgrades: {},
     blueprints: [],
     secretRevealed: false,
     cipherChallengeUnlocked: false,
@@ -221,6 +227,14 @@ export function normalizeSave(raw: unknown): { save: SaveData; repairs: string[]
   const r = raw as Record<string, unknown>;
 
   d.resonance = asNonNegInt(r.resonance, 0);
+  d.infinityLoops = asNonNegInt(r.infinityLoops, 0);
+  if (typeof r.moduleUpgrades === 'object' && r.moduleUpgrades !== null) {
+    for (const [typeId, lvl] of Object.entries(r.moduleUpgrades as Record<string, unknown>)) {
+      if (!getModuleType(typeId)) { repairs.push(`Dropped upgrade for unknown module "${typeId}".`); continue; }
+      const n = asNonNegInt(lvl, 0);
+      if (n > 0) d.moduleUpgrades[typeId] = Math.min(3, n); // 3 = MAX_UPGRADE_LEVEL
+    }
+  }
   if (Array.isArray(r.blueprints)) {
     for (const b of r.blueprints) {
       if (typeof b === 'string' && getModuleType(b)) d.blueprints.push(b);

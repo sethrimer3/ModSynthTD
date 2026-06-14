@@ -48,6 +48,13 @@ export interface ProcessCtx {
   moduleId: string;
   /** Output ports of this module that have at least one cable attached. */
   connectedOutputs: ReadonlySet<string>;
+  /** Global upgrade tier for this module type (0 = none). Set by the evaluator. */
+  upgradeLevel?: number;
+}
+
+/** Upgrade tier of the current module, 0 when unset. */
+function upLevel(ctx: ProcessCtx): number {
+  return Math.max(0, Math.floor(ctx.upgradeLevel ?? 0));
 }
 
 export type PortEvents = Record<string, SignalEvent[]>;
@@ -446,8 +453,10 @@ const DELAY: ModuleTypeDef = {
   ],
   process: (ctx, inputs, settings) => {
     const delay = Math.floor(num(settings, 'delayTicks', 48, 6, 192));
-    const repeats = Math.floor(num(settings, 'repeats', 1, 1, MAX_DELAY_REPEATS));
-    const decay = num(settings, 'decay', 0.5, 0.1, MAX_DELAY_DECAY);
+    // Upgrade: +1 echo repeat per tier, and slower decay so echoes ring louder.
+    const lvl = upLevel(ctx);
+    const repeats = Math.floor(num(settings, 'repeats', 1, 1, MAX_DELAY_REPEATS)) + lvl;
+    const decay = Math.min(MAX_DELAY_DECAY, num(settings, 'decay', 0.5, 0.1, MAX_DELAY_DECAY) * (1 + 0.08 * lvl));
     const out: SignalEvent[] = [];
     for (const e of inputs['in'] ?? []) {
       out.push(passRoute(e, ctx.moduleId));
@@ -517,13 +526,15 @@ const FILTER: ModuleTypeDef = {
   process: (ctx, inputs, settings) => {
     const band = str(settings, 'band', 'mid', BANDS as unknown as string[]) as FrequencyBand;
     const hard = str(settings, 'strength', 'soft', ['soft', 'hard']) === 'hard';
+    // Upgrade: soft-mode off-band leakage is cut further each tier (cleaner band pass).
+    const offBand = Math.max(0.15, 0.5 - 0.12 * upLevel(ctx));
     const out: SignalEvent[] = [];
     for (const e of inputs['in'] ?? []) {
       if (e.band === band) {
         out.push(passRoute(e, ctx.moduleId));
       } else if (!hard) {
         const c = passRoute(e, ctx.moduleId);
-        c.amplitude = clampAmplitude(c.amplitude * 0.5);
+        c.amplitude = clampAmplitude(c.amplitude * offBand);
         if (c.amplitude >= MIN_AMPLITUDE) out.push(c);
       }
     }
@@ -703,7 +714,8 @@ const PROBABILITY: ModuleTypeDef = {
     { key: 'chance', label: 'CHANCE', type: 'enum', options: [0.25, 0.5, 0.75], optionLabels: ['25%', '50%', '75%'], liveSafe: true },
   ],
   process: (ctx, inputs, settings) => {
-    const chance = num(settings, 'chance', 0.75, 0.05, 1);
+    // Upgrade: higher effective pass chance each tier (more events survive).
+    const chance = Math.min(1, num(settings, 'chance', 0.75, 0.05, 1) + 0.08 * upLevel(ctx));
     const salt = moduleSalt(ctx);
     const out: SignalEvent[] = [];
     for (const e of inputs['in'] ?? []) {
@@ -911,7 +923,8 @@ const PITCH_FILTER: ModuleTypeDef = {
   ],
   process: (ctx, inputs, settings) => {
     const centerHz = midiPitchToHz(num(settings, 'center', 69, 0, 127));
-    const width = num(settings, 'width', 4, 1, 24);
+    // Upgrade: wider passing window (+2 semitones/tier) so more notes survive.
+    const width = num(settings, 'width', 4, 1, 24) + 2 * upLevel(ctx);
     const hard = str(settings, 'strength', 'soft', ['soft', 'hard']) === 'hard';
     const out: SignalEvent[] = [];
     for (const e of inputs['in'] ?? []) {

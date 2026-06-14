@@ -7,6 +7,10 @@
 import { SaveData } from '../state/save';
 import { MODULE_TYPES, ModuleTypeDef } from '../core/modules';
 import { isBlueprintUnlocked, ownedCount, CURRENCY_SYMBOL, moduleTypeForShop } from '../state/economy';
+import {
+  isUpgradeable, moduleUpgradeLevel, upgradeCost, MAX_UPGRADE_LEVEL,
+  INFINITY_SYMBOL, UPGRADE_EFFECTS,
+} from '../state/upgrades';
 import { getWorld } from '../data/worlds';
 
 const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
@@ -20,6 +24,7 @@ export interface ShopUIOpts {
   worldId: string;
   isLive(): boolean;
   onBuy(typeId: string): { ok: boolean; error?: string };
+  onUpgrade(typeId: string): { ok: boolean; error?: string; level?: number };
   onClose(): void;
 }
 
@@ -43,8 +48,13 @@ export function openShop(parent: HTMLElement, opts: ShopUIOpts): void {
   title.textContent = 'MODULE SHOP';
   title.style.cssText = 'font-size:0.85rem;font-weight:800;letter-spacing:0.1em;color:#dff6ff;';
   const balance = document.createElement('div');
-  const refreshBalance = () => { balance.textContent = `${CURRENCY_SYMBOL} ${opts.save.resonance} Resonance`; };
-  balance.style.cssText = 'font-size:0.72rem;font-weight:800;color:#00ddcc;';
+  balance.style.cssText = 'font-size:0.72rem;font-weight:800;color:#00ddcc;text-align:right;';
+  const refreshBalance = () => {
+    const loops = opts.save.infinityLoops > 0
+      ? `<br><span style="color:#aa66ff">${INFINITY_SYMBOL} ${opts.save.infinityLoops} InfinityLoops</span>`
+      : '';
+    balance.innerHTML = `${CURRENCY_SYMBOL} ${opts.save.resonance} Resonance${loops}`;
+  };
   refreshBalance();
   header.append(title, balance);
   panel.appendChild(header);
@@ -122,7 +132,52 @@ export function openShop(parent: HTMLElement, opts: ShopUIOpts): void {
     const btn = document.createElement('button');
     card.appendChild(btn);
 
+    // Upgrade row (InfinityLoops). Only for upgradeable types.
+    const upgradeable = isUpgradeable(def.typeId);
+    const upWrap = document.createElement('div');
+    upWrap.style.cssText = 'display:flex;flex-direction:column;gap:3px;';
+    const upInfo = document.createElement('div');
+    upInfo.style.cssText = 'font-size:0.5rem;line-height:1.3;color:#9a7fd0;min-height:1.3em;';
+    const upBtn = document.createElement('button');
+    if (upgradeable) {
+      upInfo.textContent = UPGRADE_EFFECTS[def.typeId] ?? '';
+      upWrap.append(upInfo, upBtn);
+      card.appendChild(upWrap);
+    }
+
+    const refreshUpgrade = () => {
+      if (!upgradeable) return;
+      const lvl = moduleUpgradeLevel(opts.save, def.typeId);
+      const pips = '◆'.repeat(lvl) + '◇'.repeat(MAX_UPGRADE_LEVEL - lvl);
+      if (lvl >= MAX_UPGRADE_LEVEL) {
+        upBtn.disabled = true;
+        upBtn.textContent = `${pips} MAX TIER`;
+        upBtn.style.cssText = `${FF}font-size:0.56rem;font-weight:800;padding:4px;border-radius:6px;cursor:default;background:#160e26;border:1.5px solid #5a3d8a;color:#aa66ff;`;
+        return;
+      }
+      const cost = upgradeCost(lvl);
+      const can = opts.save.infinityLoops >= cost;
+      upBtn.disabled = !can;
+      upBtn.textContent = `${pips} UPGRADE · ${cost}${INFINITY_SYMBOL}`;
+      upBtn.style.cssText = `${FF}font-size:0.56rem;font-weight:800;padding:4px;border-radius:6px;letter-spacing:0.03em;
+        cursor:${can ? 'pointer' : 'not-allowed'};
+        background:${can ? '#160e26' : '#0a1020'};border:1.5px solid ${can ? '#aa66ff' : '#223044'};color:${can ? '#cc99ff' : '#445a78'};`;
+    };
+    upBtn.addEventListener('click', () => {
+      const r = opts.onUpgrade(def.typeId);
+      if (!r.ok) {
+        status.textContent = r.error ?? 'Upgrade failed.';
+        status.style.color = '#ff6677';
+      } else {
+        status.textContent = `${def.name} upgraded to tier ${r.level}.`;
+        status.style.color = '#aa66ff';
+        refreshBalance();
+        cards.forEach(f => f());
+      }
+    });
+
     const refresh = () => {
+      refreshUpgrade();
       const unlocked = isBlueprintUnlocked(opts.save, def.typeId);
       const have = ownedCount(opts.save, opts.worldId, def.typeId);
       owned.textContent = `owned: ${have}`;

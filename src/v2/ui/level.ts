@@ -21,6 +21,9 @@ import {
 } from '../state/economy';
 import { getModuleType } from '../core/modules';
 import {
+  upgradeLevels, earnInfinityLoops, endlessWaveReward, purchaseUpgrade, INFINITY_SYMBOL,
+} from '../state/upgrades';
+import {
   applyWorldCompletionUnlocks, checkCipherRoute, revealSecretWorld, canAttemptCipher,
 } from '../state/progression';
 import { Camera, attachCameraControls } from './camera';
@@ -292,6 +295,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   hpEl.style.cssText = 'font-size:0.7rem;font-weight:800;';
   const resEl = document.createElement('div');
   resEl.style.cssText = 'font-size:0.66rem;font-weight:800;color:#00ddcc;';
+  const loopEl = document.createElement('div');
+  loopEl.style.cssText = 'font-size:0.66rem;font-weight:800;color:#aa66ff;';
   const btnRow = document.createElement('div');
   btnRow.style.cssText = 'display:flex;gap:5px;';
   const mkHudBtn = (label: string, title: string, fn: () => void) => {
@@ -309,7 +314,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   mkHudBtn('Rack', 'Focus camera on the rack', focusRack);
   mkHudBtn('Grid', 'Focus camera on the playfield', focusGrid);
   mkHudBtn('↩ Map', 'Return to the world map', () => host.exitToMap());
-  hudRight.append(hpEl, resEl, btnRow);
+  hudRight.append(hpEl, resEl, loopEl, btnRow);
 
   hud.append(hudLeft, hudCenter, hudRight);
 
@@ -576,7 +581,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     const total = score.measures * TICKS_PER_MEASURE;
     // Evaluate the patch over the whole wave window for cable pulses + notation-independent traffic.
     const seed = waveSeed();
-    const result = evaluatePatch(graph, { startTick: 0, endTick: total + PPQ * 4, seedBase: seed });
+    const result = evaluatePatch(graph, { startTick: 0, endTick: total + PPQ * 4, seedBase: seed, upgradeLevels: upgradeLevels(save) });
     cachedTraffic = result.cableTraffic;
     cachedActivity = result.moduleActivity;
     rack.setTraffic(cachedTraffic, cachedActivity);
@@ -594,7 +599,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     const score = currentWaveScore();
     const total = score.measures * TICKS_PER_MEASURE;
     const seed = waveSeed();
-    const result = evaluatePatch(graph, { startTick: 0, endTick: total + PPQ * 4, seedBase: seed });
+    const result = evaluatePatch(graph, { startTick: 0, endTick: total + PPQ * 4, seedBase: seed, upgradeLevels: upgradeLevels(save) });
     cachedTraffic = result.cableTraffic;
     cachedActivity = result.moduleActivity;
     rack.setTraffic(cachedTraffic, cachedActivity);
@@ -671,7 +676,10 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     combat.clearWave();
     if (endlessActive) {
       endlessCount++;
-      if (endlessCount > worldSave.endlessBest) { worldSave.endlessBest = endlessCount; host.persist(); }
+      const loops = earnInfinityLoops(save, endlessWaveReward(endlessCount));
+      if (loops > 0) flashState(`+${loops} ${INFINITY_SYMBOL}`, '#aa66ff');
+      if (endlessCount > worldSave.endlessBest) worldSave.endlessBest = endlessCount;
+      host.persist();
       waveIndex = (waveIndex + 1) % world.waves.length;
       runState = 'cleared';
       recompilePreview();
@@ -762,7 +770,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       amplitude: 1, gate: 0.5, attackTicks: 0, releaseTicks: 6, pitchOffset: 0,
       directions: ['north'], route: [], sourceModuleId: '', seed: 1, tags: ['test'],
     };
-    const result = evaluatePatch(graph, { startTick: 0, endTick: PPQ * 2, seedBase: 12345, injectAtSources: [pulse] });
+    const result = evaluatePatch(graph, { startTick: 0, endTick: PPQ * 2, seedBase: 12345, injectAtSources: [pulse], upgradeLevels: upgradeLevels(save) });
     // Flash the whole contributing route.
     const v = validateGraph(graph);
     rack.highlightRoute(v.contributing);
@@ -827,6 +835,11 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
         if (r.ok) { setWorldRack(save, worldId, graph); rack.rebuild(); markGraphDirty(); host.persist(); refreshHud(); }
         return r;
       },
+      onUpgrade: (typeId) => {
+        const r = purchaseUpgrade(save, typeId);
+        if (r.ok) { host.persist(); markGraphDirty(); refreshHud(); }
+        return r;
+      },
       onClose: () => { rack.rebuild(); markGraphDirty(); },
     });
     tut.trigger('shop');
@@ -857,6 +870,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     hpEl.textContent = `BASE ${baseHp}/${MAX_BASE_HP}`;
     hpEl.style.color = baseHp <= 3 ? '#ff3344' : baseHp <= 6 ? '#ffcc00' : '#33ff88';
     resEl.textContent = `${CURRENCY_SYMBOL} ${save.resonance}`;
+    loopEl.style.display = (save.infinityLoops > 0 || endlessActive) ? 'block' : 'none';
+    loopEl.textContent = `${INFINITY_SYMBOL} ${save.infinityLoops}`;
 
     const labels: Record<RunState, string> = { ready: 'PREPARE', countin: 'COUNT-IN', wave: 'LIVE', cleared: 'CLEARED', failed: 'FAILED', victory: 'COMPLETE' };
     const colors: Record<RunState, string> = { ready: '#5577aa', countin: '#ffcc00', wave: '#33ff88', cleared: '#33dd88', failed: '#ff3344', victory: '#aa66ff' };

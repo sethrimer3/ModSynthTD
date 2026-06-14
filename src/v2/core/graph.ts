@@ -367,7 +367,12 @@ export interface EvalOptions {
   seedBase: number;
   /** Optional injected events replacing clock generation (test pulse). */
   injectAtSources?: SignalEvent[];
+  /** Global per-module-type upgrade tiers (typeId → level). */
+  upgradeLevels?: Record<string, number>;
 }
+
+/** Per-tier amplitude "potency" bonus an upgraded module grants its output. */
+const UPGRADE_AMP_PER_LEVEL = 0.10;
 
 /** Extra lookback so delays/phases from just-before-window events land correctly. */
 export function computeLookbackTicks(graph: RackGraph): number {
@@ -448,12 +453,14 @@ export function evaluatePatch(graph: RackGraph, opts: EvalOptions): EvalResult {
     }
     for (const key of Object.keys(inputs)) inputs[key].sort(compareEvents);
 
+    const upgradeLevel = opts.upgradeLevels?.[inst.typeId] ?? 0;
     const ctx = {
       windowStartTick: def.kind === 'source' ? windowStart : opts.startTick,
       windowEndTick: opts.endTick,
       seedBase: opts.seedBase,
       moduleId,
       connectedOutputs: connectedOutputs.get(moduleId) ?? new Set<string>(),
+      upgradeLevel,
     };
 
     let result: PortEvents;
@@ -472,10 +479,12 @@ export function evaluatePatch(graph: RackGraph, opts: EvalOptions): EvalResult {
     }
 
     // Clamp + cap each output buffer deterministically.
+    // Upgraded modules grant a per-tier amplitude bonus to everything they emit.
+    const potency = upgradeLevel > 0 ? 1 + UPGRADE_AMP_PER_LEVEL * upgradeLevel : 1;
     let activity = 0;
     for (const portId of Object.keys(result)) {
       let events = result[portId];
-      for (const e of events) e.amplitude = clampAmplitude(e.amplitude);
+      for (const e of events) e.amplitude = clampAmplitude(e.amplitude * potency);
       events = events.filter(e => e.amplitude >= MIN_AMPLITUDE);
       events.sort(compareEvents);
       if (events.length > MAX_EVENTS_PER_MODULE_WINDOW) {
