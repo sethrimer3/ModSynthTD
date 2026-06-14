@@ -35,6 +35,7 @@ import { LEVEL_AUDIO_CONFIGS } from './level-audio-assets';
 import { TutorialManager } from './tutorials';
 import { openShop } from './shop-ui';
 import { openSettings } from './settings-ui';
+import { createLevelFluidBackground } from './fluid-background';
 
 const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
 const MAX_BASE_HP = 10;
@@ -105,7 +106,10 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   let activeIntroBars = 1;   // bars of intro for current wave (4 for MIDI, 1 otherwise)
   let placement = { active: false, tile: null as [number, number] | null, outputModuleId: null as string | null };
 
-  const combat = new Combat(world, towers, towerStyles);
+  const fluid = createLevelFluidBackground();
+  fluid.resize(world.gridWidth * TILE_PX, world.gridHeight * TILE_PX);
+  fluid.setLowGraphicsMode(save.settings.reducedMotion);
+  const combat = new Combat(world, towers, towerStyles, fluid);
   let graphDirty = false;
   let persistTimer = 0;
 
@@ -940,6 +944,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     }
 
     // Per-frame combat animation/collision.
+    fluid.setLowGraphicsMode(save.settings.reducedMotion);
+    fluid.step(Math.min(dt * 1000, 100));
     if (runState === 'wave') {
       combat.updateFrame(dt, tickFloat);
       // Wave completion.

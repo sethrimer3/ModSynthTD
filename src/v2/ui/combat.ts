@@ -15,6 +15,7 @@ import { Camera } from './camera';
 import { TowerStyle, traceTowerShape } from './tower-style';
 import { DamageNumber, spawnDamageNumber, updateDamageNumbers, drawDamageNumbers } from './damage-numbers';
 import { bandToHz, pitchOffsetToHz, damageMultiplier } from './pitch';
+import { LevelFluidBackground } from './fluid-background';
 
 import quarterNoteUrl from '../../../ASSETS/SPRITES/ENEMIES/enemy_quarterNote.png';
 import halfNoteUrl from '../../../ASSETS/SPRITES/ENEMIES/enemy_halfNote.png';
@@ -68,6 +69,9 @@ function hexAlpha(hex: string, alpha: number): string {
 }
 
 function smoothstep(t: number): number { return t * t * (3 - 2 * t); }
+function rgb(hex: string): [number, number, number] {
+  return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+}
 
 // ── Tower ───────────────────────────────────────────────────────────────────
 
@@ -292,11 +296,13 @@ export class Combat {
   private lastFireDirections = new Map<string, Array<[number, number]>>();
   finishFlash = 0;
   private trackSets: Set<string>[];
+  private fluid: LevelFluidBackground;
 
-  constructor(world: WorldDef, towers: TowersByOutputId, towerStyles: Map<string, TowerStyle>) {
+  constructor(world: WorldDef, towers: TowersByOutputId, towerStyles: Map<string, TowerStyle>, fluid: LevelFluidBackground) {
     this.world = world;
     this.towers = towers;
     this.towerStyles = towerStyles;
+    this.fluid = fluid;
     this.trackSets = world.lanes.map(lane => new Set(lane.map(([x, y]) => `${x},${y}`)));
   }
 
@@ -359,6 +365,8 @@ export class Combat {
         else if (s.tiedToNext) { pool = { hp: def.maxHp, maxHp: def.maxHp }; pendingTie = pool; }
       }
       this.enemies.push(new EnemyRt(s, def, lane, s.lane, s.absTick, chordPeers % 3 - 1, pool));
+      const [sr, sg, sb] = rgb(BAND_COLORS[s.band]);
+      this.fluid.addExplosion((lane[0][0] + 0.5) * TILE_PX, (lane[0][1] + 0.5) * TILE_PX, 0.7, sr, sg, sb);
       this.spawnEffects.push(s);
       if (this.spawnEffects.length > 24) this.spawnEffects.shift();
       out.spawnedEvents.push(s);
@@ -370,6 +378,8 @@ export class Combat {
       if (e.processTick(tick) === 'escaped') {
         out.escapes++;
         this.finishFlash = 0.55;
+        const finish = e.lane[e.lane.length - 1];
+        this.fluid.addExplosion((finish[0] + 0.5) * TILE_PX, (finish[1] + 0.5) * TILE_PX, 1.5, 255, 45, 105);
       }
     }
 
@@ -403,6 +413,9 @@ export class Combat {
       this.towerPulse.set(queued.outputId, 1);
       this.routePulse.set(queued.outputId, 1);
       out.fired = true;
+      const styleColor = this.towerStyles.get(queued.outputId)?.color ?? BAND_COLORS[ev.band];
+      const [tr, tg, tb] = rgb(styleColor);
+      this.fluid.addExplosion((tower.tileX + 0.5) * TILE_PX, (tower.tileY + 0.5) * TILE_PX, 0.75, tr, tg, tb);
     }
 
     return out;
@@ -414,6 +427,14 @@ export class Combat {
     for (const [id, pulse] of this.towerPulse) this.towerPulse.set(id, Math.max(0, pulse - dt * 5));
     for (const [id, pulse] of this.routePulse) this.routePulse.set(id, Math.max(0, pulse - dt * 3));
     for (const e of this.enemies) e.updateAnim(dt);
+    for (const e of this.enemies) {
+      if (!e.alive || !e.spawned || e.hopT >= 1) continue;
+      const pos = e.visualPos();
+      const from = e.lane[Math.min(e.prevTileIdx, e.lane.length - 1)];
+      const to = e.lane[Math.min(e.tileIdx, e.lane.length - 1)];
+      const [r, g, b] = rgb(BAND_COLORS[e.band]);
+      this.fluid.addForce({ x: (pos.x + 0.5) * TILE_PX, y: (pos.y + 0.5) * TILE_PX, vx: (to[0] - from[0]) * 180, vy: (to[1] - from[1]) * 180, r, g, b, strength: 0.32 });
+    }
     for (let i = this.floaters.length - 1; i >= 0; i--) {
       this.floaters[i].t -= dt;
       if (this.floaters[i].t <= 0) this.floaters.splice(i, 1);
@@ -449,6 +470,8 @@ export class Combat {
           }
           // Color: green ≥3×, yellow ≥1.5×, orange ≥0.5×, grey = fizzle
           const multColor = mult >= 3 ? '#33ff88' : mult >= 1.5 ? '#ffcc00' : mult >= 0.5 ? '#ff8833' : '#556677';
+          const [hr, hg, hb] = rgb(BAND_COLORS[p.band]);
+          this.fluid.addExplosion((etx + 0.5) * TILE_PX, (ety + 0.5) * TILE_PX, !e.alive ? 1.8 : 0.85, hr, hg, hb);
           this.floaters.push({
             x: etx + 0.5 + (Math.random() * 0.5 - 0.25),
             y: ety,
@@ -486,6 +509,14 @@ export class Combat {
     ctx.strokeStyle = hexAlpha(theme, 0.25);
     ctx.lineWidth = Math.max(1, 1.5 * z);
     ctx.strokeRect(0, 0, w.gridWidth * tileZ, w.gridHeight * tileZ);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, w.gridWidth * tileZ, w.gridHeight * tileZ);
+    ctx.clip();
+    ctx.scale(z, z);
+    this.fluid.render(ctx);
+    ctx.restore();
 
     // Grid.
     ctx.strokeStyle = 'rgba(20,38,72,0.5)';
