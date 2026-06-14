@@ -45,6 +45,8 @@ export interface ModuleLiveSample {
   firing: boolean;
   /** Per-input-port peak amplitude + firing flag. */
   ports: Record<string, { amp: number; firing: boolean }>;
+  /** Per-output-port peak amplitude + firing flag (real routing/branch state). */
+  outPorts: Record<string, { amp: number; firing: boolean }>;
 }
 
 export interface ModuleFaceVisualHandle {
@@ -174,6 +176,10 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
       svg.appendChild(defs);
     }
     svg.appendChild(scan);
+    // Subtle scanline drift (frozen under reduced motion) for a live-CRT feel.
+    updaters.push(({ nowMs, reduced }) => {
+      scan.setAttribute('transform', reduced ? '' : `translate(0 ${((nowMs / 600) % 1) * 2})`);
+    });
     const g = el('g');
     svg.appendChild(g);
     return g;
@@ -403,11 +409,17 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
         label(jx + 8, ys[i] - 2, lab, '#44608a', 4);
       });
       svg.appendChild(el('circle', { cx: jx, cy: inY, r: 1.8, fill: color }));
-      updaters.push(({ nowMs, act, reduced }) => {
+      const outIds = ['outA', 'outB', 'outC'];
+      updaters.push(({ nowMs, act, reduced, live }) => {
         const pulse = !reduced && act > 0 ? 0.5 + 0.5 * Math.sin(nowMs / 160) : (act > 0 ? 1 : 0.4);
         branchEls.forEach((p, i) => {
-          p.setAttribute('stroke-opacity', String(act > 0 ? 0.4 + 0.5 * pulse : 0.45));
-          branchLeds[i].setAttribute('fill-opacity', String(act > 0 ? pulse : 0.25));
+          // Real branch state when available: only branches actually carrying signal light.
+          const op = live?.outPorts[outIds[i]];
+          const on = op ? op.firing : act > 0;
+          const lvl = op ? (op.firing ? 0.5 + 0.5 * pulse : 0.12) : (act > 0 ? pulse : 0.25);
+          p.setAttribute('stroke-opacity', String(on ? 0.4 + 0.5 * pulse : (live ? 0.18 : 0.45)));
+          branchLeds[i].setAttribute('fill-opacity', String(lvl));
+          setGlow(branchLeds[i], color, op?.firing ?? false, 4);
         });
       });
       break;
@@ -466,7 +478,20 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
         label(w * 0.1, ys[i] + 1.5, lab, '#44608a', 4.5);
       });
       svg.appendChild(el('circle', { cx: 2, cy: h / 2, r: 1.6, fill: color }));
-      updaters.push(({ nowMs, act, tick, reduced }) => {
+      const routeIds = ['outA', 'outB', 'outC'];
+      updaters.push(({ nowMs, act, tick, reduced, live }) => {
+        // Real routing: light whichever branch is actually carrying signal now.
+        if (live) {
+          let any = false;
+          laneDots.forEach((dd, i) => {
+            const op = live.outPorts[routeIds[i]];
+            const on = op?.firing ?? false;
+            if (on) any = true;
+            dd.setAttribute('fill-opacity', on ? '1' : '0.18');
+            setGlow(dd, color, on, 4);
+          });
+          if (any) return;
+        }
         const mode = R.s('mode', 'alternate');
         let active = 0;
         if (mode === 'fixed') {
@@ -623,13 +648,17 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
       };
       refreshers.push(apply);
       apply();
-      updaters.push(({ act, nowMs, reduced }) => {
+      updaters.push(({ act, nowMs, reduced, live }) => {
         const band = R.s('band', 'mid');
         const sel = bands.indexOf(band);
+        const firing = live?.firing ?? false;
         if (sel >= 0) {
-          const pulse = !reduced && act > 0 ? 0.6 + 0.4 * Math.sin(nowMs / 150) : (act > 0 ? 1 : 0);
-          setGlow(colEls[sel], bandColor(band), act > 0, 3 + pulse * 2);
+          const pulse = !reduced && (act > 0 || firing) ? 0.6 + 0.4 * Math.sin(nowMs / 150) : (act > 0 || firing ? 1 : 0);
+          setGlow(colEls[sel], bandColor(band), act > 0 || firing, 3 + pulse * 2);
         }
+        // Tick the column matching the band actually arriving (passed or attenuated).
+        const inB = live?.band ? bands.indexOf(live.band) : -1;
+        if (inB >= 0 && inB !== sel) setGlow(colEls[inB], bandColor(bands[inB]), firing, 2);
       });
       break;
     }

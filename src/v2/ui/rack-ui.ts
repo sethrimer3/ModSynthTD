@@ -194,52 +194,73 @@ export function createRackUI(opts: RackUIOpts): RackUI {
 
   let traffic = new Map<string, SignalEvent[]>();
   let activity = new Map<string, number>();
-  /** Incoming events per module, grouped by destination port, sorted by tick. */
+  /** Incoming / outgoing events per module, grouped by port, sorted by tick. */
   let incomingByModule = new Map<string, Map<string, SignalEvent[]>>();
+  let outgoingByModule = new Map<string, Map<string, SignalEvent[]>>();
   let currentTick = -1;
 
   /** Live window (ticks) within which an event counts as "firing now". */
   const LIVE_WINDOW = 14;
 
-  function rebuildIncoming(): void {
+  function rebuildTrafficIndex(): void {
     incomingByModule = new Map();
+    outgoingByModule = new Map();
+    const add = (map: Map<string, Map<string, SignalEvent[]>>, moduleId: string, portId: string, events: SignalEvent[]) => {
+      let ports = map.get(moduleId);
+      if (!ports) { ports = new Map(); map.set(moduleId, ports); }
+      const existing = ports.get(portId);
+      if (existing) existing.push(...events);
+      else ports.set(portId, events.slice());
+    };
     for (const c of graph.cables) {
       const events = traffic.get(c.cableId);
       if (!events || events.length === 0) continue;
-      let ports = incomingByModule.get(c.toModuleId);
-      if (!ports) { ports = new Map(); incomingByModule.set(c.toModuleId, ports); }
-      const existing = ports.get(c.toPortId);
-      if (existing) existing.push(...events);
-      else ports.set(c.toPortId, events.slice());
+      add(incomingByModule, c.toModuleId, c.toPortId, events);
+      add(outgoingByModule, c.fromModuleId, c.fromPortId, events);
     }
-    for (const ports of incomingByModule.values()) {
-      for (const evs of ports.values()) evs.sort((a, b) => a.tick - b.tick);
+    for (const map of [incomingByModule, outgoingByModule]) {
+      for (const ports of map.values()) {
+        for (const evs of ports.values()) evs.sort((a, b) => a.tick - b.tick);
+      }
     }
   }
 
-  const EMPTY_LIVE: ModuleLiveSample = { amp: 0, band: null, index: 0, firing: false, ports: {} };
-
-  function liveSample(moduleId: string, tick: number): ModuleLiveSample | null {
-    const ports = incomingByModule.get(moduleId);
-    if (!ports || tick < 0) return null;
+  function samplePorts(ports: Map<string, SignalEvent[]> | undefined, tick: number): {
+    amp: number; band: string | null; index: number; firing: boolean; info: Record<string, { amp: number; firing: boolean }>;
+  } {
+    const info: Record<string, { amp: number; firing: boolean }> = {};
     let amp = 0, index = 0, firing = false;
     let band: string | null = null;
-    const portInfo: Record<string, { amp: number; firing: boolean }> = {};
-    for (const [portId, evs] of ports) {
-      let pAmp = 0, pFiring = false;
-      for (const e of evs) {
-        if (e.tick > tick + 2) break; // sorted: nothing further is live
-        if (e.tick <= tick) index++;
-        const age = tick - e.tick;
-        if (age >= -2 && age <= LIVE_WINDOW) {
-          firing = true; pFiring = true;
-          if (e.amplitude > pAmp) pAmp = e.amplitude;
-          if (e.amplitude > amp) { amp = e.amplitude; band = e.band; }
+    if (ports) {
+      for (const [portId, evs] of ports) {
+        let pAmp = 0, pFiring = false;
+        for (const e of evs) {
+          if (e.tick > tick + 2) break; // sorted: nothing further is live
+          if (e.tick <= tick) index++;
+          const age = tick - e.tick;
+          if (age >= -2 && age <= LIVE_WINDOW) {
+            firing = true; pFiring = true;
+            if (e.amplitude > pAmp) pAmp = e.amplitude;
+            if (e.amplitude > amp) { amp = e.amplitude; band = e.band; }
+          }
         }
+        info[portId] = { amp: pAmp, firing: pFiring };
       }
-      portInfo[portId] = { amp: pAmp, firing: pFiring };
     }
-    return firing || index > 0 ? { amp, band, index, firing, ports: portInfo } : EMPTY_LIVE;
+    return { amp, band, index, firing, info };
+  }
+
+  function liveSample(moduleId: string, tick: number): ModuleLiveSample | null {
+    if (tick < 0) return null;
+    const inPorts = incomingByModule.get(moduleId);
+    const outPorts = outgoingByModule.get(moduleId);
+    if (!inPorts && !outPorts) return null;
+    const inS = samplePorts(inPorts, tick);
+    const outS = samplePorts(outPorts, tick);
+    return {
+      amp: inS.amp, band: inS.band, index: inS.index, firing: inS.firing,
+      ports: inS.info, outPorts: outS.info,
+    };
   }
   let lastUpdateMs = 0;
   let selectedModuleId: string | null = null;
@@ -1386,7 +1407,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
   return {
     update,
     rebuild,
-    setTraffic(t, a) { traffic = t; activity = a; rebuildIncoming(); },
+    setTraffic(t, a) { traffic = t; activity = a; rebuildTrafficIndex(); },
     setCurrentTick(t) { currentTick = t; },
     flashModule(id) {
       const mv = moduleViews.get(id);
