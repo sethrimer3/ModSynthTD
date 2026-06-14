@@ -16,6 +16,10 @@ import { RACK_COLS, MAX_ROWS, shelfCost, checkPlacement } from '../state/economy
 import { hashString } from '../core/rng';
 import { createSoftWireRenderer, SoftWireData } from '../../version2-soft-wire';
 import { TowerStyle } from './tower-style';
+import { createMaskedFillCanvas } from '../render/masked-fill-renderer';
+import plantDesignUrl from '../../../ASSETS/modules/designs/plantDesign.png';
+import mountainDesignUrl from '../../../ASSETS/modules/designs/mountainDesign.png';
+import sunDesignUrl from '../../../ASSETS/modules/designs/sunDesign.png';
 
 // ── Metrics ─────────────────────────────────────────────────────────────────
 
@@ -205,13 +209,13 @@ export function createRackUI(opts: RackUIOpts): RackUI {
   }
 
   function modulePos(inst: ModuleInstance): { x: number; y: number } {
-    return { x: RACK_PAD + inst.gridX * SLOT_PX, y: shelfTop(inst.gridY) + 10 };
+    return { x: RACK_PAD + inst.gridX * SLOT_PX, y: shelfTop(inst.gridY) };
   }
 
   /** Analytic plug layout: inputs left edge, outputs right edge, stacked in usable face area. */
   function plugLocal(def: ModuleTypeDef, spec: PortSpec, index: number, count: number): { x: number; y: number } {
-    const panelW = def.rackSize.w * SLOT_PX - 6;
-    const panelH = moduleHeightPx(def.rackSize.h) - 20;
+    const panelW = def.rackSize.w * SLOT_PX;
+    const panelH = moduleHeightPx(def.rackSize.h);
     if (spec.anchor) {
       return { x: spec.anchor.x * panelW, y: spec.anchor.y * panelH };
     }
@@ -517,7 +521,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     ghost.style.cssText = `
       position:absolute;border:2px dashed ${opts.themeColor};border-radius:8px;
       pointer-events:none;z-index:40;opacity:0;
-      width:${mv.def.rackSize.w * SLOT_PX - 6}px;height:${moduleHeightPx(mv.def.rackSize.h) - 20}px;
+      width:${mv.def.rackSize.w * SLOT_PX}px;height:${moduleHeightPx(mv.def.rackSize.h)}px;
     `;
     root.appendChild(ghost);
     moduleDrag = {
@@ -559,7 +563,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     md.valid = check.fits;
     md.ghost.style.opacity = md.moved ? '1' : '0';
     md.ghost.style.left = `${RACK_PAD + gridX * SLOT_PX}px`;
-    md.ghost.style.top = `${shelfTop(gridY) + 10}px`;
+    md.ghost.style.top = `${shelfTop(gridY)}px`;
     md.ghost.style.borderColor = md.valid ? opts.themeColor : '#ff3344';
     md.mv.rootEl.style.borderColor = md.valid ? opts.themeColor : '#ff3344';
   }
@@ -750,8 +754,8 @@ export function createRackUI(opts: RackUIOpts): RackUI {
   function buildModuleView(inst: ModuleInstance): ModuleView | null {
     const def = getModuleType(inst.typeId);
     if (!def) return null;
-    const panelW = def.rackSize.w * SLOT_PX - 6;
-    const panelH = moduleHeightPx(def.rackSize.h) - 20;
+    const panelW = def.rackSize.w * SLOT_PX;
+    const panelH = moduleHeightPx(def.rackSize.h);
     const portStrip = facePortStripW(panelW);
 
     // ── Background element (z=20): gradient, border, screws, LED, plug wraps ──
@@ -782,6 +786,48 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       pointer-events:none;
     `;
     bgEl.appendChild(led);
+
+    // ── Clock design: animated masked fill in bottom-right corner ─────────────
+    if (def.typeId === 'clock') {
+      const designW = Math.round(panelW * 0.72);
+      const designH = Math.round(panelH * 0.45);
+      const designX = panelW - designW - 2;
+      const designY = panelH - designH - 4;
+
+      const clockDesignCanvas = createMaskedFillCanvas({
+        maskPath: plantDesignUrl,
+        width: designW,
+        height: designH,
+        colors: [
+          { color: '#00c8ff', weight: 0.55 },
+          { color: '#00ff88', weight: 0.35 },
+          { color: '#0044ff', weight: 0.10 },
+        ],
+        seed: 0x1c10c,
+        luminanceMask: true,
+        getColors: () => {
+          const act = activity.get(inst.instanceId) ?? 0;
+          if (act > 0) {
+            return [
+              { color: '#44eeff', weight: 0.45 },
+              { color: '#88ffcc', weight: 0.40 },
+              { color: '#0088ff', weight: 0.15 },
+            ];
+          }
+          return [
+            { color: '#00c8ff', weight: 0.55 },
+            { color: '#00ff88', weight: 0.35 },
+            { color: '#0044ff', weight: 0.10 },
+          ];
+        },
+      });
+      clockDesignCanvas.style.cssText = `
+        position:absolute;left:${designX}px;top:${designY}px;
+        pointer-events:none;opacity:0.55;border-radius:4px;
+        z-index:1;
+      `;
+      bgEl.appendChild(clockDesignCanvas);
+    }
 
     // ── Content overlay (z=34): above cables AND plugs ───────────────────────
     // pointer-events:none on the container; interactive children re-enable it.
@@ -1030,6 +1076,49 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       `;
       caseEl.appendChild(bar);
     }
+
+    // ── Sun design: behind mountain, flush to bottom, natural aspect ratio ────
+    const sunCanvas = createMaskedFillCanvas({
+      maskPath: sunDesignUrl,
+      width: caseW,
+      height: caseW, // placeholder — resized to natural aspect ratio on first frame
+      seed: 0x50171,
+      luminanceMask: true,
+      maintainAspectRatio: true,
+      detail: 2.5,
+      colors: [
+        { color: '#ff55aa', weight: 0.40 },
+        { color: '#ff2277', weight: 0.35 },
+        { color: '#ffaacc', weight: 0.25 },
+      ],
+    });
+    sunCanvas.style.cssText = `
+      position:absolute;left:0;bottom:0;
+      pointer-events:none;opacity:0.55;z-index:1;border-radius:0 0 6px 6px;
+    `;
+    caseEl.appendChild(sunCanvas);
+
+    // ── Mountain design: full-width, flush to bottom, natural aspect ratio ────
+    const mountainCanvas = createMaskedFillCanvas({
+      maskPath: mountainDesignUrl,
+      width: caseW,
+      height: caseW, // placeholder — resized to natural aspect ratio on first frame
+      seed: 0x4d0a,
+      luminanceMask: true,
+      maintainAspectRatio: true,
+      detail: 3.5,
+      colors: [
+        { color: '#c83000', weight: 0.40 },
+        { color: '#ff5500', weight: 0.30 },
+        { color: '#ff8833', weight: 0.20 },
+        { color: '#ffbb66', weight: 0.10 },
+      ],
+    });
+    mountainCanvas.style.cssText = `
+      position:absolute;left:0;bottom:0;
+      pointer-events:none;opacity:0.65;z-index:2;border-radius:0 0 6px 6px;
+    `;
+    caseEl.appendChild(mountainCanvas);
 
     shelvesEl.appendChild(caseEl);
 
