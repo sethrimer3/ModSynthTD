@@ -1385,6 +1385,24 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       const live = liveSample(mv.inst.instanceId, currentTick);
       mv.visual?.update?.(nowMs, act, currentTick, live);
 
+      // Light each jack as real signal flows through it (skip during patching).
+      if (!drag && live) {
+        for (const pv of mv.plugs) {
+          const info = pv.spec.direction === 'in' ? live.ports[pv.spec.portId] : live.outPorts[pv.spec.portId];
+          const col = DOMAIN_COLORS[pv.spec.domain];
+          if (info?.firing) {
+            const blur = 8 + Math.min(1, info.amp) * 6;
+            pv.el.style.boxShadow = `0 0 ${blur.toFixed(0)}px 2px ${col}, ${pv.el.dataset.shadow ?? ''}`;
+            pv.el.style.background = `${col}66`;
+            pv.el.dataset.lit = '1';
+          } else if (pv.el.dataset.lit === '1') {
+            pv.el.style.boxShadow = pv.el.dataset.shadow ?? '';
+            pv.el.style.background = `${col}22`;
+            pv.el.dataset.lit = '';
+          }
+        }
+      }
+
       // Output tower muzzle-flash + charge ring driven by real arriving signal.
       if (mv.outputFx) {
         const firing = live?.firing ?? false;
