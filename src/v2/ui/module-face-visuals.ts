@@ -43,10 +43,10 @@ export interface ModuleLiveSample {
   index: number;
   /** True if at least one incoming event is within the live window now. */
   firing: boolean;
-  /** Per-input-port peak amplitude + firing flag. */
-  ports: Record<string, { amp: number; firing: boolean }>;
-  /** Per-output-port peak amplitude + firing flag (real routing/branch state). */
-  outPorts: Record<string, { amp: number; firing: boolean }>;
+  /** Per-input-port peak amplitude + firing flag + dominant band. */
+  ports: Record<string, { amp: number; firing: boolean; band: string | null }>;
+  /** Per-output-port state (real routing/branch + retuned band). */
+  outPorts: Record<string, { amp: number; firing: boolean; band: string | null }>;
 }
 
 export interface ModuleFaceVisualHandle {
@@ -858,6 +858,11 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
         svg.appendChild(d);
         dots.push(d);
       }
+      // Accept (green) / reject (red) verdict lamps for the live roll.
+      const accLed = led(w * 0.3, h * 0.86, 2.2, '#44ff88');
+      const rejLed = led(w * 0.7, h * 0.86, 2.2, '#ff5544');
+      label(w * 0.3, h * 0.86 + 5, 'Y', '#2f6b46', 4);
+      label(w * 0.7, h * 0.86 + 5, 'N', '#7a3a3a', 4);
       const apply = () => {
         const chance = R.n('chance', 0.75);
         fill.setAttribute('width', String(barW * clamp01(chance)));
@@ -871,7 +876,19 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
       };
       refreshers.push(apply);
       apply();
-      updaters.push(({ act }) => { setGlow(fill, color, act > 0, 4); });
+      updaters.push(({ act, live }) => {
+        // A live roll is observable: input firing but no output → rejected.
+        const inF = live?.ports['in']?.firing ?? false;
+        const outF = live?.outPorts['out']?.firing ?? false;
+        const accepted = inF && outF;
+        const rejected = inF && !outF;
+        accLed.setAttribute('fill-opacity', accepted ? '1' : '0.18');
+        rejLed.setAttribute('fill-opacity', rejected ? '1' : '0.18');
+        setGlow(accLed, '#44ff88', accepted, 5);
+        setGlow(rejLed, '#ff5544', rejected, 5);
+        fill.setAttribute('fill', accepted ? '#44ff88' : color);
+        setGlow(fill, accepted ? '#44ff88' : color, act > 0 || inF, 4);
+      });
       break;
     }
 
@@ -901,7 +918,15 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
       };
       refreshers.push(apply);
       apply();
-      updaters.push(({ nowMs, act, tick, reduced }) => {
+      updaters.push(({ nowMs, act, tick, reduced, live }) => {
+        // Real retuned output band takes priority when signal is flowing.
+        const outP = live?.outPorts['out'];
+        if (outP?.firing && outP.band) {
+          const bi = bands.indexOf(outP.band);
+          ringEls.forEach((r, i) => r.setAttribute('stroke-opacity', i === bi ? '1' : '0.2'));
+          if (bi >= 0) setGlow(ringEls[bi], bandColor(bands[bi]), true, 5);
+          return;
+        }
         const mode = R.s('band', 'low');
         if (mode === 'cycle') {
           cycleIdx = reduced ? (tick >= 0 ? Math.floor(tick / 48) % 3 : 0) : Math.floor(nowMs / 400) % 3;
@@ -912,6 +937,10 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
           });
         } else {
           const sel = bands.indexOf(mode);
+          ringEls.forEach((r, i) => {
+            r.setAttribute('stroke-opacity', i === sel ? '1' : '0.25');
+            if (i !== sel) setGlow(r, bandColor(bands[i]), false);
+          });
           if (sel >= 0) setGlow(ringEls[sel], bandColor(mode), act > 0, 4);
         }
       });

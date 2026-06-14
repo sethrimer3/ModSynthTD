@@ -197,14 +197,19 @@ export function createRackUI(opts: RackUIOpts): RackUI {
   /** Incoming / outgoing events per module, grouped by port, sorted by tick. */
   let incomingByModule = new Map<string, Map<string, SignalEvent[]>>();
   let outgoingByModule = new Map<string, Map<string, SignalEvent[]>>();
+  /** Per-cable event ticks (ascending) for the starved-cable check. */
+  let cableTicks = new Map<string, number[]>();
   let currentTick = -1;
 
   /** Live window (ticks) within which an event counts as "firing now". */
   const LIVE_WINDOW = 14;
+  /** A cable with no traffic within this many ticks of now reads as "starved". */
+  const STARVE_TICKS = 192;
 
   function rebuildTrafficIndex(): void {
     incomingByModule = new Map();
     outgoingByModule = new Map();
+    cableTicks = new Map();
     const add = (map: Map<string, Map<string, SignalEvent[]>>, moduleId: string, portId: string, events: SignalEvent[]) => {
       let ports = map.get(moduleId);
       if (!ports) { ports = new Map(); map.set(moduleId, ports); }
@@ -217,6 +222,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       if (!events || events.length === 0) continue;
       add(incomingByModule, c.toModuleId, c.toPortId, events);
       add(outgoingByModule, c.fromModuleId, c.fromPortId, events);
+      cableTicks.set(c.cableId, events.map(e => e.tick).sort((a, b) => a - b));
     }
     for (const map of [incomingByModule, outgoingByModule]) {
       for (const ports of map.values()) {
@@ -225,29 +231,40 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     }
   }
 
+  type PortInfo = { amp: number; firing: boolean; band: string | null };
   function samplePorts(ports: Map<string, SignalEvent[]> | undefined, tick: number): {
-    amp: number; band: string | null; index: number; firing: boolean; info: Record<string, { amp: number; firing: boolean }>;
+    amp: number; band: string | null; index: number; firing: boolean; info: Record<string, PortInfo>;
   } {
-    const info: Record<string, { amp: number; firing: boolean }> = {};
+    const info: Record<string, PortInfo> = {};
     let amp = 0, index = 0, firing = false;
     let band: string | null = null;
     if (ports) {
       for (const [portId, evs] of ports) {
-        let pAmp = 0, pFiring = false;
+        let pAmp = 0, pFiring = false, pBand: string | null = null;
         for (const e of evs) {
           if (e.tick > tick + 2) break; // sorted: nothing further is live
           if (e.tick <= tick) index++;
           const age = tick - e.tick;
           if (age >= -2 && age <= LIVE_WINDOW) {
             firing = true; pFiring = true;
-            if (e.amplitude > pAmp) pAmp = e.amplitude;
+            if (e.amplitude > pAmp) { pAmp = e.amplitude; pBand = e.band; }
             if (e.amplitude > amp) { amp = e.amplitude; band = e.band; }
           }
         }
-        info[portId] = { amp: pAmp, firing: pFiring };
+        info[portId] = { amp: pAmp, firing: pFiring, band: pBand };
       }
     }
     return { amp, band, index, firing, info };
+  }
+
+  /** Most recent event tick on a cable at or before `tick` (−∞ if none). */
+  function cableRecentTick(cableId: string, tick: number): number {
+    const ticks = cableTicks.get(cableId);
+    if (!ticks) return -Infinity;
+    for (let k = ticks.length - 1; k >= 0; k--) {
+      if (ticks[k] <= tick + 2) return ticks[k];
+    }
+    return -Infinity;
   }
 
   function liveSample(moduleId: string, tick: number): ModuleLiveSample | null {
@@ -842,10 +859,28 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     `;
     bgEl.title = `${def.name} — ${def.tooltip}`;
 
-    // Faceplate screws at panel corners.
+    // Faint brushed-metal wear overlay (z=1, below visuals/controls).
+    const wear = document.createElement('div');
+    const wseed = hashString(inst.instanceId);
+    wear.style.cssText = `
+      position:absolute;inset:0;border-radius:8px;pointer-events:none;z-index:1;opacity:0.5;
+      background:
+        radial-gradient(120% 80% at ${30 + (wseed % 40)}% -10%, rgba(120,160,255,0.06), transparent 60%),
+        radial-gradient(100% 70% at 50% 115%, rgba(0,0,0,0.35), transparent 55%),
+        repeating-linear-gradient(${88 + (wseed % 5)}deg, rgba(255,255,255,0.012) 0 1px, transparent 1px 3px);
+    `;
+    bgEl.appendChild(wear);
+
+    // Faceplate screws at panel corners — beveled with a subtle slot.
+    let screwI = 0;
     for (const [sx, sy] of [[4, 4], [panelW - 9, 4], [4, panelH - 14], [panelW - 9, panelH - 14]] as Array<[number, number]>) {
       const screw = document.createElement('div');
-      screw.style.cssText = `position:absolute;left:${sx}px;top:${sy}px;width:5px;height:5px;border-radius:50%;background:#1c2a45;border:1px solid #2c4068;pointer-events:none;`;
+      const slot = (screwI++ % 2) ? '90deg' : '38deg';
+      screw.style.cssText = `position:absolute;left:${sx}px;top:${sy}px;width:5px;height:5px;border-radius:50%;
+        background:radial-gradient(circle at 35% 30%, #3a5180, #16223a 70%);
+        border:1px solid #2c4068;box-shadow:inset 0 0 1px rgba(0,0,0,0.6),0 0.5px 0 rgba(120,160,255,0.12);
+        background-image:linear-gradient(${slot}, transparent 40%, rgba(0,0,0,0.45) 40% 60%, transparent 60%),radial-gradient(circle at 35% 30%, #3a5180, #16223a 70%);
+        pointer-events:none;`;
       bgEl.appendChild(screw);
     }
 
@@ -1309,6 +1344,11 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       // Mirror node polyline onto the invisible hit path (cheap string reuse).
       const pts = view.wire.polyline.getAttribute('points');
       if (pts) view.hitPath.setAttribute('points', pts);
+      // Dim cables whose source has fallen silent (only when not highlighted).
+      if (view.highlight === 'none') {
+        const starved = currentTick >= 0 && (currentTick - cableRecentTick(view.cable.cableId, currentTick)) > STARVE_TICKS;
+        view.wire.polyline.style.opacity = starved ? '0.32' : '1';
+      }
     }
 
     for (let i = slurping.length - 1; i >= 0; i--) {
