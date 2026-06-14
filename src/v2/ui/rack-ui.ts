@@ -924,6 +924,17 @@ export function createRackUI(opts: RackUIOpts): RackUI {
         pointer-events:none;
       `;
       wrapEl.appendChild(plugEl);
+      // Tiny jack label sitting just inside the faceplate next to the plug.
+      const jackLabel = document.createElement('span');
+      jackLabel.textContent = spec.label;
+      const inner = spec.direction === 'in' ? 'left:19px;text-align:left;' : 'right:19px;text-align:right;';
+      jackLabel.style.cssText = `
+        position:absolute;top:50%;transform:translateY(-50%);${inner}
+        font-size:6px;font-weight:800;letter-spacing:0.04em;line-height:1;
+        color:${color};opacity:0.55;text-shadow:0 0 3px ${color}66;
+        pointer-events:none;white-space:nowrap;${FF}
+      `;
+      wrapEl.appendChild(jackLabel);
       wrapEl.title = `${spec.label} — ${spec.help}`;
       root.appendChild(wrapEl);
       const pv: PlugView = { moduleId: inst.instanceId, spec, el: plugEl, wrapEl, cx: 0, cy: 0 };

@@ -379,10 +379,12 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
       const lampBot = led(mx, h - 6, 1.6, '#44aaff');
       const dot = el('circle', { cx: mx, cy: 6, r: 2, fill: '#ffffff', opacity: 0 });
       svg.appendChild(dot);
-      updaters.push(({ nowMs, act, reduced }) => {
-        lampTop.setAttribute('fill-opacity', act > 0 ? '0.9' : '0.25');
-        lampBot.setAttribute('fill-opacity', act > 0 ? '0.9' : '0.25');
-        if (!reduced && act > 0) {
+      updaters.push(({ nowMs, act, reduced, live }) => {
+        const inFiring = live ? (live.ports['in']?.firing ?? false) : act > 0;
+        const outFiring = live ? (live.outPorts['out']?.firing ?? false) : act > 0;
+        lampTop.setAttribute('fill-opacity', inFiring ? '0.9' : '0.25');
+        lampBot.setAttribute('fill-opacity', outFiring ? '0.9' : '0.25');
+        if (!reduced && (act > 0 || inFiring || outFiring)) {
           const t = (nowMs / 700) % 1;
           dot.setAttribute('cy', String(6 + t * (h - 12)));
           dot.setAttribute('opacity', '1');
@@ -582,13 +584,21 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
       };
       refreshers.push(apply);
       apply();
-      updaters.push(({ nowMs, act, reduced }) => {
-        if (reduced || act <= 0) return;
+      let rippleStart = -1, wasFiring = false;
+      updaters.push(({ nowMs, act, reduced, live }) => {
+        if (reduced) { taps.forEach(c => setGlow(c, color, false)); return; }
         const repeats = Math.round(R.n('repeats', 1));
-        const phase = (nowMs / 500) % 1;
-        const head = phase * (repeats + 1);
+        // Restart the ripple the instant a real event arrives; else free-run.
+        const firing = live?.firing ?? false;
+        if (firing && !wasFiring) rippleStart = nowMs;
+        wasFiring = firing;
+        if (rippleStart < 0 && act > 0) rippleStart = nowMs;
+        if (rippleStart < 0) { taps.forEach(c => setGlow(c, color, false)); return; }
+        const perTapMs = 130;
+        const head = ((nowMs - rippleStart) / perTapMs);
+        if (head > repeats + 1.5) { if (act <= 0 && !firing) { taps.forEach(c => setGlow(c, color, false)); return; } }
         taps.forEach((c, i) => {
-          const near = Math.abs(i - head) < 0.5 && i <= repeats;
+          const near = Math.abs(i - (head % (repeats + 1.5))) < 0.5 && i <= repeats;
           setGlow(c, color, near, 5);
         });
       });
@@ -614,7 +624,11 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
       };
       refreshers.push(apply);
       apply();
-      updaters.push(({ act }) => { setGlow(shifted, color, act > 0, 4); });
+      updaters.push(({ act, live }) => {
+        const on = act > 0 || (live?.firing ?? false);
+        setGlow(shifted, color, on, 4);
+        shifted.setAttribute('stroke-opacity', on ? '1' : '0.8');
+      });
       break;
     }
 
@@ -726,10 +740,15 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
       };
       refreshers.push(apply);
       apply();
-      updaters.push(({ nowMs, act, reduced }) => {
-        if (reduced || act <= 0) return;
+      updaters.push(({ nowMs, act, reduced, live }) => {
+        if (reduced) { dots.forEach(d => setGlow(d, color, false)); return; }
+        const outFiring = live?.outPorts['out']?.firing ?? false;
+        if (act <= 0 && !outFiring) { dots.forEach(d => setGlow(d, color, false)); return; }
         const head = Math.floor((nowMs / 250)) % STEPS;
-        dots.forEach((d, i) => setGlow(d, color, i === head, 4));
+        const factor = R.s('factor', '/2');
+        const n = factor === '/4' ? 4 : factor === '/3' ? 3 : factor === 'x2' ? 1 : 2;
+        // Emphasize the kept (bright) ticks when signal actually passes.
+        dots.forEach((d, i) => setGlow(d, color, i === head && (factor === 'x2' || i % n === 0), 4));
       });
       break;
     }
@@ -809,10 +828,11 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
       };
       refreshers.push(apply);
       apply();
-      updaters.push(({ tick, act, nowMs, reduced }) => {
+      updaters.push(({ tick, act, nowMs, reduced, live }) => {
         if (!nodes.length) return;
         let step = -1;
-        if (act > 0) step = reduced ? (tick >= 0 ? tick % nodes.length : 0) : Math.floor(nowMs / 220) % nodes.length;
+        if (live && live.firing) step = ((live.index - 1) % nodes.length + nodes.length) % nodes.length;
+        else if (act > 0) step = reduced ? (tick >= 0 ? tick % nodes.length : 0) : Math.floor(nowMs / 220) % nodes.length;
         nodes.forEach((n, i) => {
           const on = i === step;
           n.setAttribute('r', on ? '3' : '2');

@@ -245,6 +245,8 @@ interface Projectile {
   attackTicks: number;
   releaseTicks: number;
   isEcho: boolean;
+  /** True if Target Tuner retuned this projectile to a live enemy at fire time. */
+  autoTuned?: boolean;
   dead: boolean;
 }
 export type TowersByOutputId = Map<string, TowerState>;
@@ -390,8 +392,17 @@ export class Combat {
       const tower = this.towers.get(queued.outputId);
       if (!tower) continue;
       if (ev.tick < tick - QUARTER_TICKS) continue; // stale after suspension
+      const baseHz = ev.hertz ?? pitchOffsetToHz(ev.band, ev.pitchOffset);
+      const tuneTag = ev.tags.find(t => t.startsWith('targetTune:'));
       for (const rel of ev.directions) {
         const [dx, dy] = orientedDir(rel, tower.orientation);
+        let hz = baseHz;
+        let autoTuned = false;
+        if (tuneTag) {
+          const mode = tuneTag.slice('targetTune:'.length);
+          const target = this.pickTuneTarget(tower.tileX, tower.tileY, dx, dy, mode);
+          if (target) { hz = target.hz; autoTuned = true; }
+        }
         this.projectiles.push({
           spawnTick: ev.tick,
           originX: tower.tileX,
@@ -400,11 +411,12 @@ export class Combat {
           waveform: ev.waveform,
           amplitude: ev.amplitude,
           band: ev.band,
-          hz: pitchOffsetToHz(ev.band, ev.pitchOffset),
+          hz,
           color: BAND_COLORS[ev.band],
           attackTicks: ev.attackTicks,
           releaseTicks: ev.releaseTicks,
           isEcho: ev.tags.includes('echo'),
+          autoTuned,
           dead: false,
         });
         this.stats.shotsFired++;
@@ -419,6 +431,29 @@ export class Combat {
     }
 
     return out;
+  }
+
+  /**
+   * Target Tuner: choose a live enemy to retune a projectile toward, at fire
+   * time. `line` prefers enemies on the firing ray, then falls back to nearest;
+   * `nearest` just takes the closest within a small radius.
+   */
+  private pickTuneTarget(ox: number, oy: number, dx: number, dy: number, mode: string): EnemyRt | null {
+    const RADIUS = 7;
+    let lineBest: EnemyRt | null = null, lineDist = Infinity;
+    let nearBest: EnemyRt | null = null, nearDist = Infinity;
+    for (const e of this.enemies) {
+      if (!e.alive || !e.spawned) continue;
+      const [etx, ety] = e.logicalTile();
+      const rx = etx - ox, ry = ety - oy;
+      const dist = Math.abs(rx) + Math.abs(ry);
+      if (dist > 0 && dist <= RADIUS && dist < nearDist) { nearDist = dist; nearBest = e; }
+      // On the firing ray: collinear with (dx,dy) and ahead of the tower.
+      const onLine = dx !== 0 ? (ry === 0 && Math.sign(rx) === dx) : (rx === 0 && Math.sign(ry) === dy);
+      if (onLine && dist < lineDist) { lineDist = dist; lineBest = e; }
+    }
+    if (mode === 'nearest') return nearBest;
+    return lineBest ?? nearBest;
   }
 
   /** Per-frame: animation, collision, culling. tickFloat = fractional tick. */
@@ -475,7 +510,7 @@ export class Combat {
           this.floaters.push({
             x: etx + 0.5 + (Math.random() * 0.5 - 0.25),
             y: ety,
-            text: `×${mult.toFixed(1)}`,
+            text: p.autoTuned ? `AUTO ×${mult.toFixed(1)}` : `×${mult.toFixed(1)}`,
             color: multColor,
             t: 0.9,
             scale: 0.85 + Math.min(1.5, p.amplitude) * 0.25,

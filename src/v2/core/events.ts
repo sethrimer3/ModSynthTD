@@ -8,6 +8,7 @@
  */
 
 import { MAX_AMPLITUDE, MIN_AMPLITUDE } from './limits';
+import { applySemitoneOffset, A4_HZ, hzToMidiFloat } from './pitch';
 
 export type FrequencyBand = 'low' | 'mid' | 'high';
 export type Waveform = 'pulse' | 'sine' | 'square' | 'saw' | 'triangle';
@@ -33,8 +34,12 @@ export interface SignalEvent {
   /** Attack/release shaping in ticks (set by envelope module). */
   attackTicks: number;
   releaseTicks: number;
-  /** Semitone offset for audio voicing (sequencer/arp). */
+  /** Semitone offset for audio voicing (sequencer/arp/pitch modules). Cumulative. */
   pitchOffset: number;
+  /** Unshifted base frequency in Hz (stamped by the oscillator). */
+  baseHz?: number;
+  /** Final voiced frequency = baseHz × 2^(pitchOffset/12). Combat projectile pitch. */
+  hertz?: number;
   /** Fire directions relative to tower orientation. */
   directions: SignalDirection[];
   /** Module instance ids traversed, in order (route provenance). */
@@ -54,6 +59,43 @@ export function cloneEvent(e: SignalEvent): SignalEvent {
     route: e.route.slice(),
     tags: e.tags.slice(),
   };
+}
+
+// ── Hertz model ───────────────────────────────────────────────────────────
+// baseHz is the unshifted anchor; pitchOffset is the cumulative semitone shift;
+// hertz is the final voiced frequency. Pitch modules mutate pitchOffset then
+// recompute hertz from baseHz so the two never drift apart.
+
+/** The anchor frequency: explicit baseHz, else current hertz, else A4. */
+export function eventBaseHz(e: SignalEvent): number {
+  if (Number.isFinite(e.baseHz) && (e.baseHz as number) > 0) return e.baseHz as number;
+  if (Number.isFinite(e.hertz) && (e.hertz as number) > 0) return e.hertz as number;
+  return A4_HZ;
+}
+
+/** Final voiced frequency, computing from base + offset if not yet stamped. */
+export function eventHertz(e: SignalEvent): number {
+  if (Number.isFinite(e.hertz) && (e.hertz as number) > 0) return e.hertz as number;
+  return applySemitoneOffset(eventBaseHz(e), e.pitchOffset);
+}
+
+/** Recompute and store hertz from baseHz + pitchOffset. Returns the event. */
+export function recomputeHertz(e: SignalEvent): SignalEvent {
+  e.hertz = applySemitoneOffset(eventBaseHz(e), e.pitchOffset);
+  return e;
+}
+
+/** Shift an event by N semitones: bump pitchOffset, recompute hertz. */
+export function retuneEventBySemitones(e: SignalEvent, semitones: number): SignalEvent {
+  e.pitchOffset += semitones;
+  return recomputeHertz(e);
+}
+
+/** Retune an event so its hertz lands on (or fraction toward) a target Hz. */
+export function retuneEventTowardHz(e: SignalEvent, targetHz: number, fraction = 1): SignalEvent {
+  if (!Number.isFinite(targetHz) || targetHz <= 0) return e;
+  const delta = (hzToMidiFloat(targetHz) - hzToMidiFloat(eventHertz(e))) * fraction;
+  return retuneEventBySemitones(e, delta);
 }
 
 export function clampAmplitude(a: number): number {

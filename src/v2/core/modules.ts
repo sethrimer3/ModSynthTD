@@ -10,6 +10,7 @@
 import {
   SignalEvent, FrequencyBand, Waveform, SignalDirection,
   cloneEvent, clampAmplitude, compareEvents,
+  recomputeHertz, retuneEventBySemitones, retuneEventTowardHz, eventHertz,
 } from './events';
 import { PortSpec, makeInput, makeOutput } from './ports';
 import {
@@ -18,6 +19,7 @@ import {
 } from './limits';
 import { seededFloat, combineSeeds, hashString } from './rng';
 import { TICKS_PER_MEASURE } from './ticks';
+import { bandToHz, midiPitchToHz, hzToMidiFloat, semitoneDistance } from './pitch';
 
 // ── Settings model ──────────────────────────────────────────────────────────
 
@@ -119,6 +121,11 @@ const BANDS: FrequencyBand[] = ['low', 'mid', 'high'];
 const WAVEFORMS: Waveform[] = ['pulse', 'sine', 'square', 'saw', 'triangle'];
 const DIRECTIONS: SignalDirection[] = ['north', 'south', 'east', 'west'];
 
+/** Named note → MIDI number, for base-note / pitch-center settings. */
+const NOTE_MIDI: Record<string, number> = {
+  A2: 45, A3: 57, C4: 60, E4: 64, A4: 69, C5: 72, E5: 76, A5: 81,
+};
+
 // ── Catalog ─────────────────────────────────────────────────────────────────
 
 const CLOCK: ModuleTypeDef = {
@@ -187,19 +194,26 @@ const OSC: ModuleTypeDef = {
   kind: 'transform',
   inputs: [makeInput('in', 'either', 'IN', 'Trigger or voice signal to (re)shape.', { anchor: { x: 0, y: 0.72 }, side: 'left' })],
   outputs: [makeOutput('out', 'voice', 'OUT', 'Voiced signal.', { anchor: { x: 1, y: 0.72 }, side: 'right' })],
-  defaultSettings: { waveform: 'pulse', band: 'mid' },
+  defaultSettings: { waveform: 'pulse', band: 'mid', baseNote: 'band' },
   settingsSpec: [
     { key: 'waveform', label: 'WAVE', type: 'enum', options: ['pulse', 'sine', 'square', 'saw', 'triangle'], liveSafe: true },
     { key: 'band', label: 'BAND', type: 'enum', options: ['low', 'mid', 'high'], optionLabels: ['LO', 'MI', 'HI'], liveSafe: true },
+    { key: 'baseNote', label: 'TUNE', type: 'enum', options: ['band', 'A2', 'A3', 'C4', 'A4', 'C5', 'A5'], optionLabels: ['BAND', 'A2', 'A3', 'C4', 'A4', 'C5', 'A5'], liveSafe: true },
   ],
   process: (ctx, inputs, settings) => {
     const wf = str(settings, 'waveform', 'pulse', WAVEFORMS as unknown as string[]) as Waveform;
     const band = str(settings, 'band', 'mid', BANDS as unknown as string[]) as FrequencyBand;
+    const baseNote = str(settings, 'baseNote', 'band', ['band', 'A2', 'A3', 'C4', 'A4', 'C5', 'A5']);
+    // Default ('band') anchors to the band's resonance Hz, preserving combat
+    // matching for authored waves; explicit notes pin an absolute base Hz.
+    const baseHz = baseNote === 'band' ? bandToHz(band) : midiPitchToHz(NOTE_MIDI[baseNote] ?? 69);
     const out = (inputs['in'] ?? []).map(e => {
       const c = passRoute(e, ctx.moduleId);
       c.waveform = wf;
       c.band = band;
       c.hasVoice = true;
+      c.baseHz = baseHz;
+      recomputeHertz(c);
       return c;
     });
     return { out: sortEvents(out) };
@@ -601,14 +615,18 @@ const SEQUENCER: ModuleTypeDef = {
   cost: 60,
   isStarter: false,
   unlockAfterWorld: 'w160',
-  tooltip: '8-step gate + pitch sequence. Each incoming event advances one step; off steps are muted.',
+  tooltip: 'Advances one pitch step per incoming event across an 8-step pattern; off steps are muted. Best for matching repeated MIDI melodies. Updates projectile Hz.',
   kind: 'transform',
   inputs: [makeInput('in', 'either', 'IN', 'Stream to sequence.', { anchor: { x: 0, y: 0.80 }, side: 'left' })],
   outputs: [makeOutput('out', 'either', 'OUT', 'Sequenced stream.', { anchor: { x: 1, y: 0.80 }, side: 'right' })],
-  defaultSettings: { gates: '11111111', pitches: '0,0,7,0,12,0,7,3' },
+  defaultSettings: { gates: '11111111', pitches: '0,2,4,5,7,9,11,12' },
   settingsSpec: [
     { key: 'gates', label: 'STEPS', type: 'enum', options: ['11111111', '10101010', '11011010', '10110110', '11101110'], optionLabels: ['ALL', 'SKIP', 'CLAVE', 'BOSSA', 'TRES'], liveSafe: true },
-    { key: 'pitches', label: 'PITCH', type: 'enum', options: ['0,0,0,0,0,0,0,0', '0,0,7,0,12,0,7,3', '0,4,7,12,0,4,7,12', '0,12,0,12,7,19,7,19', '0,3,7,10,12,10,7,3'], optionLabels: ['FLAT', 'ARP1', 'ARP2', 'OCT', 'ARP3'], liveSafe: true },
+    {
+      key: 'pitches', label: 'PITCH', type: 'enum',
+      options: ['0,0,0,0,0,0,0,0', '0,2,4,5,7,9,11,12', '0,4,7,12,7,4,0,-5', '0,3,7,12,7,3,0,-5', '0,12,0,12,-12,0,12,0', '0,-12,0,-12,0,-7,0,-12'],
+      optionLabels: ['FLAT', 'UP', 'TRIAD', 'MINOR', 'OCT', 'BASS'], liveSafe: true,
+    },
   ],
   process: (ctx, inputs, settings) => {
     const gates = str(settings, 'gates', '11111111');
@@ -623,6 +641,7 @@ const SEQUENCER: ModuleTypeDef = {
       if (gates[step] !== '1') return;
       const c = passRoute(e, ctx.moduleId);
       c.pitchOffset = Math.max(-MAX_PITCH_OFFSET, Math.min(MAX_PITCH_OFFSET, c.pitchOffset + (pitches[step % pitches.length] ?? 0)));
+      recomputeHertz(c);
       out.push(c);
     });
     return { out };
@@ -638,13 +657,17 @@ const ARP: ModuleTypeDef = {
   cost: 50,
   isStarter: false,
   unlockAfterWorld: 'w160',
-  tooltip: 'Cycles a pitch pattern across incoming voices — broken chords in time.',
+  tooltip: 'Cycles a pitch pattern across incoming voices — broken chords in time. Best for chord waves or dense note streams. Updates projectile Hz.',
   kind: 'transform',
   inputs: [makeInput('in', 'voice', 'IN', 'Voiced stream to arpeggiate.', { anchor: { x: 0, y: 0.72 }, side: 'left' })],
   outputs: [makeOutput('out', 'voice', 'OUT', 'Arpeggiated stream.', { anchor: { x: 1, y: 0.72 }, side: 'right' })],
   defaultSettings: { pattern: '0,4,7,12' },
   settingsSpec: [
-    { key: 'pattern', label: 'CHORD', type: 'enum', options: ['0,4,7,12', '0,3,7,12', '0,5,7,12', '12,7,4,0', '0,7,12,19'], liveSafe: true },
+    {
+      key: 'pattern', label: 'CHORD', type: 'enum',
+      options: ['0,4,7,12', '0,3,7,12', '0,7,12,19', '12,7,4,0', '-12,0,12,24'],
+      optionLabels: ['MAJ', 'MIN', '5TH', 'DESC', 'WIDE'], liveSafe: true,
+    },
   ],
   process: (ctx, inputs, settings) => {
     const pattern = str(settings, 'pattern', '0,4,7,12').split(',').map(p => {
@@ -655,6 +678,7 @@ const ARP: ModuleTypeDef = {
     const out = events.map((e, idx) => {
       const c = passRoute(e, ctx.moduleId);
       c.pitchOffset = Math.max(-MAX_PITCH_OFFSET, Math.min(MAX_PITCH_OFFSET, c.pitchOffset + pattern[idx % pattern.length]));
+      recomputeHertz(c);
       return c;
     });
     return { out };
@@ -720,12 +744,283 @@ const RESONATOR: ModuleTypeDef = {
   },
 };
 
+/** Clamp an event's cumulative pitchOffset to safe bounds and resync hertz. */
+function clampPitch(e: SignalEvent): SignalEvent {
+  e.pitchOffset = Math.max(-MAX_PITCH_OFFSET, Math.min(MAX_PITCH_OFFSET, e.pitchOffset));
+  return recomputeHertz(e);
+}
+
+const PITCH_DIAL: ModuleTypeDef = {
+  typeId: 'pitchDial',
+  name: 'Pitch Dial',
+  shortName: 'TUNE',
+  color: '#7fd4ff',
+  rackSize: { w: 2, h: 2 },
+  cost: 18,
+  isStarter: false,
+  unlockAfterWorld: 'w40',
+  tooltip: 'Manual fine pitch: shifts every voice by a fixed number of semitones and retunes its projectile Hz.',
+  kind: 'transform',
+  inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to tune.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
+  outputs: [makeOutput('out', 'voice', 'OUT', 'Tuned signal.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
+  defaultSettings: { semitones: 0 },
+  settingsSpec: [
+    {
+      key: 'semitones', label: 'SEMI', type: 'enum',
+      options: [-12, -7, -5, -3, -1, 0, 1, 3, 5, 7, 12],
+      optionLabels: ['-12', '-7', '-5', '-3', '-1', '0', '+1', '+3', '+5', '+7', '+12'], liveSafe: true,
+    },
+  ],
+  process: (ctx, inputs, settings) => {
+    const semis = num(settings, 'semitones', 0, -MAX_PITCH_OFFSET, MAX_PITCH_OFFSET);
+    const out = (inputs['in'] ?? []).map(e => clampPitch(retuneEventBySemitones(passRoute(e, ctx.moduleId), semis)));
+    return { out: sortEvents(out) };
+  },
+};
+
+const OCTAVE_SWITCH: ModuleTypeDef = {
+  typeId: 'octaveSwitch',
+  name: 'Octave Switch',
+  shortName: 'OCT',
+  color: '#5fb0ff',
+  rackSize: { w: 2, h: 2 },
+  cost: 22,
+  isStarter: false,
+  unlockAfterWorld: 'w60',
+  tooltip: 'Coarse register correction: moves every voice up or down whole octaves to land in the right range.',
+  kind: 'transform',
+  inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to shift.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
+  outputs: [makeOutput('out', 'voice', 'OUT', 'Shifted signal.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
+  defaultSettings: { octave: 0 },
+  settingsSpec: [
+    { key: 'octave', label: 'OCT', type: 'enum', options: [-2, -1, 0, 1, 2], optionLabels: ['-2', '-1', '0', '+1', '+2'], liveSafe: true },
+  ],
+  process: (ctx, inputs, settings) => {
+    const oct = num(settings, 'octave', 0, -2, 2);
+    const out = (inputs['in'] ?? []).map(e => clampPitch(retuneEventBySemitones(passRoute(e, ctx.moduleId), oct * 12)));
+    return { out: sortEvents(out) };
+  },
+};
+
+const HARMONIZER_INTERVALS: Record<string, number[]> = {
+  OCT: [0, 12], POWER: [0, 7], MAJ: [0, 4, 7], MIN: [0, 3, 7], SPREAD: [-12, 0, 12], CLUSTER: [-2, 0, 2],
+};
+
+const HARMONIZER: ModuleTypeDef = {
+  typeId: 'harmonizer',
+  name: 'Harmonizer',
+  shortName: 'HARM',
+  color: '#b07cff',
+  rackSize: { w: 2, h: 2 },
+  cost: 70,
+  isStarter: false,
+  unlockAfterWorld: 'w120',
+  tooltip: 'Emits several pitch-shifted copies of each voice at once — multiple pitch guesses, weaker per projectile.',
+  kind: 'transform',
+  inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to harmonize.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
+  outputs: [makeOutput('out', 'voice', 'OUT', 'Stacked voices.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
+  defaultSettings: { intervalSet: 'MAJ', balance: true },
+  settingsSpec: [
+    { key: 'intervalSet', label: 'SET', type: 'enum', options: ['OCT', 'POWER', 'MAJ', 'MIN', 'SPREAD', 'CLUSTER'], liveSafe: true },
+    { key: 'balance', label: 'SPLIT', type: 'bool', liveSafe: true },
+  ],
+  process: (ctx, inputs, settings) => {
+    const set = str(settings, 'intervalSet', 'MAJ', Object.keys(HARMONIZER_INTERVALS));
+    const intervals = HARMONIZER_INTERVALS[set] ?? HARMONIZER_INTERVALS.MAJ;
+    const balance = settings['balance'] !== false;
+    const div = balance ? intervals.length : 1;
+    const out: SignalEvent[] = [];
+    for (const e of inputs['in'] ?? []) {
+      intervals.forEach((iv, k) => {
+        const c = passRoute(e, ctx.moduleId);
+        c.id = `${e.id}#${k}`;
+        c.seed = combineSeeds(e.seed, hashString('harm'), k);
+        c.amplitude = clampAmplitude(c.amplitude / div);
+        clampPitch(retuneEventBySemitones(c, iv));
+        out.push(c);
+      });
+    }
+    return { out: sortEvents(out) };
+  },
+};
+
+const PITCH_ROUTER: ModuleTypeDef = {
+  typeId: 'pitchRouter',
+  name: 'Pitch Router',
+  shortName: 'P-ROUTE',
+  color: '#ff7fc4',
+  rackSize: { w: 2, h: 2 },
+  cost: 55,
+  isStarter: false,
+  unlockAfterWorld: 'w140',
+  tooltip: 'Sends each voice to LOW / MID / HIGH by its frequency — build specialized output towers per register.',
+  kind: 'transform',
+  inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to route by pitch.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
+  outputs: [
+    makeOutput('low', 'voice', 'LO', 'Low register.', { anchor: { x: 1, y: 0.35 }, side: 'right' }),
+    makeOutput('mid', 'voice', 'MI', 'Mid register.', { anchor: { x: 1, y: 0.58 }, side: 'right' }),
+    makeOutput('high', 'voice', 'HI', 'High register.', { anchor: { x: 1, y: 0.80 }, side: 'right' }),
+  ],
+  defaultSettings: { mode: 'register' },
+  settingsSpec: [
+    { key: 'mode', label: 'MODE', type: 'enum', options: ['register', 'nearestCrossover', 'noteClass'], optionLabels: ['REG', 'CROSS', 'CLASS'], liveSafe: true },
+  ],
+  process: (ctx, inputs, settings) => {
+    const mode = str(settings, 'mode', 'register', ['register', 'nearestCrossover', 'noteClass']);
+    const connected = ['low', 'mid', 'high'].filter(p => ctx.connectedOutputs.has(p));
+    const result: PortEvents = { low: [], mid: [], high: [] };
+    if (connected.length === 0) return result;
+    for (const e of inputs['in'] ?? []) {
+      const hz = eventHertz(e);
+      let port: string;
+      if (mode === 'register') {
+        port = hz < 311 ? 'low' : hz < 622 ? 'mid' : 'high';
+      } else if (mode === 'nearestCrossover') {
+        const semis = hzToMidiFloat(hz) - 69;
+        port = semis < -6 ? 'low' : semis <= 6 ? 'mid' : 'high';
+      } else {
+        const pc = ((Math.round(hzToMidiFloat(hz)) % 12) + 12) % 12;
+        port = pc < 4 ? 'low' : pc < 8 ? 'mid' : 'high';
+      }
+      if (!connected.includes(port)) port = connected[0];
+      result[port].push(passRoute(e, ctx.moduleId));
+    }
+    for (const p of connected) sortEvents(result[p]);
+    return result;
+  },
+};
+
+const PITCH_FILTER: ModuleTypeDef = {
+  typeId: 'pitchFilter',
+  name: 'Pitch Filter',
+  shortName: 'P-FILT',
+  color: '#ffb060',
+  rackSize: { w: 2, h: 2 },
+  cost: 50,
+  isStarter: false,
+  unlockAfterWorld: 'w140',
+  tooltip: 'Passes voices near a target note; attenuates (soft) or silences (hard) anything outside the pitch window.',
+  kind: 'transform',
+  inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to filter by pitch.', { anchor: { x: 0, y: 0.72 }, side: 'left' })],
+  outputs: [makeOutput('out', 'voice', 'OUT', 'Filtered signal.', { anchor: { x: 1, y: 0.72 }, side: 'right' })],
+  defaultSettings: { center: 69, width: 4, strength: 'soft' },
+  settingsSpec: [
+    { key: 'center', label: 'NOTE', type: 'enum', options: [45, 57, 60, 64, 69, 72, 76, 81], optionLabels: ['A2', 'A3', 'C4', 'E4', 'A4', 'C5', 'E5', 'A5'], liveSafe: true },
+    { key: 'width', label: 'WIDTH', type: 'enum', options: [2, 4, 7, 12], liveSafe: true },
+    { key: 'strength', label: 'SLOPE', type: 'enum', options: ['soft', 'hard'], liveSafe: true },
+  ],
+  process: (ctx, inputs, settings) => {
+    const centerHz = midiPitchToHz(num(settings, 'center', 69, 0, 127));
+    const width = num(settings, 'width', 4, 1, 24);
+    const hard = str(settings, 'strength', 'soft', ['soft', 'hard']) === 'hard';
+    const out: SignalEvent[] = [];
+    for (const e of inputs['in'] ?? []) {
+      const dist = semitoneDistance(eventHertz(e), centerHz);
+      if (dist <= width) {
+        out.push(passRoute(e, ctx.moduleId));
+      } else if (!hard) {
+        const c = passRoute(e, ctx.moduleId);
+        c.amplitude = clampAmplitude(c.amplitude * 0.35);
+        if (c.amplitude >= MIN_AMPLITUDE) out.push(c);
+      }
+    }
+    return { out: sortEvents(out) };
+  },
+};
+
+const PITCH_MEMORY: ModuleTypeDef = {
+  typeId: 'pitchMemory',
+  name: 'Pitch Memory',
+  shortName: 'MEM',
+  color: '#66e0c0',
+  rackSize: { w: 2, h: 2 },
+  cost: 80,
+  isStarter: false,
+  unlockAfterWorld: 'w160',
+  tooltip: 'Retunes voices toward frequencies heard earlier in the same pattern — semi-automatic, deterministic, imperfect.',
+  kind: 'transform',
+  inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to retune from memory.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
+  outputs: [makeOutput('out', 'voice', 'OUT', 'Retuned signal.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
+  defaultSettings: { mode: 'holdLast', strength: 'full' },
+  settingsSpec: [
+    { key: 'mode', label: 'MODE', type: 'enum', options: ['holdLast', 'measureHold', 'nearestRepeat'], optionLabels: ['HOLD', 'MEAS', 'NEAR'], liveSafe: true },
+    { key: 'strength', label: 'AMT', type: 'enum', options: ['full', 'half'], liveSafe: true },
+  ],
+  process: (ctx, inputs, settings) => {
+    const mode = str(settings, 'mode', 'holdLast', ['holdLast', 'measureHold', 'nearestRepeat']);
+    const frac = str(settings, 'strength', 'full', ['full', 'half']) === 'half' ? 0.5 : 1;
+    const events = sortEvents((inputs['in'] ?? []).slice());
+    const out: SignalEvent[] = [];
+    const seen: number[] = [];
+    let prevHz: number | null = null;
+    let measure = -1;
+    let measureRef: number | null = null;
+    for (const e of events) {
+      const c = passRoute(e, ctx.moduleId);
+      const incoming = eventHertz(c);
+      let target: number | null = null;
+      if (mode === 'holdLast') {
+        target = prevHz;
+      } else if (mode === 'measureHold') {
+        const m = Math.floor(c.tick / TICKS_PER_MEASURE);
+        if (m !== measure) { measure = m; measureRef = incoming; }
+        target = measureRef;
+      } else {
+        // nearestRepeat: snap to the closest previously-seen frequency.
+        let best: number | null = null, bestDist = Infinity;
+        for (const h of seen) {
+          const d = semitoneDistance(incoming, h);
+          if (d < bestDist) { bestDist = d; best = h; }
+        }
+        target = best;
+      }
+      if (target !== null) clampPitch(retuneEventTowardHz(c, target, frac));
+      seen.push(incoming);
+      prevHz = incoming;
+      out.push(c);
+    }
+    return { out };
+  },
+};
+
+const TARGET_TUNER: ModuleTypeDef = {
+  typeId: 'targetTuner',
+  name: 'Target Tuner',
+  shortName: 'AUTO',
+  color: '#ff5577',
+  rackSize: { w: 2, h: 2 },
+  cost: 140,
+  isStarter: false,
+  unlockAfterWorld: 'w180',
+  tooltip: 'Late-game auto-tune: tags voices so the output tower retunes each projectile to a live enemy at fire time. Costs amplitude.',
+  kind: 'transform',
+  inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to auto-tune in combat.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
+  outputs: [makeOutput('out', 'voice', 'OUT', 'Tagged signal.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
+  defaultSettings: { mode: 'line' },
+  settingsSpec: [
+    { key: 'mode', label: 'AIM', type: 'enum', options: ['line', 'nearest'], optionLabels: ['LINE', 'NEAR'], liveSafe: true },
+  ],
+  process: (ctx, inputs, settings) => {
+    const mode = str(settings, 'mode', 'line', ['line', 'nearest']);
+    // Pure transform: only tag + apply the amplitude penalty. Combat does the
+    // actual retune at fire time (it needs live enemy positions).
+    const out = (inputs['in'] ?? []).map(e => {
+      const c = passRoute(e, ctx.moduleId);
+      c.amplitude = clampAmplitude(c.amplitude * 0.65);
+      c.tags = [...c.tags.filter(t => !t.startsWith('targetTune')), `targetTune:${mode}`];
+      return c;
+    });
+    return { out: sortEvents(out) };
+  },
+};
+
 // ── Registry ────────────────────────────────────────────────────────────────
 
 export const MODULE_TYPES: ReadonlyArray<ModuleTypeDef> = [
   CLOCK, OSC, OUTPUT,
   CONNECTOR, SPLITTER, MIXER, ROUTER, AMP, DELAY, PHASE,
   FILTER, ENVELOPE, CLOCKDIV, SEQUENCER, ARP, PROBABILITY, RESONATOR,
+  PITCH_DIAL, OCTAVE_SWITCH, HARMONIZER, PITCH_ROUTER, PITCH_FILTER, PITCH_MEMORY, TARGET_TUNER,
 ];
 
 const REGISTRY = new Map<string, ModuleTypeDef>(MODULE_TYPES.map(m => [m.typeId, m]));
@@ -747,6 +1042,9 @@ export function eventMultiplier(def: ModuleTypeDef, settings: ModuleSettings): n
     return str(settings, 'factor', '/2') === 'x2' ? 2 : 1;
   }
   if (def.typeId === 'splitter') return Math.min(3, MAX_FANIN);
+  if (def.typeId === 'harmonizer') {
+    return (HARMONIZER_INTERVALS[str(settings, 'intervalSet', 'MAJ')] ?? HARMONIZER_INTERVALS.MAJ).length;
+  }
   return 1;
 }
 
