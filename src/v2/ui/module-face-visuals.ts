@@ -15,6 +15,7 @@
 import { ModuleInstance } from '../core/graph';
 import { ModuleTypeDef } from '../core/modules';
 import { createMaskedFillCanvas } from '../render/masked-fill-renderer';
+import { formatNoteNameFromMidi } from './pitch';
 import plantDesignUrl from '../../../ASSETS/modules/designs/plantDesign.png';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -943,6 +944,187 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
           });
           if (sel >= 0) setGlow(ringEls[sel], bandColor(mode), act > 0, 4);
         }
+      });
+      break;
+    }
+
+    // ── PITCH DIAL ────────────────────────────────────────────────────────────
+    case 'pitchDial': {
+      const cx = w / 2, cy = h * 0.46;
+      const rr = Math.min(w * 0.32, h * 0.34);
+      for (let i = -12; i <= 12; i += 6) {
+        const a = (i / 12) * (Math.PI * 0.75) - Math.PI / 2;
+        svg.appendChild(el('line', {
+          x1: cx + Math.cos(a) * (rr - 1), y1: cy + Math.sin(a) * (rr - 1),
+          x2: cx + Math.cos(a) * (rr + 2), y2: cy + Math.sin(a) * (rr + 2),
+          stroke: '#44608a', 'stroke-width': 0.7,
+        }));
+      }
+      svg.appendChild(el('circle', { cx, cy, r: rr, fill: '#04060e', stroke: color, 'stroke-width': 1, 'stroke-opacity': 0.5 }));
+      const pointer = el('line', { x1: cx, y1: cy, x2: cx, y2: cy - rr, stroke: color, 'stroke-width': 1.6, 'stroke-linecap': 'round' });
+      svg.appendChild(pointer);
+      svg.appendChild(el('circle', { cx, cy, r: 1.6, fill: color }));
+      const readout = label(cx, h - 3, '0', color, 6);
+      const apply = () => {
+        const semi = R.n('semitones', 0);
+        const a = (semi / 12) * (Math.PI * 0.75) - Math.PI / 2;
+        pointer.setAttribute('x2', String(cx + Math.cos(a) * (rr - 2)));
+        pointer.setAttribute('y2', String(cy + Math.sin(a) * (rr - 2)));
+        readout.textContent = (semi > 0 ? '+' : '') + semi;
+      };
+      refreshers.push(apply); apply();
+      updaters.push(({ act, live }) => setGlow(pointer, color, act > 0 || (live?.firing ?? false), 4));
+      break;
+    }
+
+    // ── OCTAVE SWITCH ─────────────────────────────────────────────────────────
+    case 'octaveSwitch': {
+      const labels = ['+2', '+1', '0', '-1', '-2'];
+      const vals = [2, 1, 0, -1, -2];
+      const x0 = w * 0.28, x1 = w * 0.68;
+      const ys: number[] = [];
+      svg.appendChild(el('line', { x1: w * 0.48, y1: 4, x2: w * 0.48, y2: h - 6, stroke: color, 'stroke-width': 1, 'stroke-opacity': 0.3 }));
+      for (let i = 0; i < 5; i++) {
+        const y = 5 + (i / 4) * (h - 14);
+        ys.push(y);
+        svg.appendChild(el('line', { x1: x0, y1: y, x2: x1, y2: y, stroke: color, 'stroke-width': 1, 'stroke-opacity': 0.35 }));
+        label(x1 + 6, y + 1.6, labels[i], '#44608a', 4.5);
+      }
+      const knob = el('rect', { x: w * 0.38, y: 0, width: w * 0.2, height: 4, rx: 1.5, fill: color });
+      svg.appendChild(knob);
+      const apply = () => {
+        const idx = vals.indexOf(R.n('octave', 0));
+        knob.setAttribute('y', String(ys[idx >= 0 ? idx : 2] - 2));
+      };
+      refreshers.push(apply); apply();
+      updaters.push(({ act, live }) => setGlow(knob, color, act > 0 || (live?.firing ?? false), 4));
+      break;
+    }
+
+    // ── HARMONIZER ────────────────────────────────────────────────────────────
+    case 'harmonizer': {
+      const SET: Record<string, number[]> = { OCT: [0, 12], POWER: [0, 7], MAJ: [0, 4, 7], MIN: [0, 3, 7], SPREAD: [-12, 0, 12], CLUSTER: [-2, 0, 2] };
+      const x0 = 4, x1 = w - 4;
+      const yFor = (st: number) => h - 4 - clamp01((st + 12) / 36) * (h - 9);
+      let lines: SVGElement[] = [];
+      const cnt = label(w - 6, 7, '', color, 5);
+      const apply = () => {
+        lines.forEach(l => l.remove()); lines = [];
+        const set = SET[R.s('intervalSet', 'MAJ')] ?? SET.MAJ;
+        set.forEach((st, k) => {
+          const y = yFor(st);
+          const ln = el('line', { x1: x0, y1: y, x2: x1, y2: y, stroke: color, 'stroke-width': k === 0 ? 1.6 : 1.1, 'stroke-opacity': k === 0 ? 0.9 : 0.5 });
+          svg.appendChild(ln); lines.push(ln);
+        });
+        cnt.textContent = '×' + set.length;
+      };
+      refreshers.push(apply); apply();
+      updaters.push(({ act, live }) => {
+        const on = act > 0 || (live?.firing ?? false);
+        lines.forEach(l => setGlow(l, color, on, 3));
+      });
+      break;
+    }
+
+    // ── PITCH ROUTER ──────────────────────────────────────────────────────────
+    case 'pitchRouter': {
+      const inX = 2, inY = h / 2, jx = w * 0.36;
+      const ports = ['low', 'mid', 'high'];
+      const ys = [h * 0.22, h * 0.5, h * 0.8];
+      svg.appendChild(el('line', { x1: inX, y1: inY, x2: jx, y2: inY, stroke: color, 'stroke-width': 1.3, 'stroke-opacity': 0.6 }));
+      const leds: SVGElement[] = [];
+      ports.forEach((p, i) => {
+        svg.appendChild(el('path', { d: `M${jx} ${inY} L${jx + 4} ${ys[i]} L${w - 8} ${ys[i]}`, fill: 'none', stroke: bandColor(p), 'stroke-width': 1, 'stroke-opacity': 0.5 }));
+        leds.push(led(w - 5, ys[i], 2, bandColor(p)));
+        label(w - 5, ys[i] - 3.5, ['LO', 'MI', 'HI'][i], '#44608a', 4);
+      });
+      updaters.push(({ act, live }) => {
+        ports.forEach((p, i) => {
+          const firing = live?.outPorts[p]?.firing ?? false;
+          leds[i].setAttribute('fill-opacity', firing ? '0.95' : '0.2');
+          setGlow(leds[i], bandColor(p), firing || act > 0, firing ? 4 : 2);
+        });
+      });
+      break;
+    }
+
+    // ── PITCH FILTER ──────────────────────────────────────────────────────────
+    case 'pitchFilter': {
+      const g = screen(0, 1, w, h - 8, color);
+      const sh = h - 8;
+      g.appendChild(el('line', { x1: 2, y1: sh - 2, x2: w - 2, y2: sh - 2, stroke: '#44608a', 'stroke-width': 0.6 }));
+      const curve = el('path', { fill: 'none', stroke: color, 'stroke-width': 1.3 });
+      g.appendChild(curve);
+      const note = label(w / 2, h - 2, 'A4', color, 5);
+      const xFor = (midi: number) => 3 + clamp01((midi - 33) / 60) * (w - 6);
+      const apply = () => {
+        const center = R.n('center', 69);
+        const width = R.n('width', 4);
+        const hard = R.s('strength', 'soft') === 'hard';
+        const cxp = xFor(center);
+        const wpx = clamp01(width / 14) * (w * 0.4) + 4;
+        const top = 3, base = sh - 2;
+        curve.setAttribute('d', hard
+          ? `M2 ${base} L${cxp - wpx} ${base} L${cxp - wpx} ${top} L${cxp + wpx} ${top} L${cxp + wpx} ${base} L${w - 2} ${base}`
+          : `M2 ${base} L${cxp - wpx} ${base} Q${cxp} ${top - 2} ${cxp + wpx} ${base} L${w - 2} ${base}`);
+        note.textContent = formatNoteNameFromMidi(center);
+      };
+      refreshers.push(apply); apply();
+      updaters.push(({ act, live }) => setGlow(curve, color, act > 0 || (live?.firing ?? false), 4));
+      break;
+    }
+
+    // ── PITCH MEMORY ──────────────────────────────────────────────────────────
+    case 'pitchMemory': {
+      const g = screen(0, 1, w, h - 8, color);
+      const sh = h - 8;
+      const memLine = el('line', { x1: 2, y1: sh * 0.5, x2: w - 2, y2: sh * 0.5, stroke: color, 'stroke-width': 1, 'stroke-dasharray': '3 2', 'stroke-opacity': 0.7 });
+      g.appendChild(memLine);
+      const dot = el('circle', { r: 2, cx: 3, cy: sh * 0.7, fill: '#ffffff', opacity: 0 });
+      g.appendChild(dot);
+      const mode = label(w / 2, h - 2, 'HOLD', color, 5);
+      const apply = () => {
+        mode.textContent = ({ holdLast: 'HOLD', measureHold: 'MEAS', nearestRepeat: 'NEAR' } as Record<string, string>)[R.s('mode', 'holdLast')] ?? 'HOLD';
+      };
+      refreshers.push(apply); apply();
+      updaters.push(({ nowMs, act, reduced, live }) => {
+        const on = act > 0 || (live?.firing ?? false);
+        setGlow(memLine, color, on, 3);
+        if (reduced || !on) { dot.setAttribute('opacity', '0'); return; }
+        const t = (nowMs / 800) % 1;
+        const startY = sh * 0.78;
+        const y = t < 0.6 ? startY : startY + (sh * 0.5 - startY) * ((t - 0.6) / 0.4);
+        dot.setAttribute('cx', String(3 + t * (w - 6)));
+        dot.setAttribute('cy', String(y));
+        dot.setAttribute('opacity', '1');
+        setGlow(dot, '#ffffff', true, 4);
+      });
+      break;
+    }
+
+    // ── TARGET TUNER ──────────────────────────────────────────────────────────
+    case 'targetTuner': {
+      const cx = w / 2, cy = h * 0.44;
+      const rr = Math.min(w * 0.3, h * 0.3);
+      const ring = el('circle', { cx, cy, r: rr, fill: 'none', stroke: color, 'stroke-width': 1.2, 'stroke-opacity': 0.7 });
+      svg.appendChild(ring);
+      svg.appendChild(el('line', { x1: cx - rr - 2, y1: cy, x2: cx + rr + 2, y2: cy, stroke: color, 'stroke-width': 0.7, 'stroke-opacity': 0.5 }));
+      svg.appendChild(el('line', { x1: cx, y1: cy - rr - 2, x2: cx, y2: cy + rr + 2, stroke: color, 'stroke-width': 0.7, 'stroke-opacity': 0.5 }));
+      const lock = el('circle', { cx, cy, r: rr * 0.4, fill: color, 'fill-opacity': 0, stroke: color, 'stroke-width': 1 });
+      svg.appendChild(lock);
+      const tag = label(cx, h - 2, 'AUTO', color, 5.5);
+      const aim = label(cx, 7, 'LINE', '#44608a', 4.5);
+      const apply = () => { aim.textContent = R.s('mode', 'line') === 'nearest' ? 'NEAR' : 'LINE'; };
+      refreshers.push(apply); apply();
+      updaters.push(({ nowMs, act, reduced, live }) => {
+        const firing = act > 0 || (live?.firing ?? false);
+        const pulse = !reduced && firing ? 0.5 + 0.5 * Math.abs(Math.sin(nowMs / 180)) : firing ? 1 : 0;
+        lock.setAttribute('fill-opacity', String(0.15 + pulse * 0.5));
+        setGlow(ring, color, firing, 3 + pulse * 3);
+        setGlow(tag, color, firing, 4);
+        ring.setAttribute('transform', !reduced && firing
+          ? `translate(${cx} ${cy}) scale(${0.85 + 0.15 * Math.sin(nowMs / 180)}) translate(${-cx} ${-cy})`
+          : '');
       });
       break;
     }
