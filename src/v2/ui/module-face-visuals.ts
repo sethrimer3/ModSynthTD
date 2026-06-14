@@ -29,11 +29,29 @@ export interface ModuleFaceVisualOpts {
   reducedMotion: () => boolean;
 }
 
+/**
+ * A compact, UI-side snapshot of the real signal arriving at a module around
+ * the current tick — derived from cable traffic by rack-ui. Lets meters and
+ * playheads reflect actual amplitude/band/step instead of approximations.
+ */
+export interface ModuleLiveSample {
+  /** Peak amplitude (0..~1.2) of events firing in the live window, else 0. */
+  amp: number;
+  /** Frequency band of the loudest firing event. */
+  band: string | null;
+  /** Count of incoming events with tick ≤ currentTick (drives step playheads). */
+  index: number;
+  /** True if at least one incoming event is within the live window now. */
+  firing: boolean;
+  /** Per-input-port peak amplitude + firing flag. */
+  ports: Record<string, { amp: number; firing: boolean }>;
+}
+
 export interface ModuleFaceVisualHandle {
   /** Root element to append into the module background layer (z below controls). */
   el: HTMLElement;
   /** Per-frame update. act = module activity count, tick = current tick (-1 if none). */
-  update?: (nowMs: number, act: number, currentTick: number) => void;
+  update?: (nowMs: number, act: number, currentTick: number, live?: ModuleLiveSample | null) => void;
   /** Called when settings change so static layout/colors can refresh. */
   refreshSettings?: () => void;
   destroy?: () => void;
@@ -41,7 +59,7 @@ export interface ModuleFaceVisualHandle {
 
 // ── tiny helpers ──────────────────────────────────────────────────────────────
 
-type FrameCtx = { nowMs: number; act: number; tick: number; reduced: boolean };
+type FrameCtx = { nowMs: number; act: number; tick: number; reduced: boolean; live: ModuleLiveSample | null };
 type Updater = (c: FrameCtx) => void;
 
 function el(tag: string, attrs?: Record<string, string | number>): SVGElement {
@@ -96,12 +114,13 @@ function waveSample(wf: string, ph: number): number {
   }
 }
 
-function waveformPath(wf: string, w: number, h: number, periods: number, phase: number): string {
+function waveformPath(wf: string, w: number, h: number, periods: number, phase: number, ampScale = 1): string {
   const n = 56;
+  const amp = h * 0.4 * Math.max(0.15, Math.min(1, ampScale));
   let d = '';
   for (let i = 0; i <= n; i++) {
     const x = (i / n) * w;
-    const y = h / 2 - waveSample(wf, phase + (i / n) * periods) * h * 0.4;
+    const y = h / 2 - waveSample(wf, phase + (i / n) * periods) * amp;
     d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ' ' + y.toFixed(1);
   }
   return d;
@@ -293,12 +312,16 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
       refreshers.push(applySettings);
       applySettings();
 
-      updaters.push(({ nowMs, act, reduced }) => {
+      updaters.push(({ nowMs, act, reduced, live }) => {
+        // Real signal scales trace height; scan animates only when active.
+        const ampScale = live && live.firing ? 0.4 + live.amp * 0.8 : 1;
         if (!reduced && act > 0) {
           const phase = (nowMs / 600) % 1;
-          path.setAttribute('d', waveformPath(wf, sw, sh, periods, phase));
+          path.setAttribute('d', waveformPath(wf, sw, sh, periods, phase, ampScale));
+        } else if (live && live.firing) {
+          path.setAttribute('d', waveformPath(wf, sw, sh, periods, 0, ampScale));
         }
-        setGlow(path, accent, act > 0, 4);
+        setGlow(path, accent, act > 0 || (live?.firing ?? false), 4);
       });
       break;
     }
@@ -320,11 +343,17 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
         svg.appendChild(el('circle', { cx: w * 0.2 + cI * (w * 0.12), cy: meterY + 9 + r * 4, r: 0.9, fill: '#1a2a44' }));
       }
       const meterColor = (i: number) => i < cols * 0.6 ? '#44ff88' : i < cols * 0.85 ? '#ffdd44' : '#ff5544';
-      updaters.push(({ act, reduced, nowMs }) => {
+      updaters.push(({ act, reduced, nowMs, live }) => {
         const on = R.b('synthOn', false);
         const vol = R.n('synthVolume', 0.5);
-        let level = clamp01((act > 0 ? 0.55 : 0.12) + vol * 0.45);
-        if (on && act > 0 && !reduced) level = clamp01(level + 0.12 * Math.sin(nowMs / 120));
+        let level: number;
+        if (live && live.firing) {
+          // Real signal: peak amplitude scaled by output volume.
+          level = clamp01(live.amp * (0.45 + vol * 0.55));
+        } else {
+          level = clamp01((act > 0 ? 0.45 : 0.1) + vol * 0.35);
+          if (on && act > 0 && !reduced) level = clamp01(level + 0.1 * Math.sin(nowMs / 120));
+        }
         const lit = Math.round(level * cols);
         for (let i = 0; i < cols; i++) {
           const isOn = i < lit;
@@ -403,14 +432,20 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
       const outMeter = el('rect', { x: mx, y: h - 8, width: w * 0.1, height: 0, rx: 1.5, fill: '#44ff88' });
       svg.appendChild(outMeter);
       const seeds = [0.7, 0.45, 0.6, 0.3];
-      updaters.push(({ nowMs, act, reduced }) => {
+      const portIds = ['inA', 'inB', 'inC', 'inD'];
+      updaters.push(({ nowMs, act, reduced, live }) => {
+        let sumReal = 0;
         faders.forEach((cap, i) => {
-          let lvl = seeds[i];
-          if (!reduced && act > 0) lvl = clamp01(seeds[i] + 0.15 * Math.sin(nowMs / 200 + i));
-          const top2 = 2 + (1 - lvl) * (h - 13);
-          cap.setAttribute('y', String(top2));
+          const p = live?.ports[portIds[i]];
+          let lvl: number;
+          if (p && p.firing) { lvl = clamp01(p.amp); sumReal += p.amp; cap.setAttribute('fill-opacity', '1'); }
+          else if (live) { lvl = 0.08; cap.setAttribute('fill-opacity', '0.3'); }
+          else { lvl = !reduced && act > 0 ? clamp01(seeds[i] + 0.15 * Math.sin(nowMs / 200 + i)) : seeds[i]; cap.setAttribute('fill-opacity', '1'); }
+          cap.setAttribute('y', String(2 + (1 - lvl) * (h - 13)));
         });
-        const outLvl = act > 0 ? (reduced ? 0.7 : 0.55 + 0.25 * Math.abs(Math.sin(nowMs / 180))) : 0.15;
+        let outLvl: number;
+        if (live) outLvl = clamp01(sumReal);
+        else outLvl = act > 0 ? (reduced ? 0.7 : 0.55 + 0.25 * Math.abs(Math.sin(nowMs / 180))) : 0.15;
         const oh = outLvl * (h - 10);
         outMeter.setAttribute('y', String(h - 8 - oh));
         outMeter.setAttribute('height', String(oh));
@@ -479,10 +514,16 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
       };
       refreshers.push(apply);
       apply();
-      updaters.push(({ act, nowMs, reduced }) => {
+      updaters.push(({ act, nowMs, reduced, live }) => {
         const gain = R.n('gain', 1);
-        let frac = clamp01(gain / 3);
-        if (!reduced && act > 0) frac = clamp01(frac + 0.12 * Math.sin(nowMs / 140));
+        let frac: number;
+        if (live && live.firing) {
+          // Real post-gain output amplitude.
+          frac = clamp01(live.amp * gain);
+        } else {
+          frac = clamp01(gain / 3);
+          if (!reduced && act > 0) frac = clamp01(frac + 0.12 * Math.sin(nowMs / 140));
+        }
         const lit = Math.round(frac * rungs);
         for (let i = 0; i < rungs; i++) {
           const on = i < lit;
@@ -700,9 +741,10 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
       };
       refreshers.push(apply);
       apply();
-      updaters.push(({ tick, act, nowMs, reduced }) => {
-        let step = 0;
-        if (reduced) step = tick >= 0 ? Math.floor(tick / 24) % N : 0;
+      updaters.push(({ tick, act, nowMs, reduced, live }) => {
+        let step: number;
+        if (live && live.firing) step = ((live.index - 1) % N + N) % N; // real advancing step
+        else if (reduced) step = tick >= 0 ? Math.floor(tick / 24) % N : 0;
         else step = act > 0 ? Math.floor(nowMs / 200) % N : -1;
         for (let i = 0; i < N; i++) {
           const on = i === step;
@@ -836,8 +878,8 @@ export function buildModuleFaceVisual(opts: ModuleFaceVisualOpts): ModuleFaceVis
   return {
     el: container,
     update: updaters.length
-      ? (nowMs, act, tick) => {
-          const ctx: FrameCtx = { nowMs, act, tick, reduced: opts.reducedMotion() };
+      ? (nowMs, act, tick, live) => {
+          const ctx: FrameCtx = { nowMs, act, tick, reduced: opts.reducedMotion(), live: live ?? null };
           for (const u of updaters) u(ctx);
         }
       : undefined,

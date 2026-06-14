@@ -17,7 +17,7 @@ import { hashString } from '../core/rng';
 import { createSoftWireRenderer, SoftWireData } from '../../version2-soft-wire';
 import { TowerStyle } from './tower-style';
 import { createMaskedFillCanvas } from '../render/masked-fill-renderer';
-import { buildModuleFaceVisual, ModuleFaceVisualHandle } from './module-face-visuals';
+import { buildModuleFaceVisual, ModuleFaceVisualHandle, ModuleLiveSample } from './module-face-visuals';
 import mountainDesignUrl from '../../../ASSETS/modules/designs/mountainDesign.png';
 import sunDesignUrl from '../../../ASSETS/modules/designs/sunDesign.png';
 
@@ -135,6 +135,8 @@ interface ModuleView {
   flashUntil: number;
   refreshSettings: () => void;
   visual?: ModuleFaceVisualHandle | null;
+  /** Output-module tower muzzle/charge effect targets. */
+  outputFx?: { silhouette: HTMLElement; ring: HTMLElement } | null;
 }
 
 interface CableView {
@@ -174,6 +176,8 @@ export function createRackUI(opts: RackUIOpts): RackUI {
 
   const moduleViews = new Map<string, ModuleView>();
   const cableViews = new Map<string, CableView>();
+  /** Power-rail glow overlay on the rack case, brightens with total activity. */
+  let caseGlowEl: HTMLElement | null = null;
   const slurping: Array<{ wire: SoftWireData; ax: number; ay: number }> = [];
   const pulses: PulseDot[] = [];
 
@@ -190,7 +194,53 @@ export function createRackUI(opts: RackUIOpts): RackUI {
 
   let traffic = new Map<string, SignalEvent[]>();
   let activity = new Map<string, number>();
+  /** Incoming events per module, grouped by destination port, sorted by tick. */
+  let incomingByModule = new Map<string, Map<string, SignalEvent[]>>();
   let currentTick = -1;
+
+  /** Live window (ticks) within which an event counts as "firing now". */
+  const LIVE_WINDOW = 14;
+
+  function rebuildIncoming(): void {
+    incomingByModule = new Map();
+    for (const c of graph.cables) {
+      const events = traffic.get(c.cableId);
+      if (!events || events.length === 0) continue;
+      let ports = incomingByModule.get(c.toModuleId);
+      if (!ports) { ports = new Map(); incomingByModule.set(c.toModuleId, ports); }
+      const existing = ports.get(c.toPortId);
+      if (existing) existing.push(...events);
+      else ports.set(c.toPortId, events.slice());
+    }
+    for (const ports of incomingByModule.values()) {
+      for (const evs of ports.values()) evs.sort((a, b) => a.tick - b.tick);
+    }
+  }
+
+  const EMPTY_LIVE: ModuleLiveSample = { amp: 0, band: null, index: 0, firing: false, ports: {} };
+
+  function liveSample(moduleId: string, tick: number): ModuleLiveSample | null {
+    const ports = incomingByModule.get(moduleId);
+    if (!ports || tick < 0) return null;
+    let amp = 0, index = 0, firing = false;
+    let band: string | null = null;
+    const portInfo: Record<string, { amp: number; firing: boolean }> = {};
+    for (const [portId, evs] of ports) {
+      let pAmp = 0, pFiring = false;
+      for (const e of evs) {
+        if (e.tick > tick + 2) break; // sorted: nothing further is live
+        if (e.tick <= tick) index++;
+        const age = tick - e.tick;
+        if (age >= -2 && age <= LIVE_WINDOW) {
+          firing = true; pFiring = true;
+          if (e.amplitude > pAmp) pAmp = e.amplitude;
+          if (e.amplitude > amp) { amp = e.amplitude; band = e.band; }
+        }
+      }
+      portInfo[portId] = { amp: pAmp, firing: pFiring };
+    }
+    return firing || index > 0 ? { amp, band, index, firing, ports: portInfo } : EMPTY_LIVE;
+  }
   let lastUpdateMs = 0;
   let selectedModuleId: string | null = null;
   let routeHighlight: ReadonlySet<string> | null = null;
@@ -914,11 +964,15 @@ export function createRackUI(opts: RackUIOpts): RackUI {
         : towerState.style.shape === 'diamond' ? 'polygon(50% 0,100% 50%,50% 100%,0 50%)'
         : 'polygon(0 0,100% 0,100% 100%,0 100%)';
       const silhouette = document.createElement('span');
-      silhouette.style.cssText = `position:absolute;left:10px;top:50%;transform:translateY(-50%);width:22px;height:22px;background:${towerState.style.color};clip-path:${clip};filter:drop-shadow(0 0 5px ${towerState.style.color});`;
+      silhouette.style.cssText = `position:absolute;left:10px;top:50%;transform:translateY(-50%);width:22px;height:22px;background:${towerState.style.color};clip-path:${clip};filter:drop-shadow(0 0 5px ${towerState.style.color});transition:filter 0.08s, transform 0.08s;`;
+      // Charge ring behind the silhouette — pulses as signal reaches the tower.
+      const chargeRing = document.createElement('span');
+      chargeRing.style.cssText = `position:absolute;left:21px;top:50%;transform:translate(-50%,-50%) scale(0.4);width:30px;height:30px;border-radius:50%;border:2px solid ${towerState.style.color};opacity:0;pointer-events:none;`;
+      mv.outputFx = { silhouette, ring: chargeRing };
       const slotLabel = document.createElement('span');
       slotLabel.textContent = towerState.isPlaced ? 'PLACED' : 'DRAG TOWER';
       slotLabel.style.cssText = `position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:7px;font-weight:800;letter-spacing:0.07em;color:${towerState.style.color};white-space:nowrap;`;
-      slot.append(silhouette, slotLabel);
+      slot.append(chargeRing, silhouette, slotLabel);
       slot.addEventListener('pointerdown', (e: PointerEvent) => {
         e.stopPropagation();
         e.preventDefault();
@@ -1035,6 +1089,16 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       background-position:8px 0, 0 0;
     `;
     caseEl.appendChild(colGrid);
+
+    // Power-rail glow overlay (animated by total rack activity in update()).
+    const glow = document.createElement('div');
+    glow.style.cssText = `
+      position:absolute;inset:0;border-radius:6px;pointer-events:none;z-index:3;
+      box-shadow:inset 0 0 0 0 rgba(120,200,255,0);opacity:0;transition:opacity 0.25s;
+      background:radial-gradient(120% 60% at 50% 100%, ${opts.themeColor}22, transparent 70%);
+    `;
+    caseEl.appendChild(glow);
+    caseGlowEl = glow;
 
     // Top and bottom eurorack mounting rails.
     for (const barTop of [0, caseH - 8]) {
@@ -1249,8 +1313,11 @@ export function createRackUI(opts: RackUIOpts): RackUI {
           }
           dot.el.setAttribute('cx', x.toFixed(1));
           dot.el.setAttribute('cy', y.toFixed(1));
+          // Pulse size + glow scale with the event's real amplitude.
+          const amp = Number.isFinite(ev.amplitude) ? ev.amplitude : 0.5;
+          dot.el.setAttribute('r', (2.2 + amp * 2.6).toFixed(1));
           dot.el.setAttribute('fill', view.wire.srcColor);
-          dot.el.style.filter = `drop-shadow(0 0 4px ${view.wire.srcColor})`;
+          dot.el.style.filter = `drop-shadow(0 0 ${(3 + amp * 5).toFixed(1)}px ${view.wire.srcColor})`;
           dot.el.style.display = '';
           pulseIdx++;
           if (pulseIdx >= 40) break;
@@ -1260,9 +1327,11 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       for (let i = pulseIdx; i < pulses.length; i++) pulses[i].el.style.display = 'none';
     }
 
-    // Activity LEDs + flash decay.
+    // Activity LEDs + flash decay + idle shimmer + per-module live visuals.
+    let totalAct = 0;
     for (const mv of moduleViews.values()) {
       const act = activity.get(mv.inst.instanceId) ?? 0;
+      totalAct += act;
       const flashing = nowMs < mv.flashUntil;
       if (mv.ledEl) {
         const on = act > 0 || flashing;
@@ -1272,20 +1341,52 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       if (flashing) {
         mv.rootEl.style.borderColor = mv.def.color;
         mv.rootEl.style.boxShadow = `0 0 14px ${mv.def.color}66`;
+      } else if (act > 0 && !reduced) {
+        // Idle shimmer for live modules: gentle breathing halo in module color.
+        const s = 0.5 + 0.5 * Math.sin(nowMs / 420 + mv.inst.gridX);
+        mv.rootEl.style.borderColor = '#26405f';
+        mv.rootEl.style.boxShadow = `0 2px 8px rgba(0,0,0,0.5), 0 0 ${5 + s * 7}px ${mv.def.color}33`;
       } else if (mv.rootEl.style.borderColor !== '') {
         mv.rootEl.style.borderColor = '#1a2a44';
         mv.rootEl.style.boxShadow = '0 2px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(120,160,255,0.07)';
       }
-      mv.visual?.update?.(nowMs, act, currentTick);
+      const live = liveSample(mv.inst.instanceId, currentTick);
+      mv.visual?.update?.(nowMs, act, currentTick, live);
+
+      // Output tower muzzle-flash + charge ring driven by real arriving signal.
+      if (mv.outputFx) {
+        const firing = live?.firing ?? false;
+        const amp = live?.amp ?? 0;
+        if (firing && !reduced) {
+          mv.outputFx.silhouette.style.filter = `drop-shadow(0 0 ${6 + amp * 10}px ${mv.def.color}) brightness(1.6)`;
+          mv.outputFx.silhouette.style.transform = `translateY(-50%) scale(${1 + amp * 0.18})`;
+          const ph = (nowMs / 320) % 1;
+          mv.outputFx.ring.style.opacity = String((1 - ph) * 0.8);
+          mv.outputFx.ring.style.transform = `translate(-50%,-50%) scale(${0.4 + ph * 0.9})`;
+        } else {
+          mv.outputFx.silhouette.style.filter = `drop-shadow(0 0 5px ${mv.def.color})`;
+          mv.outputFx.silhouette.style.transform = 'translateY(-50%)';
+          mv.outputFx.ring.style.opacity = '0';
+        }
+      }
+    }
+
+    // Rack-case power rail: brightens with total activity across all modules.
+    if (caseGlowEl) {
+      const target = totalAct > 0 ? clampGlow(0.25 + totalAct * 0.06) : 0;
+      const lvl = reduced ? (totalAct > 0 ? 0.4 : 0) : target * (0.85 + 0.15 * Math.sin(nowMs / 500));
+      caseGlowEl.style.opacity = String(lvl);
     }
   }
+
+  function clampGlow(v: number): number { return v < 0 ? 0 : v > 0.85 ? 0.85 : v; }
 
   rebuild();
 
   return {
     update,
     rebuild,
-    setTraffic(t, a) { traffic = t; activity = a; },
+    setTraffic(t, a) { traffic = t; activity = a; rebuildIncoming(); },
     setCurrentTick(t) { currentTick = t; },
     flashModule(id) {
       const mv = moduleViews.get(id);
