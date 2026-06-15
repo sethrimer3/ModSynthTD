@@ -69,6 +69,16 @@ const DOMAIN_COLORS: Record<string, string> = {
 
 // ── Public interface ────────────────────────────────────────────────────────
 
+/** Per-world rack color overrides. All fields are optional; missing fields fall back to defaults. */
+export interface RackColors {
+  case?: string;        // case background fill
+  border?: string;      // case border color
+  gridV?: string;       // column separator rgba
+  gridH?: string;       // row separator rgba
+  railDark?: string;    // mounting rail dark stripe
+  railLight?: string;   // mounting rail light stripe
+}
+
 export interface RackUIOpts {
   root: HTMLElement;
   graph: RackGraph;
@@ -77,6 +87,8 @@ export interface RackUIOpts {
   /** Topology locked (active wave). */
   isLive(): boolean;
   themeColor: string;
+  /** Optional per-world color overrides for rack chrome. */
+  rackColors?: RackColors;
   reducedMotion(): boolean;
   wireLayer(): 'front' | 'behind';
   wireOpacity(): number;
@@ -1127,12 +1139,21 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     const caseH    = count * SHELF_H + Math.max(0, count - 1) * SHELF_GAP;
 
     // ── Unified case panel ────────────────────────────────────────────────────
+    const rc = opts.rackColors ?? {};
+    const caseBg     = rc.case       ?? '#060c18';
+    const caseBorder = rc.border     ?? '#1e3052';
+    const gridV      = rc.gridV      ?? 'rgba(20,45,85,0.45)';
+    const gridH      = rc.gridH      ?? 'rgba(18,42,82,0.35)';
+    const gridHB     = rc.gridH      ? gridH.replace(/[\d.]+\)$/, s => String(Math.max(0, parseFloat(s) - 0.07) + ')')) : 'rgba(18,42,82,0.25)';
+    const railDark   = rc.railDark   ?? '#16233c';
+    const railLight  = rc.railLight  ?? '#22365a';
+
     const caseEl = document.createElement('div');
     caseEl.style.cssText = `
       position:absolute;left:${caseLeft}px;top:${caseTop}px;
       width:${caseW}px;height:${caseH}px;
-      background:#060c18;
-      border:2px solid #1e3052;border-radius:6px;
+      background:${caseBg};
+      border:2px solid ${caseBorder};border-radius:6px;
       box-shadow:inset 0 0 60px rgba(0,0,0,0.55),0 4px 24px rgba(0,0,0,0.6);
     `;
 
@@ -1145,13 +1166,13 @@ export function createRackUI(opts: RackUIOpts): RackUI {
         repeating-linear-gradient(
           90deg,
           transparent 0 ${SLOT_PX - 1}px,
-          rgba(20,45,85,0.45) ${SLOT_PX - 1}px ${SLOT_PX}px
+          ${gridV} ${SLOT_PX - 1}px ${SLOT_PX}px
         ),
         repeating-linear-gradient(
           0deg,
-          rgba(18,42,82,0.35) 0 1px,
+          ${gridH} 0 1px,
           transparent 1px ${SHELF_H - 1}px,
-          rgba(18,42,82,0.25) ${SHELF_H - 1}px ${SHELF_H}px
+          ${gridHB} ${SHELF_H - 1}px ${SHELF_H}px
         );
       background-position:8px 0, 0 0;
     `;
@@ -1173,7 +1194,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       bar.style.cssText = `
         position:absolute;left:0;top:${barTop}px;width:100%;height:8px;
         background:repeating-linear-gradient(
-          90deg,#16233c 0 ${SLOT_PX - 3}px,#22365a ${SLOT_PX - 3}px ${SLOT_PX}px
+          90deg,${railDark} 0 ${SLOT_PX - 3}px,${railLight} ${SLOT_PX - 3}px ${SLOT_PX}px
         );
         border-radius:3px;opacity:0.85;pointer-events:none;
       `;

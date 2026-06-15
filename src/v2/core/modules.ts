@@ -66,6 +66,8 @@ export interface RackSize {
   h: number;
 }
 
+export type ModuleCategory = 'timing' | 'pitch' | 'routing' | 'gain' | 'filter' | 'output';
+
 export interface ModuleTypeDef {
   typeId: string;
   name: string;
@@ -84,6 +86,7 @@ export interface ModuleTypeDef {
   /** World id whose completion unlocks this blueprint; null = always available. */
   unlockAfterWorld: string | null;
   tooltip: string;
+  category: ModuleCategory;
   kind: 'source' | 'transform' | 'sink';
   inputs: PortSpec[];
   outputs: PortSpec[];
@@ -145,6 +148,7 @@ const CLOCK: ModuleTypeDef = {
   isStarter: true,
   unlockAfterWorld: null,
   tooltip: 'Generates timed trigger pulses at a musical subdivision. The heartbeat of every patch.',
+  category: 'timing',
   kind: 'source',
   inputs: [],
   outputs: [makeOutput('out', 'trigger', 'TRIG', 'Trigger pulses at the selected subdivision.', { anchor: { x: 1, y: 0.72 }, side: 'right' })],
@@ -198,6 +202,7 @@ const OSC: ModuleTypeDef = {
   isStarter: true,
   unlockAfterWorld: null,
   tooltip: 'Gives trigger pulses a voice: waveform shapes the projectile and the sound; band sets its resonance.',
+  category: 'pitch',
   kind: 'transform',
   inputs: [makeInput('in', 'either', 'IN', 'Trigger or voice signal to (re)shape.', { anchor: { x: 0, y: 0.72 }, side: 'left' })],
   outputs: [makeOutput('out', 'voice', 'OUT', 'Voiced signal.', { anchor: { x: 1, y: 0.72 }, side: 'right' })],
@@ -238,6 +243,7 @@ const OUTPUT: ModuleTypeDef = {
   shopBuyable: true,
   unlockAfterWorld: null,
   tooltip: 'Owns one emitter tower. Routed events fire from its placed tower and can drive the audible synth.',
+  category: 'output',
   kind: 'sink',
   inputs: [makeInput('in', 'voice', 'IN', 'Final voiced signal. Needs an oscillator somewhere upstream.', { anchor: { x: 0, y: 0.80 }, side: 'left' })],
   outputs: [],
@@ -261,6 +267,7 @@ const CONNECTOR: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w60',
   tooltip: 'Passive patch-through. Organizes physical cable routes without changing the signal.',
+  category: 'routing',
   kind: 'transform',
   inputs: [makeInput('in', 'either', 'IN', 'Any signal.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
   outputs: [makeOutput('out', 'either', 'OUT', 'The same signal, untouched.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
@@ -279,6 +286,7 @@ const SPLITTER: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w80',
   tooltip: 'Copies one signal onto several branches. Amplitude divides across connected branches; branches B/C can re-aim fire direction.',
+  category: 'routing',
   kind: 'transform',
   inputs: [makeInput('in', 'either', 'IN', 'Signal to split.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
   outputs: [
@@ -323,6 +331,7 @@ const MIXER: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w120',
   tooltip: 'Recombines up to four signals. Simultaneous events are kept; total loudness per instant is safely normalized.',
+  category: 'routing',
   kind: 'transform',
   inputs: [
     makeInput('inA', 'either', 'A', 'Input A.', { required: true,  anchor: { x: 0, y: 0.35 }, side: 'left' }),
@@ -366,6 +375,7 @@ const ROUTER: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w160',
   tooltip: 'Sends each event down exactly one branch: fixed, alternating, per-measure, or a seeded deterministic pattern.',
+  category: 'routing',
   kind: 'transform',
   inputs: [makeInput('in', 'either', 'IN', 'Signal to route.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
   outputs: [
@@ -413,6 +423,7 @@ const AMP: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w40',
   tooltip: 'Scales signal strength. Clamped to safe limits — projectile damage and synth gain follow it.',
+  category: 'gain',
   kind: 'transform',
   inputs: [makeInput('in', 'either', 'IN', 'Signal to scale.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
   outputs: [makeOutput('out', 'either', 'OUT', 'Scaled signal.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
@@ -442,6 +453,7 @@ const DELAY: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w100',
   tooltip: 'Rhythmically quantized echoes. Each repeat lands a fixed musical interval later, quieter each time.',
+  category: 'timing',
   kind: 'transform',
   inputs: [makeInput('in', 'either', 'IN', 'Signal to echo.', { anchor: { x: 0, y: 0.72 }, side: 'left' })],
   outputs: [makeOutput('out', 'either', 'OUT', 'Original plus echoes.', { anchor: { x: 1, y: 0.72 }, side: 'right' })],
@@ -487,6 +499,7 @@ const PHASE: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w100',
   tooltip: 'Shifts every event later by a fixed subdivision. Events always move forward in time — never backward.',
+  category: 'timing',
   kind: 'transform',
   inputs: [makeInput('in', 'either', 'IN', 'Signal to shift.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
   outputs: [makeOutput('out', 'either', 'OUT', 'Time-shifted signal.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
@@ -515,6 +528,7 @@ const FILTER: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w140',
   tooltip: 'Passes its selected resonance band. Other bands are softened — or silenced in hard mode.',
+  category: 'filter',
   kind: 'transform',
   inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to filter.', { anchor: { x: 0, y: 0.72 }, side: 'left' })],
   outputs: [makeOutput('out', 'voice', 'OUT', 'Filtered signal.', { anchor: { x: 1, y: 0.72 }, side: 'right' })],
@@ -552,6 +566,7 @@ const ENVELOPE: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w140',
   tooltip: 'Shapes attack and release of every voice — longer projectile presence, softer or snappier sound.',
+  category: 'timing',
   kind: 'transform',
   inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to shape.', { anchor: { x: 0, y: 0.72 }, side: 'left' })],
   outputs: [makeOutput('out', 'voice', 'OUT', 'Shaped signal.', { anchor: { x: 1, y: 0.72 }, side: 'right' })],
@@ -584,6 +599,7 @@ const CLOCKDIV: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w140',
   tooltip: 'Thins a stream to every Nth event, or doubles it. Division keeps the downbeat.',
+  category: 'timing',
   kind: 'transform',
   inputs: [makeInput('in', 'either', 'IN', 'Stream to divide or multiply.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
   outputs: [makeOutput('out', 'either', 'OUT', 'Re-clocked stream.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
@@ -627,6 +643,7 @@ const SEQUENCER: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w160',
   tooltip: 'Advances one pitch step per incoming event across an 8-step pattern; off steps are muted. Best for matching repeated MIDI melodies. Updates projectile Hz.',
+  category: 'pitch',
   kind: 'transform',
   inputs: [makeInput('in', 'either', 'IN', 'Stream to sequence.', { anchor: { x: 0, y: 0.80 }, side: 'left' })],
   outputs: [makeOutput('out', 'either', 'OUT', 'Sequenced stream.', { anchor: { x: 1, y: 0.80 }, side: 'right' })],
@@ -669,6 +686,7 @@ const ARP: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w160',
   tooltip: 'Cycles a pitch pattern across incoming voices — broken chords in time. Best for chord waves or dense note streams. Updates projectile Hz.',
+  category: 'pitch',
   kind: 'transform',
   inputs: [makeInput('in', 'voice', 'IN', 'Voiced stream to arpeggiate.', { anchor: { x: 0, y: 0.72 }, side: 'left' })],
   outputs: [makeOutput('out', 'voice', 'OUT', 'Arpeggiated stream.', { anchor: { x: 1, y: 0.72 }, side: 'right' })],
@@ -706,6 +724,7 @@ const PROBABILITY: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w160',
   tooltip: 'Deterministically seeded chance gate — the same wave always rolls the same pattern.',
+  category: 'routing',
   kind: 'transform',
   inputs: [makeInput('in', 'either', 'IN', 'Stream to thin.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
   outputs: [makeOutput('out', 'either', 'OUT', 'Surviving events.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
@@ -737,6 +756,7 @@ const RESONATOR: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w80',
   tooltip: 'Re-tunes passing voices to a different resonance band — or cycles bands per event.',
+  category: 'pitch',
   kind: 'transform',
   inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to re-tune.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
   outputs: [makeOutput('out', 'voice', 'OUT', 'Re-tuned signal.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
@@ -772,6 +792,7 @@ const PITCH_DIAL: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w40',
   tooltip: 'Manual fine pitch: shifts every voice by a fixed number of semitones and retunes its projectile Hz.',
+  category: 'pitch',
   kind: 'transform',
   inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to tune.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
   outputs: [makeOutput('out', 'voice', 'OUT', 'Tuned signal.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
@@ -800,6 +821,7 @@ const OCTAVE_SWITCH: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w60',
   tooltip: 'Coarse register correction: moves every voice up or down whole octaves to land in the right range.',
+  category: 'pitch',
   kind: 'transform',
   inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to shift.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
   outputs: [makeOutput('out', 'voice', 'OUT', 'Shifted signal.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
@@ -828,6 +850,7 @@ const HARMONIZER: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w120',
   tooltip: 'Emits several pitch-shifted copies of each voice at once — multiple pitch guesses, weaker per projectile.',
+  category: 'pitch',
   kind: 'transform',
   inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to harmonize.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
   outputs: [makeOutput('out', 'voice', 'OUT', 'Stacked voices.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
@@ -864,8 +887,9 @@ const PITCH_ROUTER: ModuleTypeDef = {
   rackSize: { w: 2, h: 2 },
   cost: 55,
   isStarter: false,
-  unlockAfterWorld: 'w140',
+  unlockAfterWorld: 'w120',
   tooltip: 'Sends each voice to LOW / MID / HIGH by its frequency — build specialized output towers per register.',
+  category: 'routing',
   kind: 'transform',
   inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to route by pitch.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
   outputs: [
@@ -912,6 +936,7 @@ const PITCH_FILTER: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w140',
   tooltip: 'Passes voices near a target note; attenuates (soft) or silences (hard) anything outside the pitch window.',
+  category: 'filter',
   kind: 'transform',
   inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to filter by pitch.', { anchor: { x: 0, y: 0.72 }, side: 'left' })],
   outputs: [makeOutput('out', 'voice', 'OUT', 'Filtered signal.', { anchor: { x: 1, y: 0.72 }, side: 'right' })],
@@ -951,6 +976,7 @@ const PITCH_MEMORY: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w160',
   tooltip: 'Retunes voices toward frequencies heard earlier in the same pattern — semi-automatic, deterministic, imperfect.',
+  category: 'pitch',
   kind: 'transform',
   inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to retune from memory.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
   outputs: [makeOutput('out', 'voice', 'OUT', 'Retuned signal.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],
@@ -1006,6 +1032,7 @@ const TARGET_TUNER: ModuleTypeDef = {
   isStarter: false,
   unlockAfterWorld: 'w180',
   tooltip: 'Late-game auto-tune: tags voices so the output tower retunes each projectile to a live enemy at fire time. Costs amplitude.',
+  category: 'pitch',
   kind: 'transform',
   inputs: [makeInput('in', 'voice', 'IN', 'Voiced signal to auto-tune in combat.', { anchor: { x: 0, y: 0.5 }, side: 'left' })],
   outputs: [makeOutput('out', 'voice', 'OUT', 'Tagged signal.', { anchor: { x: 1, y: 0.5 }, side: 'right' })],

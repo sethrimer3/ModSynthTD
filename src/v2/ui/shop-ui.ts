@@ -15,6 +15,26 @@ import { getWorld } from '../data/worlds';
 
 const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
 
+const CATEGORY_LABEL: Record<string, string> = {
+  timing: 'TIMING', pitch: 'PITCH', routing: 'ROUTE', gain: 'GAIN', filter: 'FILTER', output: 'OUTPUT',
+};
+const CATEGORY_COLOR: Record<string, string> = {
+  timing: '#66ddff', pitch: '#cc44ff', routing: '#33dd88', gain: '#ffaa44', filter: '#ffdd55', output: '#ffcc00',
+};
+
+/** Modules especially worth buying in each world. */
+const WORLD_FEATURED: Record<string, string[]> = {
+  w40:  ['pitchDial', 'amp'],
+  w60:  ['octaveSwitch', 'resonator'],
+  w80:  ['splitter', 'resonator'],
+  w100: ['delay', 'phase'],
+  w120: ['mixer', 'harmonizer', 'pitchRouter'],
+  w140: ['filter', 'envelope', 'clockdiv', 'pitchFilter'],
+  w160: ['router', 'sequencer', 'arp', 'probability'],
+  w180: ['targetTuner', 'pitchMemory'],
+  w200: ['targetTuner', 'pitchMemory'],
+};
+
 const DOMAIN_DOT: Record<string, string> = {
   trigger: '#33dd88', voice: '#cc44ff', either: '#88aacc', output: '#ffcc00',
 };
@@ -111,10 +131,27 @@ export function openShop(parent: HTMLElement, opts: ShopUIOpts): void {
     if (def.outputs.length) face.appendChild(portRow(def.outputs, 'right'));
     card.appendChild(face);
 
+    const nameRow = document.createElement('div');
+    nameRow.style.cssText = 'display:flex;align-items:center;gap:5px;flex-wrap:wrap;';
     const name = document.createElement('div');
     name.textContent = def.name;
-    name.style.cssText = 'font-size:0.7rem;font-weight:800;color:#dff6ff;';
-    card.appendChild(name);
+    name.style.cssText = 'font-size:0.7rem;font-weight:800;color:#dff6ff;flex:1;';
+    nameRow.appendChild(name);
+    if (def.category) {
+      const catColor = CATEGORY_COLOR[def.category] ?? '#88aacc';
+      const badge = document.createElement('span');
+      badge.textContent = CATEGORY_LABEL[def.category] ?? def.category.toUpperCase();
+      badge.style.cssText = `font-size:0.46rem;font-weight:800;letter-spacing:0.07em;color:${catColor};border:1px solid ${catColor}66;border-radius:4px;padding:1px 4px;`;
+      nameRow.appendChild(badge);
+    }
+    const featured = (WORLD_FEATURED[opts.worldId] ?? []).includes(def.typeId);
+    if (featured) {
+      const rec = document.createElement('span');
+      rec.textContent = '★ REC';
+      rec.style.cssText = 'font-size:0.46rem;font-weight:800;letter-spacing:0.07em;color:#ffdd55;border:1px solid #ffdd5566;border-radius:4px;padding:1px 4px;';
+      nameRow.appendChild(rec);
+    }
+    card.appendChild(nameRow);
 
     const tip = document.createElement('div');
     tip.textContent = def.tooltip;

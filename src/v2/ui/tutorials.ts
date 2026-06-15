@@ -18,6 +18,8 @@ export const TUTORIALS: Record<string, string> = {
   'tower': 'Each OUT owns an emitter tower. Drag its silhouette from the module onto the grid.',
   'multi-output': 'Multiple OUT modules create multiple towers. Patch different routes into different OUTs to fire from different places.',
   'bands': 'Match your OSC band (LO/MI/HI) to an enemy\'s ring color for ×2 damage. Mismatches resist.',
+  'hz-match': 'Enemy ring color = resonance band. Set OSC Band to match it — a perfect Hz match deals ×4 damage. Check Patch Analysis for the gap.',
+  'two-lanes': 'Two lanes, two threats. Place a second Output tower on the far path — one tower fires in one direction and cannot cover both routes alone.',
   'osc-combat': 'OSC changes the tower voice: BAND changes resonant color and match damage; WAVE changes projectile shape.',
   'clock-combat': 'CLOCK RATE is the firing rhythm. Faster subdivisions produce more frequent tower pulses.',
   'delay-combat': 'DELAY adds quieter repeated shots. Echo projectiles appear as ghosted copies.',
@@ -27,6 +29,10 @@ export const TUTORIALS: Record<string, string> = {
   'test-pulse': 'PULSE sends one test signal through your patch so you can watch the route light up.',
   'synth': 'The OUT module\'s SYNTH switch makes your patch audible. What you hear is what fights.',
   'cipher': 'Divide the pulse. Displace one voice in time. Reunite them at a mixer — then send a PULSE.',
+  'timing': 'DELAY and PHASE shift events in time — echoes land on off-beats, phase-offset splits the stream into two staggered voices. Try patching CLOCK → PHASE → OUTPUT.',
+  'mixing': 'MIXER combines up to four signals — route two differently-tuned OSC voices into one tower for layered damage. HARMONIZER stacks pitch copies automatically.',
+  'filtering': 'BAND FILTER passes one resonance band and silences others. Combine with PITCH FILTER to cut enemies by both color and Hz for precision targeting.',
+  'sequencing': 'SEQUENCER steps through a pitch pattern — one step per incoming event. Pair with ARP to arpeggiate chords across dense note streams.',
 };
 
 export class TutorialManager {

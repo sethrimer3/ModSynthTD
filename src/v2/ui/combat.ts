@@ -16,6 +16,8 @@ import { TowerStyle, traceTowerShape } from './tower-style';
 import { DamageNumber, spawnDamageNumber, updateDamageNumbers, drawDamageNumbers } from './damage-numbers';
 import { bandToHz, pitchOffsetToHz, damageMultiplier } from './pitch';
 import { LevelFluidBackground } from './fluid-background';
+import { ModifierStats, emptyModifierStats } from '../core/enemy-modifiers';
+import { WorldAesthetic } from '../data/world-aesthetics';
 
 import quarterNoteUrl from '../../../ASSETS/SPRITES/ENEMIES/enemy_quarterNote.png';
 import halfNoteUrl from '../../../ASSETS/SPRITES/ENEMIES/enemy_halfNote.png';
@@ -128,6 +130,12 @@ class EnemyRt {
   private readonly baseBandIdx: number;
   /** Exact Hz from MIDI pitch when available; undefined for authored waves. */
   private readonly midiHz: number | undefined;
+  /** Accidental: how many band shifts have occurred (for stat tracking). */
+  bandShifts = 0;
+  /** Fermata: true once the enemy has completed its mid-track hold. */
+  fermataHeld = false;
+  /** Crescendo: total raw damage absorbed above actual damage dealt (resistance damage). */
+  crescendoResisted = 0;
 
   constructor(spawn: SpawnEvent, def: EnemyDef, lane: Tile[], laneIndex: number, spawnTick: number, chordOffset: number, pool?: HpPool) {
     this.def = def;
@@ -178,7 +186,16 @@ class EnemyRt {
       this.hopT = skipped ? 1 : 0;
       if (this.def.behavior === 'accidental') {
         const bands: FrequencyBand[] = ['low', 'mid', 'high'];
+        const prevBand = this.band;
         this.band = bands[(this.baseBandIdx + steps) % 3];
+        if (this.band !== prevBand) this.bandShifts++;
+      }
+      if (this.def.behavior === 'fermata' && !this.fermataHeld) {
+        const mid = Math.floor(this.lane.length / 2);
+        const move = this.def.moveEveryTicks;
+        const holdStart = mid * move;
+        const delta = steps * move;
+        if (delta >= holdStart + TICKS_PER_MEASURE) this.fermataHeld = true;
       }
     }
     return 'none';
@@ -200,7 +217,12 @@ class EnemyRt {
 
   hit(amount: number, isMatch: boolean): void {
     if (!this.alive) return;
-    this.pool.hp = Math.max(0, this.pool.hp - amount * this.damageScale());
+    const scale = this.damageScale();
+    const actual = amount * scale;
+    if (this.def.behavior === 'crescendo' && scale < 1) {
+      this.crescendoResisted += Math.round(amount - actual);
+    }
+    this.pool.hp = Math.max(0, this.pool.hp - actual);
     this.flashT = isMatch ? 0.4 : 0.22;
     this.flashMatch = isMatch;
     if (this.pool.hp <= 0) this.alive = false;
@@ -269,6 +291,7 @@ export interface WaveCombatStats {
   shotsFired: number;
   matchedHits: number;
   resistedHits: number;
+  modifiers: ModifierStats;
 }
 
 // ── Combat system ───────────────────────────────────────────────────────────
@@ -292,13 +315,14 @@ export class Combat {
   private floaters: FloatingText[] = [];
   private damageNumbers: DamageNumber[] = [];
   private spawnEffects: SpawnEffect[] = [];
-  private stats: WaveCombatStats = { enemiesDefeated: 0, shotsFired: 0, matchedHits: 0, resistedHits: 0 };
+  private stats: WaveCombatStats = { enemiesDefeated: 0, shotsFired: 0, matchedHits: 0, resistedHits: 0, modifiers: emptyModifierStats() };
   private towerPulse = new Map<string, number>();
   private routePulse = new Map<string, number>();
   private lastFireDirections = new Map<string, Array<[number, number]>>();
   finishFlash = 0;
   private trackSets: Set<string>[];
   private fluid: LevelFluidBackground;
+  private aesthetic: WorldAesthetic | null = null;
 
   constructor(world: WorldDef, towers: TowersByOutputId, towerStyles: Map<string, TowerStyle>, fluid: LevelFluidBackground) {
     this.world = world;
@@ -306,6 +330,10 @@ export class Combat {
     this.towerStyles = towerStyles;
     this.fluid = fluid;
     this.trackSets = world.lanes.map(lane => new Set(lane.map(([x, y]) => `${x},${y}`)));
+  }
+
+  setAesthetic(aesthetic: WorldAesthetic): void {
+    this.aesthetic = aesthetic;
   }
 
   isTrackTile(x: number, y: number): boolean {
@@ -316,7 +344,7 @@ export class Combat {
     this.pendingSpawns = compiled.spawns.map(s => ({ ...s, absTick: waveStartTick + s.tick }));
     this.spawnEffects = [];
     this.signalCursor = 0;
-    this.stats = { enemiesDefeated: 0, shotsFired: 0, matchedHits: 0, resistedHits: 0 };
+    this.stats = { enemiesDefeated: 0, shotsFired: 0, matchedHits: 0, resistedHits: 0, modifiers: emptyModifierStats() };
   }
 
   getWaveStats(): WaveCombatStats { return { ...this.stats }; }
@@ -361,10 +389,15 @@ export class Combat {
       if (!def) continue;
       const lane = this.world.lanes[Math.min(s.lane, this.world.lanes.length - 1)];
       const chordPeers = s.chordGroup ? this.enemies.filter(e => e.spawnTick === s.absTick).length : 0;
+      if (s.chordGroup && chordPeers === 0) this.stats.modifiers.chordGroupsSpawned++;
       let pool: HpPool | undefined;
       if (def.behavior === 'tied') {
         if (pendingTie) { pool = pendingTie; pendingTie = null; }
-        else if (s.tiedToNext) { pool = { hp: def.maxHp, maxHp: def.maxHp }; pendingTie = pool; }
+        else if (s.tiedToNext) {
+          pool = { hp: def.maxHp, maxHp: def.maxHp };
+          pendingTie = pool;
+          this.stats.modifiers.tiedPairsTotal++;
+        }
       }
       this.enemies.push(new EnemyRt(s, def, lane, s.lane, s.absTick, chordPeers % 3 - 1, pool));
       const [sr, sg, sb] = rgb(BAND_COLORS[s.band]);
@@ -499,21 +532,34 @@ export class Combat {
           const isGoodHit = mult >= 2;
           e.hit(p.amplitude * mult, isGoodHit);
           if (isGoodHit) this.stats.matchedHits++; else this.stats.resistedHits++;
-          if (wasAlive && !e.alive) this.stats.enemiesDefeated++;
+          if (wasAlive && !e.alive) {
+            this.stats.enemiesDefeated++;
+            this.stats.modifiers.accidentalShifts += e.bandShifts;
+            this.stats.modifiers.crescendoResisted += e.crescendoResisted;
+            if (e.fermataHeld) this.stats.modifiers.fermataHolds++;
+            // Count tied pair defeat only once (when the shared pool drains).
+            if (e.def.behavior === 'tied' && e.pool.hp <= 0) {
+              const pairAlsoDead = this.enemies.some(
+                o => o !== e && o.def.behavior === 'tied' && o.pool === e.pool && !o.alive,
+              );
+              if (pairAlsoDead) this.stats.modifiers.tiedPairsDefeated++;
+            }
+          }
           if (dmgAmount > 0) {
             spawnDamageNumber(this.damageNumbers, etx + 0.5, ety + 0.5, dmgAmount, e.pool.maxHp, BAND_COLORS[p.band]);
           }
           // Color: green ≥3×, yellow ≥1.5×, orange ≥0.5×, grey = fizzle
+          const isResonant = mult >= 3.5;
           const multColor = mult >= 3 ? '#33ff88' : mult >= 1.5 ? '#ffcc00' : mult >= 0.5 ? '#ff8833' : '#556677';
           const [hr, hg, hb] = rgb(BAND_COLORS[p.band]);
-          this.fluid.addExplosion((etx + 0.5) * TILE_PX, (ety + 0.5) * TILE_PX, !e.alive ? 1.8 : 0.85, hr, hg, hb);
+          this.fluid.addExplosion((etx + 0.5) * TILE_PX, (ety + 0.5) * TILE_PX, !e.alive ? 1.8 : isResonant ? 1.2 : 0.85, hr, hg, hb);
           this.floaters.push({
             x: etx + 0.5 + (Math.random() * 0.5 - 0.25),
             y: ety,
-            text: p.autoTuned ? `AUTO ×${mult.toFixed(1)}` : `×${mult.toFixed(1)}`,
+            text: isResonant ? `RESONATE ×${mult.toFixed(1)}` : (p.autoTuned ? `AUTO ×${mult.toFixed(1)}` : `×${mult.toFixed(1)}`),
             color: multColor,
-            t: 0.9,
-            scale: 0.85 + Math.min(1.5, p.amplitude) * 0.25,
+            t: isResonant ? 1.2 : 0.9,
+            scale: isResonant ? 1.25 + Math.min(1.5, p.amplitude) * 0.15 : 0.85 + Math.min(1.5, p.amplitude) * 0.25,
           });
           if (!e.alive) this.floaters.push({ x: etx + 0.5, y: ety + 0.35, text: 'NOTE OFF', color: BAND_COLORS[e.band], t: 0.7, scale: 0.9 });
           break;
@@ -528,18 +574,23 @@ export class Combat {
 
   // ── Rendering ─────────────────────────────────────────────────────────────
 
-  draw(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, camera: Camera, tickFloat: number, placement: { active: boolean; tile: Tile | null; outputModuleId: string | null }): void {
+  draw(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, camera: Camera, tickFloat: number, placement: { active: boolean; tile: Tile | null; outputModuleId: string | null }, reducedMotion = false): void {
     const dpr = devicePixelRatio;
     const z = camera.zoom * dpr;
     const tileZ = TILE_PX * z;
     const w = this.world;
-    const theme = w.theme.primary;
+    const ae = this.aesthetic;
+    const theme = ae?.trackColor ?? w.theme.primary;
+    const gridColor = ae?.gridColor ?? 'rgba(20,38,72,0.50)';
+    const bgFill = ae?.background ?? '#01040c';
+    const spawnColor = ae?.spawnColor ?? '#33ff88';
+    const finishColor = ae?.finishColor ?? '#ff3366';
 
     ctx.save();
     ctx.translate(camera.panX * dpr, camera.panY * dpr);
 
     // Battlefield panel.
-    ctx.fillStyle = '#01040c';
+    ctx.fillStyle = bgFill;
     ctx.fillRect(0, 0, w.gridWidth * tileZ, w.gridHeight * tileZ);
     ctx.strokeStyle = hexAlpha(theme, 0.25);
     ctx.lineWidth = Math.max(1, 1.5 * z);
@@ -554,7 +605,7 @@ export class Combat {
     ctx.restore();
 
     // Grid.
-    ctx.strokeStyle = 'rgba(20,38,72,0.5)';
+    ctx.strokeStyle = gridColor;
     ctx.lineWidth = Math.max(0.3, 0.5 * dpr);
     for (let x = 0; x <= w.gridWidth; x += 1) {
       ctx.beginPath(); ctx.moveTo(x * tileZ, 0); ctx.lineTo(x * tileZ, w.gridHeight * tileZ); ctx.stroke();
@@ -590,7 +641,7 @@ export class Combat {
       // Start / finish markers.
       const start = lane[0];
       const finish = lane[lane.length - 1];
-      this.drawMarker(ctx, start[0], start[1], tileZ, '#33ff88', 'S');
+      this.drawMarker(ctx, start[0], start[1], tileZ, spawnColor, 'S');
       if (this.finishFlash > 0) {
         const flash = Math.abs(Math.sin(this.finishFlash * Math.PI * 14)) * this.finishFlash;
         ctx.save();
@@ -600,7 +651,7 @@ export class Combat {
         ctx.fill();
         ctx.restore();
       }
-      this.drawMarker(ctx, finish[0], finish[1], tileZ, '#ff3366', 'F');
+      this.drawMarker(ctx, finish[0], finish[1], tileZ, finishColor, 'F');
     }
 
     // Deterministic pre-spawn telegraphs and short post-spawn handoffs.
@@ -640,9 +691,35 @@ export class Combat {
       if (!p.dead) this.drawProjectile(ctx, p, tileZ, z, tickFloat);
     }
 
+    // Tied-pair arcs (drawn below the enemies so they appear connected).
+    if (!reducedMotion) {
+      const tiedAlive = this.enemies.filter(e => e.spawned && e.alive && e.def.behavior === 'tied');
+      for (let i = 0; i < tiedAlive.length - 1; i++) {
+        const a = tiedAlive[i], b = tiedAlive[i + 1];
+        if (a.pool !== b.pool) continue;
+        const pa = a.visualPos(), pb = b.visualPos();
+        const ax = pa.x * tileZ + tileZ / 2, ay = pa.y * tileZ + tileZ / 2;
+        const bx = pb.x * tileZ + tileZ / 2, by = pb.y * tileZ + tileZ / 2;
+        const mx = (ax + bx) / 2, my = (ay + by) / 2 - tileZ * 0.3;
+        const hp01 = a.pool.hp / a.pool.maxHp;
+        ctx.save();
+        ctx.strokeStyle = hexAlpha(a.def.color, 0.55 * hp01);
+        ctx.lineWidth = Math.max(0.8, 1.5 * z);
+        ctx.shadowColor = a.def.color;
+        ctx.shadowBlur = 4 * z;
+        ctx.setLineDash([Math.max(2, 3 * z), Math.max(2, 2 * z)]);
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.quadraticCurveTo(mx, my, bx, by);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+    }
+
     // Enemies.
     for (const e of this.enemies) {
-      if (e.spawned) this.drawEnemy(ctx, e, tileZ, z);
+      if (e.spawned) this.drawEnemy(ctx, e, tileZ, z, reducedMotion);
     }
 
     // Floating text.
@@ -814,7 +891,7 @@ export class Combat {
     ctx.restore();
   }
 
-  private drawEnemy(ctx: CanvasRenderingContext2D, e: EnemyRt, tileZ: number, z: number): void {
+  private drawEnemy(ctx: CanvasRenderingContext2D, e: EnemyRt, tileZ: number, z: number, reducedMotion: boolean): void {
     const pos = e.visualPos();
     const px = pos.x * tileZ + tileZ / 2;
     const py = pos.y * tileZ + tileZ / 2;
@@ -824,23 +901,79 @@ export class Combat {
     ctx.save();
     ctx.translate(px, py);
 
-    // Resonance arc ring.
+    // ── Behavior-specific underlays ──────────────────────────────────────────
+
+    const ringR = tileZ * 0.4;
+
+    // Fermata: pulsing pause halo while holding.
+    if (e.def.behavior === 'fermata' && e.spawned && !e.fermataHeld) {
+      const mid = Math.floor(e.lane.length / 2);
+      const isAtMid = e.tileIdx === mid;
+      if (isAtMid) {
+        const pulse = reducedMotion ? 0.5 : 0.5 + 0.5 * Math.sin(Date.now() / 280);
+        ctx.strokeStyle = hexAlpha('#88aaff', 0.65 * pulse);
+        ctx.lineWidth = Math.max(1.5, 2 * z);
+        ctx.shadowColor = '#88aaff';
+        ctx.shadowBlur = 8 * z * pulse;
+        ctx.beginPath();
+        ctx.arc(0, 0, ringR * 1.55, -Math.PI, 0);  // top arc = fermata arch
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = hexAlpha('#88aaff', 0.9 * pulse);
+        ctx.beginPath();
+        ctx.arc(0, -ringR * 1.62, Math.max(1.5, 2 * z), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Crescendo: red intensity ring that grows as enemy advances.
+    if (e.def.behavior === 'crescendo') {
+      const progress = e.lane.length > 1 ? e.tileIdx / (e.lane.length - 1) : 0;
+      const intensity = progress * 0.7;
+      if (intensity > 0.05) {
+        ctx.strokeStyle = hexAlpha('#ff3333', intensity);
+        ctx.lineWidth = Math.max(1, 2 * z * progress);
+        ctx.shadowColor = '#ff3333';
+        ctx.shadowBlur = 6 * z * progress;
+        ctx.beginPath();
+        ctx.arc(0, 0, ringR * (1.1 + progress * 0.35), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    // Resonance arc ring (normal).
     ctx.strokeStyle = hexAlpha(bandColor, 0.55);
     ctx.lineWidth = Math.max(1, 1.4 * z);
     ctx.shadowColor = bandColor;
     ctx.shadowBlur = 3 * z;
-    const ringR = tileZ * 0.4;
     ctx.beginPath();
     ctx.arc(0, 0, ringR, -Math.PI * 0.75, Math.PI * 0.75);
     ctx.stroke();
     ctx.shadowBlur = 0;
+
+    // Accidental: flash the ring in the new band color on each shift.
+    if (e.def.behavior === 'accidental' && e.flashT > 0 && e.flashMatch) {
+      ctx.strokeStyle = hexAlpha(bandColor, e.flashT * 0.9);
+      ctx.lineWidth = Math.max(1, 2.5 * z);
+      ctx.shadowColor = bandColor;
+      ctx.shadowBlur = 10 * z * e.flashT;
+      ctx.beginPath();
+      ctx.arc(0, 0, ringR * 1.25, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
 
     // Behavior badges.
     if (e.def.behavior !== 'normal' && tileZ > 22) {
       ctx.font = `bold ${Math.max(7, tileZ * 0.18)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.fillStyle = hexAlpha(e.def.color, 0.9);
-      const badge = e.def.behavior === 'accidental' ? '♯' : e.def.behavior === 'crescendo' ? '<' : e.def.behavior === 'fermata' ? '𝄐' : e.def.behavior === 'tied' ? '‿' : '';
+      const badge = e.def.behavior === 'accidental' ? '♯'
+        : e.def.behavior === 'crescendo' ? '<'
+          : e.def.behavior === 'fermata' ? '𝄐'
+            : e.def.behavior === 'tied' ? '‿'
+              : e.def.behavior === 'chord' ? '⋮' : '';
       if (badge) ctx.fillText(badge, ringR * 0.85, -ringR * 0.7);
     }
 

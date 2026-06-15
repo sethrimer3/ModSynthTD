@@ -53,7 +53,14 @@ interface PlacedNote {
   color: string;
 }
 
-export function renderNotation(score: WaveScore, themeColor: string, dprScale = 2): NotationLayout {
+export interface NotationColors {
+  staffColor?: string;    // staff line rgba
+  barlineColor?: string;  // barline rgba
+  restColor?: string;     // rest glyph rgba
+  tieColor?: string;      // tie/slur rgba
+}
+
+export function renderNotation(score: WaveScore, themeColor: string, dprScale = 2, colors?: NotationColors): NotationLayout {
   const lanes = 1 + score.notes.reduce((m, n) => Math.max(m, n.lane ?? 0), 0);
   const widthPx = LEFT_PAD + score.measures * PX_PER_MEASURE + RIGHT_PAD;
   const heightPx = TOP_PAD + lanes * (STAFF_H + LANE_GAP) + 6;
@@ -68,10 +75,18 @@ export function renderNotation(score: WaveScore, themeColor: string, dprScale = 
 
   const tickToX = (tick: number) => LEFT_PAD + (tick / TICKS_PER_MEASURE) * PX_PER_MEASURE;
 
+  const staffColor  = colors?.staffColor  ?? 'rgba(110,150,210,0.35)';
+  const barlineColor = colors?.barlineColor ?? 'rgba(110,150,210,0.45)';
+  const barlineFinal = colors?.barlineColor
+    ? colors.barlineColor.replace(/[\d.]+\)$/, () => '0.85)')
+    : 'rgba(150,190,255,0.80)';
+  const restColor   = colors?.restColor   ?? 'rgba(130,170,230,0.55)';
+  const tieColor    = colors?.tieColor    ?? 'rgba(180,220,255,0.80)';
+
   // ── Staves + barlines ─────────────────────────────────────────────────────
   for (let lane = 0; lane < lanes; lane++) {
     const top = TOP_PAD + lane * (STAFF_H + LANE_GAP);
-    ctx.strokeStyle = 'rgba(110,150,210,0.35)';
+    ctx.strokeStyle = staffColor;
     ctx.lineWidth = 1;
     for (let i = 0; i < 5; i++) {
       const y = top + i * STAFF_LINE_GAP;
@@ -83,7 +98,7 @@ export function renderNotation(score: WaveScore, themeColor: string, dprScale = 
     // Barlines.
     for (let m = 0; m <= score.measures; m++) {
       const x = tickToX(m * TICKS_PER_MEASURE);
-      ctx.strokeStyle = m === score.measures ? 'rgba(150,190,255,0.8)' : 'rgba(110,150,210,0.45)';
+      ctx.strokeStyle = m === score.measures ? barlineFinal : barlineColor;
       ctx.lineWidth = m === score.measures ? 2.5 : 1;
       ctx.beginPath();
       ctx.moveTo(x, top);
@@ -91,13 +106,13 @@ export function renderNotation(score: WaveScore, themeColor: string, dprScale = 
       ctx.stroke();
     }
     // Time signature on the first lane only.
-    ctx.fillStyle = 'rgba(150,190,255,0.8)';
+    ctx.fillStyle = barlineFinal;
     ctx.font = `bold 11px 'Pixelify Sans',serif`;
     ctx.textAlign = 'center';
     ctx.fillText('4', LEFT_PAD - 18, top + STAFF_LINE_GAP * 1.4);
     ctx.fillText('4', LEFT_PAD - 18, top + STAFF_LINE_GAP * 3.6);
     if (lanes > 1) {
-      ctx.fillStyle = 'rgba(110,150,210,0.7)';
+      ctx.fillStyle = barlineColor;
       ctx.font = `9px 'Pixelify Sans',sans-serif`;
       ctx.fillText(`L${lane + 1}`, LEFT_PAD - 26, top + STAFF_H / 2 + 3);
     }
@@ -124,7 +139,7 @@ export function renderNotation(score: WaveScore, themeColor: string, dprScale = 
     });
 
     // Rests: fill gaps between onsets within each measure.
-    drawRests(ctx, notes, score.measures, top, tickToX);
+    drawRests(ctx, notes, score.measures, top, tickToX, restColor);
 
     // Beams: consecutive 8th/16th notes within one beat.
     const beamGroups: PlacedNote[][] = [];
@@ -163,7 +178,7 @@ export function renderNotation(score: WaveScore, themeColor: string, dprScale = 
       if (!p.note.tieToNext) continue;
       const next = placed.slice(i + 1).find(q => q.note.enemyTypeId === p.note.enemyTypeId);
       if (!next) continue;
-      ctx.strokeStyle = 'rgba(180,220,255,0.8)';
+      ctx.strokeStyle = tieColor;
       ctx.lineWidth = 1.4;
       ctx.beginPath();
       const midX = (p.x + next.x) / 2;
@@ -291,7 +306,7 @@ function drawBeam(ctx: CanvasRenderingContext2D, group: PlacedNote[]): void {
   }
 }
 
-function drawRests(ctx: CanvasRenderingContext2D, notes: ScoreNote[], measures: number, staffTop: number, tickToX: (t: number) => number): void {
+function drawRests(ctx: CanvasRenderingContext2D, notes: ScoreNote[], measures: number, staffTop: number, tickToX: (t: number) => number, restColor: string): void {
   // Compute occupied intervals; fill gaps with rest glyphs.
   const onsets = notes.map(n => ({ start: n.tick, end: n.tick + n.durationTicks })).sort((a, b) => a.start - b.start);
   const merged: Array<{ start: number; end: number }> = [];
@@ -310,7 +325,7 @@ function drawRests(ctx: CanvasRenderingContext2D, notes: ScoreNote[], measures: 
   if (cursor < total) gaps.push({ start: cursor, end: total });
 
   ctx.save();
-  ctx.fillStyle = 'rgba(130,170,230,0.55)';
+  ctx.fillStyle = restColor;
   const midY = staffTop + STAFF_LINE_GAP * 2;
   for (const gap of gaps) {
     // Greedy decomposition into half/quarter/eighth rests, measure-aligned.
@@ -329,7 +344,7 @@ function drawRests(ctx: CanvasRenderingContext2D, notes: ScoreNote[], measures: 
         ctx.fillRect(x - 4, midY - 3.4, 8, 3.4);
       } else if (dur >= 48) {
         // Quarter rest: small zigzag.
-        ctx.strokeStyle = 'rgba(130,170,230,0.55)';
+        ctx.strokeStyle = restColor;
         ctx.lineWidth = 1.6;
         ctx.beginPath();
         ctx.moveTo(x - 1.5, midY - 6);
@@ -342,7 +357,7 @@ function drawRests(ctx: CanvasRenderingContext2D, notes: ScoreNote[], measures: 
         ctx.beginPath();
         ctx.arc(x - 2, midY - 2, 1.6, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = 'rgba(130,170,230,0.55)';
+        ctx.strokeStyle = restColor;
         ctx.lineWidth = 1.2;
         ctx.beginPath();
         ctx.moveTo(x - 1, midY - 1.5);

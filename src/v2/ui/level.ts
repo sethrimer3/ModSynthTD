@@ -32,6 +32,8 @@ import { towerStyleForOutput } from './tower-style';
 import { createRackUI, RackUI, rackWidthPx, rackHeightPx } from './rack-ui';
 import { renderNotation, NotationLayout, NotationNoteLayout } from './notation';
 import { getEnemyDef } from '../core/enemy-defs';
+import { analyzePatch, PatchAnalysis, MatchRating } from '../core/patch-analysis';
+import { BEHAVIOR_DESCRIPTION, BEHAVIOR_TACTIC, BEHAVIOR_THREAT_LABEL, modifierSummaryLines } from '../core/enemy-modifiers';
 import { getAudioEngine } from './audio-engine';
 import { LevelMusicManager } from './level-music';
 import { LEVEL_AUDIO_CONFIGS } from './level-audio-assets';
@@ -39,6 +41,8 @@ import { TutorialManager } from './tutorials';
 import { openShop } from './shop-ui';
 import { openSettings } from './settings-ui';
 import { createLevelFluidBackground } from './fluid-background';
+import { getWorldAesthetic, WorldAesthetic } from '../data/world-aesthetics';
+import { NotationColors } from './notation';
 
 const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
 const MAX_BASE_HP = 10;
@@ -57,6 +61,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   const maybeWorld = getWorld(worldId);
   if (!maybeWorld) { host.exitToMap(); return () => undefined; }
   const world: WorldDef = maybeWorld;
+  const aesthetic: WorldAesthetic = getWorldAesthetic(worldId, world.theme);
   preloadSprites();
 
   const save = host.save;
@@ -113,12 +118,45 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   fluid.resize(world.gridWidth * TILE_PX, world.gridHeight * TILE_PX);
   fluid.setLowGraphicsMode(save.settings.reducedMotion);
   const combat = new Combat(world, towers, towerStyles, fluid);
+  combat.setAesthetic(aesthetic);
   let graphDirty = false;
   let persistTimer = 0;
 
   // ── DOM scaffold ──────────────────────────────────────────────────────────
   app.innerHTML = '';
-  app.style.cssText = `position:fixed;inset:0;background:#01030a;overflow:hidden;${FF}`;
+  // Apply per-world CSS variables and background.
+  app.style.cssText = `position:fixed;inset:0;background:${aesthetic.background};overflow:hidden;${FF}`;
+  app.style.setProperty('--world-primary',    aesthetic.primary);
+  app.style.setProperty('--world-glow',       aesthetic.glow);
+  app.style.setProperty('--world-bg',         aesthetic.background);
+  app.style.setProperty('--world-panel',      aesthetic.panel);
+  app.style.setProperty('--world-border',     aesthetic.border);
+  app.style.setProperty('--world-muted',      aesthetic.muted);
+  app.style.setProperty('--world-grid',       aesthetic.gridColor);
+  app.style.setProperty('--world-track',      aesthetic.trackColor);
+  app.style.setProperty('--world-rack-case',  aesthetic.rackCase);
+  app.style.setProperty('--world-rack-panel', aesthetic.rackBorder);
+  app.style.setProperty('--world-note',       aesthetic.glow);
+
+  // Screen-edge damage flash (base hit feedback).
+  const damageFlash = document.createElement('div');
+  damageFlash.style.cssText = `
+    position:absolute;inset:0;pointer-events:none;z-index:200;
+    box-shadow:inset 0 0 0 0 transparent;opacity:0;
+    transition:opacity 0.08s ease-in;
+    background:radial-gradient(ellipse at center, transparent 30%, rgba(255,30,30,0.55) 100%);
+  `;
+  app.appendChild(damageFlash);
+
+  function triggerDamageFlash(): void {
+    if (save.settings.reducedMotion) return;
+    damageFlash.style.transition = 'none';
+    damageFlash.style.opacity = '1';
+    requestAnimationFrame(() => {
+      damageFlash.style.transition = 'opacity 0.6s ease-out';
+      damageFlash.style.opacity = '0';
+    });
+  }
 
   // Viewport (camera target).
   const viewport = document.createElement('div');
@@ -205,7 +243,15 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     getShelfCount: () => worldSave.shelfCount,
     getZoom: () => camera.zoom,
     isLive: () => runState === 'countin' || runState === 'wave',
-    themeColor: world.theme.primary,
+    themeColor: aesthetic.primary,
+    rackColors: {
+      case:       aesthetic.rackCase,
+      border:     aesthetic.rackBorder,
+      gridV:      aesthetic.rackGridV,
+      gridH:      aesthetic.rackGridH,
+      railDark:   aesthetic.rackRailDark,
+      railLight:  aesthetic.rackRailLight,
+    },
     reducedMotion: () => save.settings.reducedMotion,
     wireLayer: () => save.settings.wireLayer,
     wireOpacity: () => save.settings.wireOpacity,
@@ -267,7 +313,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   hudLeft.style.cssText = 'display:flex;flex-direction:column;gap:2px;pointer-events:auto;';
   const nameEl = document.createElement('div');
   nameEl.textContent = world.name;
-  nameEl.style.cssText = `font-size:0.9rem;font-weight:800;color:${world.theme.glow};text-shadow:0 0 14px ${world.theme.primary}66;`;
+  nameEl.style.cssText = `font-size:0.9rem;font-weight:800;color:${aesthetic.glow};text-shadow:0 0 14px ${aesthetic.primary}66;`;
   const bpmEl = document.createElement('div');
   bpmEl.textContent = `${world.bpm} BPM · ♩`;
   bpmEl.style.cssText = 'font-size:0.62rem;color:#5577aa;letter-spacing:0.08em;';
@@ -323,21 +369,21 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   notationWrap.style.cssText = `
     position:absolute;left:50%;transform:translateX(-50%);top:0;
     width:min(620px,calc(100vw - 24px));overflow:hidden;z-index:80;box-sizing:border-box;
-    background:rgba(6,12,24,0.82);border:1px solid ${world.theme.primary}44;border-radius:10px;
-    padding:4px 6px;box-shadow:0 0 18px ${world.theme.primary}22;pointer-events:none;transition:opacity 0.3s;
+    background:rgba(6,12,24,0.82);border:1px solid ${aesthetic.primary}44;border-radius:10px;
+    padding:4px 6px;box-shadow:0 0 18px ${aesthetic.primary}22;pointer-events:none;transition:opacity 0.3s;
   `;
   const notationInner = document.createElement('div');
   notationInner.style.cssText = 'position:relative;';
   const notationLabel = document.createElement('div');
   notationLabel.textContent = 'NEXT WAVE  ·  NOTE LENGTH = ENEMY SPEED';
-  notationLabel.style.cssText = `position:absolute;left:8px;top:2px;font-size:7px;font-weight:800;letter-spacing:0.12em;color:${world.theme.glow};opacity:0.72;z-index:4;`;
+  notationLabel.style.cssText = `position:absolute;left:8px;top:2px;font-size:7px;font-weight:800;letter-spacing:0.12em;color:${aesthetic.glow};opacity:0.72;z-index:4;`;
   const notationEffects = document.createElement('div');
   notationEffects.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:3;';
   notationWrap.appendChild(notationInner);
   const playhead = document.createElement('div');
-  playhead.style.cssText = `position:absolute;top:0;bottom:0;width:2px;background:${world.theme.glow};box-shadow:0 0 8px ${world.theme.glow};display:none;pointer-events:none;`;
+  playhead.style.cssText = `position:absolute;top:0;bottom:0;width:2px;background:${aesthetic.glow};box-shadow:0 0 8px ${aesthetic.glow};display:none;pointer-events:none;`;
   const loopPlayhead = document.createElement('div');
-  loopPlayhead.style.cssText = `position:absolute;top:0;bottom:0;width:2px;background:${world.theme.glow};box-shadow:0 0 5px ${world.theme.glow};opacity:0.25;pointer-events:none;`;
+  loopPlayhead.style.cssText = `position:absolute;top:0;bottom:0;width:2px;background:${aesthetic.glow};box-shadow:0 0 5px ${aesthetic.glow};opacity:0.25;pointer-events:none;`;
   // Hit-detection layer inside notationInner — children with pointer-events:auto
   // remain interactive even though ancestor elements are pointer-events:none.
   const notationHitLayer = document.createElement('div');
@@ -358,22 +404,182 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
   let popupPinnedNote: NotationNoteLayout | null = null;
 
+  // ── Patch Analysis Panel ──────────────────────────────────────────────────
+  const patchPanel = document.createElement('div');
+  patchPanel.style.cssText = [
+    'position:fixed;bottom:12px;right:12px;z-index:120;',
+    'width:min(320px,calc(100vw - 24px));max-height:calc(100vh - 80px);',
+    'overflow:hidden auto;',
+    `background:rgba(4,8,20,0.93);border:1px solid ${aesthetic.primary}44;border-radius:10px;`,
+    `padding:8px 10px;box-shadow:0 0 18px ${aesthetic.primary}22;`,
+    `${FF}font-size:0.58rem;line-height:1.7;color:#88aacc;`,
+    'pointer-events:auto;transition:opacity 0.25s;',
+  ].join('');
+  app.appendChild(patchPanel);
+
+  const RATING_COLOR: Record<MatchRating, string> = {
+    excellent: '#33ffcc',
+    good: '#44ddff',
+    weak: '#ffcc44',
+    bad: '#ff5566',
+  };
+  const RATING_LABEL: Record<MatchRating, string> = {
+    excellent: 'EXCELLENT',
+    good: 'GOOD',
+    weak: 'WEAK',
+    bad: 'BAD',
+  };
+
+  function refreshPatchPanel(): void {
+    const visible = runState === 'ready' || runState === 'cleared';
+    patchPanel.style.display = visible ? 'block' : 'none';
+    if (!visible) return;
+
+    const rackTypeIds = new Set(graph.modules.map(m => m.typeId));
+    const blueprintTypeIds = new Set(save.blueprints);
+
+    const analysis: PatchAnalysis = analyzePatch({
+      compiled: effectiveCompiled,
+      eventsByOutput: cachedEventsByOutput,
+      graph,
+      placedOutputIds: new Set(towers.keys()),
+      rackTypeIds,
+      blueprintTypeIds,
+      laneCount: world.lanes.length,
+    });
+
+    const overallColor = RATING_COLOR[analysis.overallRating];
+
+    const parts: string[] = [];
+
+    // Header
+    parts.push(
+      `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;border-bottom:1px solid ${aesthetic.primary}33;padding-bottom:4px;">` +
+      `<span style="font-weight:800;font-size:0.62rem;color:${aesthetic.glow};letter-spacing:0.08em;">PATCH ANALYSIS</span>` +
+      `<span style="font-weight:800;color:${overallColor};letter-spacing:0.06em;">${RATING_LABEL[analysis.overallRating]}</span>` +
+      `</div>`
+    );
+
+    // ── Section 1: Upcoming wave summary ────────────────────────────────────
+    parts.push(
+      `<div style="font-weight:800;color:#aabbdd;margin-bottom:2px;letter-spacing:0.07em;">` +
+      `WAVE · ${analysis.totalEnemies} ENEM${analysis.totalEnemies === 1 ? 'Y' : 'IES'}` +
+      `</div>`
+    );
+    if (analysis.enemyGroups.length === 0) {
+      parts.push(`<div style="color:#445566;">No enemies in this wave.</div>`);
+    } else {
+      for (const g of analysis.enemyGroups) {
+        const sym = g.symbols.join(' ');
+        parts.push(
+          `<div style="display:flex;justify-content:space-between;padding:1px 0;">` +
+          `<span style="color:#c8daf0;">${sym} ${g.label}</span>` +
+          `<span style="color:#5577aa;">×${g.count} · ${g.totalHp}HP</span>` +
+          `</div>`
+        );
+      }
+    }
+
+    // ── Section 2: Output summary ────────────────────────────────────────────
+    parts.push(
+      `<div style="font-weight:800;color:#aabbdd;margin-top:6px;margin-bottom:2px;letter-spacing:0.07em;">OUTPUT PATCH</div>`
+    );
+    if (analysis.outputSummaries.length === 0) {
+      parts.push(`<div style="color:#ff5566;">No output module in rack.</div>`);
+    } else {
+      for (const s of analysis.outputSummaries) {
+        const domLabel = s.dominantHz != null ? `${s.dominantHz >= 1000 ? `${(s.dominantHz / 1000).toFixed(1)}k` : Math.round(s.dominantHz)} Hz` : '—';
+        const events = s.eventCount > 0 ? `${s.eventCount} events · ${domLabel}` : 'no events';
+        const statusColor = s.warning ? '#ff5566' : '#33ffcc';
+        const statusIcon = s.warning ? '⚠' : (s.isPlaced ? '●' : '○');
+        parts.push(
+          `<div style="display:flex;justify-content:space-between;gap:6px;padding:1px 0;">` +
+          `<span style="color:${statusColor};">${statusIcon} ${s.isPlaced ? 'Tower placed' : 'No tower'}</span>` +
+          `<span style="color:#5577aa;">${events}</span>` +
+          `</div>`
+        );
+        if (s.warning) {
+          parts.push(`<div style="color:#ff5566;padding-left:10px;font-size:0.53rem;">${s.warning}</div>`);
+        }
+      }
+    }
+
+    // ── Section 3: Match quality ─────────────────────────────────────────────
+    parts.push(
+      `<div style="font-weight:800;color:#aabbdd;margin-top:6px;margin-bottom:2px;letter-spacing:0.07em;">MATCH QUALITY</div>`
+    );
+    if (analysis.matchRows.length === 0) {
+      parts.push(`<div style="color:#445566;">Nothing to compare.</div>`);
+    } else {
+      for (const row of analysis.matchRows) {
+        const rc = RATING_COLOR[row.rating];
+        const rl = RATING_LABEL[row.rating];
+        const outLabel = row.bestOutputHz != null
+          ? `→ ${row.bestOutputHz >= 1000 ? `${(row.bestOutputHz / 1000).toFixed(1)}k` : Math.round(row.bestOutputHz)} Hz`
+          : '→ no signal';
+        const multLabel = row.bestOutputHz != null ? `×${row.multiplier.toFixed(1)}` : '';
+        const sym = row.group.symbols[0] ?? '';
+        parts.push(
+          `<div style="display:flex;justify-content:space-between;gap:6px;padding:1px 0;">` +
+          `<span style="color:#c8daf0;">${sym} ${row.group.label}</span>` +
+          `<span style="color:#445566;">${outLabel}</span>` +
+          `<span style="color:${rc};font-weight:800;min-width:28px;text-align:right;">${multLabel} <span style="font-size:0.5rem;">${rl}</span></span>` +
+          `</div>`
+        );
+      }
+    }
+
+    // ── Hints ────────────────────────────────────────────────────────────────
+    if (analysis.hints.length > 0) {
+      parts.push(
+        `<div style="margin-top:7px;border-top:1px solid ${aesthetic.primary}33;padding-top:5px;">`
+      );
+      for (const hint of analysis.hints) {
+        parts.push(
+          `<div style="color:#ffcc44;font-size:0.54rem;padding:1px 0;">💡 ${hint}</div>`
+        );
+      }
+      parts.push(`</div>`);
+    }
+
+    // Preview stub button
+    parts.push(
+      `<div style="margin-top:7px;border-top:1px solid ${aesthetic.primary}22;padding-top:5px;">` +
+      `<button title="Preview Patch (coming soon)" disabled style="${FF}font-size:0.54rem;font-weight:700;` +
+      `background:rgba(8,15,28,0.6);border:1px solid #2a3d65;color:#445566;border-radius:5px;` +
+      `padding:3px 10px;cursor:not-allowed;opacity:0.5;">▷ Preview Patch</button>` +
+      `</div>`
+    );
+
+    patchPanel.innerHTML = parts.join('');
+  }
+
   function showNotePopup(note: NotationNoteLayout, refEl: HTMLElement): void {
     const def = getEnemyDef(note.enemyTypeId);
     if (!def) return;
     const rect = refEl.getBoundingClientRect();
     notePopup.style.borderColor = note.color;
     notePopup.style.boxShadow = `0 4px 18px rgba(0,0,0,0.7),0 0 10px ${note.color}44`;
+    const behavior = def.behavior;
+    const behaviorDesc = BEHAVIOR_DESCRIPTION[behavior];
+    const behaviorTip = BEHAVIOR_TACTIC[behavior] ?? null;
+    const threatLabel = BEHAVIOR_THREAT_LABEL[behavior];
+    const isSpecial = behavior !== 'normal';
+    const descColor = isSpecial ? def.color : '#6688aa';
+    const chordLabel = note.chordGroup ? ` · group ${note.chordGroup}` : '';
+    const tiedLabel = note.tiedToNext ? ' · first of pair' : (behavior === 'tied' && !note.tiedToNext ? ' · second of pair' : '');
+    const bandLabel = note.band ? note.band : def.band;
     notePopup.innerHTML = [
-      `<div style="color:${note.color};font-weight:800;font-size:0.68rem;margin-bottom:3px;">${def.symbol} ${def.label}</div>`,
-      `<div style="color:#5577aa;">HP <span style="color:#c8daf0;">${def.maxHp}</span></div>`,
-      `<div style="color:#5577aa;">Hz <span style="color:#c8daf0;">${note.hz.toFixed(1)}</span></div>`,
-      `<div style="color:#5577aa;">Modifiers <span style="color:#6688aa;">None</span></div>`,
+      `<div style="color:${note.color};font-weight:800;font-size:0.68rem;margin-bottom:3px;">${def.symbol} ${def.label}${threatLabel ? ` <span style="font-weight:400;color:${note.color}88;">[${threatLabel}]</span>` : ''}</div>`,
+      `<div style="color:#5577aa;">HP <span style="color:#c8daf0;">${def.maxHp}</span> &nbsp; Band <span style="color:#c8daf0;">${bandLabel}</span> &nbsp; Hz <span style="color:#c8daf0;">${note.hz.toFixed(1)}</span></div>`,
+      `<div style="color:#5577aa;">Threat <span style="color:#c8daf0;">${def.threat}/4</span></div>`,
+      `<div style="color:#5577aa;margin-top:3px;">Behavior <span style="color:${descColor};">${behaviorDesc}${chordLabel}${tiedLabel}</span></div>`,
+      behaviorTip ? `<div style="color:#88776a;font-size:0.52rem;margin-top:2px;border-top:1px solid #22334488;padding-top:2px;">${behaviorTip}</div>` : '',
     ].join('');
     notePopup.style.display = 'block';
     // Position to the right of the element; clamp to viewport.
     const vw = window.innerWidth, vh = window.innerHeight;
-    const popW = 215, popH = 90;
+    const popW = 230, popH = behavior !== 'normal' ? 130 : 100;
     let left = rect.right + 8;
     let top = rect.top - 10;
     if (left + popW > vw - 8) left = rect.left - popW - 8;
@@ -413,7 +619,13 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
   function rebuildNotation(score: WaveScore): void {
     notation?.canvas.remove();
-    notation = renderNotation(score, world.theme.glow);
+    const notationColors: NotationColors = {
+      staffColor:   aesthetic.staffColor,
+      barlineColor: aesthetic.barlineColor,
+      restColor:    aesthetic.restColor,
+      tieColor:     aesthetic.tieColor,
+    };
+    notation = renderNotation(score, aesthetic.glow, 2, notationColors);
     notationInner.insertBefore(notation.canvas, notationLabel);
     noteEls.length = 0;
     notationEffects.replaceChildren();
@@ -575,6 +787,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
   let cachedTraffic = new Map<string, SignalEvent[]>();
   let cachedActivity = new Map<string, number>();
+  let cachedEventsByOutput = new Map<string, SignalEvent[]>();
 
   function recompilePreview(): void {
     const score = currentWaveScore();
@@ -584,6 +797,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     const result = evaluatePatch(graph, { startTick: 0, endTick: total + PPQ * 4, seedBase: seed, upgradeLevels: upgradeLevels(save) });
     cachedTraffic = result.cableTraffic;
     cachedActivity = result.moduleActivity;
+    cachedEventsByOutput = result.eventsByOutput;
     rack.setTraffic(cachedTraffic, cachedActivity);
 
     // Notation render — prefer MIDI score if available, fall back to authored.
@@ -591,6 +805,12 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     const notationScore = midiScore ?? score;
     effectiveCompiled = compileScore(notationScore);
     rebuildNotation(notationScore);
+    refreshPatchPanel();
+
+    // Trigger Hz tutorial when wave has non-mid band enemies (band matching matters).
+    if (effectiveCompiled.spawns.some(s => s.band !== 'mid')) {
+      tut.trigger('hz-match');
+    }
   }
 
   function markGraphDirty(): void { graphDirty = true; }
@@ -644,6 +864,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     const missing = [...evaluation.eventsByOutput.keys()].filter(outputId => !towers.has(outputId));
     if (missing.length > 0) {
       flashState(`Place tower for ${missing.map(id => graph.modules.find(m => m.instanceId === id)?.typeId.toUpperCase() ?? 'OUT').join(', ')}`, '#ff6677');
+      tut.trigger('tower');
       return;
     }
     const localEvents = evaluation.events;
@@ -672,7 +893,10 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   function onWaveCleared(): void {
     levelMusic?.setActiveWave(null);
     const stats = combat.getWaveStats();
-    lastWaveSummary = `KO ${stats.enemiesDefeated} · ESC ${waveEscapes} · SHOTS ${stats.shotsFired} · MATCH ${stats.matchedHits} · RESIST ${stats.resistedHits}`;
+    const modLines = modifierSummaryLines(stats.modifiers);
+    const modSuffix = modLines.length > 0 ? ` · ${modLines[0]}` : '';
+    lastWaveSummary = `KO ${stats.enemiesDefeated} · ESC ${waveEscapes} · SHOTS ${stats.shotsFired} · MATCH ${stats.matchedHits} · RESIST ${stats.resistedHits}${modSuffix}`;
+    flashState(waveEscapes === 0 ? 'WAVE CLEARED · PERFECT ✓' : 'WAVE CLEARED ✓', '#33ff88', 2400);
     combat.clearWave();
     if (endlessActive) {
       endlessCount++;
@@ -732,13 +956,24 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     runState = 'victory';
     combat.clearWave();
     overlayTitle.textContent = worldId === 'w200' ? 'THE FINAL MEASURE RESOLVES' : 'WORLD COMPLETE';
-    overlayTitle.style.color = world.theme.glow;
-    const unlockNames = granted.map(g => g.toUpperCase()).join(', ');
-    overlaySub.innerHTML = `${world.name} cleared!<br>+${world.completionReward} ${CURRENCY_SYMBOL} Resonance${awarded === 0 ? ' (already claimed)' : ''}` +
-      (unlockNames ? `<br><span style="color:#33dd88">Unlocked: ${unlockNames}</span>` : '');
+    overlayTitle.style.color = aesthetic.glow;
+    let subHtml = `${world.name} cleared! &nbsp;+${world.completionReward} ${CURRENCY_SYMBOL} Resonance${awarded === 0 ? ' (already claimed)' : ''}`;
+    if (granted.length > 0) {
+      subHtml += '<br><br>';
+      for (const typeId of granted) {
+        const def = getModuleType(typeId);
+        if (!def) { subHtml += `<span style="color:#33dd88">+ ${typeId.toUpperCase()} unlocked</span><br>`; continue; }
+        subHtml += `
+          <div style="background:#0a1a10;border:1px solid #33dd8855;border-radius:8px;padding:6px 10px;margin:4px 0;text-align:left;">
+            <div style="color:#33dd88;font-size:0.72rem;font-weight:800;letter-spacing:0.06em;">+ ${def.name.toUpperCase()} UNLOCKED</div>
+            <div style="color:#99ccaa;font-size:0.58rem;line-height:1.4;margin-top:2px;">${def.tooltip}</div>
+          </div>`;
+      }
+    }
+    overlaySub.innerHTML = subHtml;
     if (worldId === 'w200') save.finalBossDefeated = true;
     overlayBtns.innerHTML = '';
-    addOverlayBtn('↩ WORLD MAP', world.theme.primary, () => host.exitToMap());
+    addOverlayBtn('↩ WORLD MAP', aesthetic.primary, () => host.exitToMap());
     addOverlayBtn('∞ ENDLESS', '#aa66ff', () => { hideOverlay(); beginEndless(); });
     host.persist();
     showOverlay();
@@ -859,8 +1094,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   let stateFlash = '';
   let stateFlashColor = '';
   let stateFlashUntil = 0;
-  function flashState(text: string, color: string): void {
-    stateFlash = text; stateFlashColor = color; stateFlashUntil = performance.now() + 1600;
+  function flashState(text: string, color: string, durationMs = 1600): void {
+    stateFlash = text; stateFlashColor = color; stateFlashUntil = performance.now() + durationMs;
   }
 
   function refreshHud(): void {
@@ -890,6 +1125,9 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     startBtn.style.display = canStart ? 'block' : 'none';
     startBtn.textContent = `▶ START WAVE ${wn}`;
     notationWrap.style.opacity = runState === 'wave' ? '0.35' : '1';
+
+    const panelVisible = runState === 'ready' || runState === 'cleared';
+    patchPanel.style.display = panelVisible ? 'block' : 'none';
   }
 
   // ── Transport ─────────────────────────────────────────────────────────────
@@ -944,7 +1182,9 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
           if (outcome.escapes > 0) {
             waveEscapes += outcome.escapes;
             baseHp = Math.max(0, baseHp - outcome.escapes);
-            if (baseHp <= 0) { onFailed(); break; }
+            if (baseHp <= 0) { triggerDamageFlash(); onFailed(); break; }
+            triggerDamageFlash();
+            flashState(`BASE HIT · ${baseHp}/${MAX_BASE_HP} HP`, '#ff3344', 1200);
           }
           if (outcome.fired) rack.flashModule(graph.modules.find(m => m.typeId === 'output')?.instanceId ?? '');
         }
@@ -962,6 +1202,9 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
     // Per-frame combat animation/collision.
     fluid.setLowGraphicsMode(save.settings.reducedMotion);
+    if (runState === 'ready' || runState === 'cleared') {
+      fluid.seedColor(aesthetic.fluidSeed[0], aesthetic.fluidSeed[1], aesthetic.fluidSeed[2], aesthetic.fluidSeedStrength);
+    }
     fluid.step(Math.min(dt * 1000, 100));
     if (runState === 'wave') {
       combat.updateFrame(dt, tickFloat);
@@ -1007,7 +1250,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
     // Render battlefield.
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    combat.draw(ctx, canvas, camera, tickFloat, placement);
+    combat.draw(ctx, canvas, camera, tickFloat, placement, save.settings.reducedMotion);
 
     // Dev overlay.
     if (debugEl && levelMusic) {
@@ -1046,8 +1289,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       : 1;
     const beatPhase = ((tickFloat % PPQ) + PPQ) % PPQ / PPQ;
     notationWrap.style.boxShadow = isCountin
-      ? `0 0 ${8 + (1 - beatPhase) * 14}px ${world.theme.primary}44`
-      : `0 0 18px ${world.theme.primary}22`;
+      ? `0 0 ${8 + (1 - beatPhase) * 14}px ${aesthetic.primary}44`
+      : `0 0 18px ${aesthetic.primary}22`;
     for (let i = 0; i < notation.notes.length; i++) {
       const note: NotationNoteLayout = notation.notes[i];
       const el = noteEls[i];
@@ -1116,6 +1359,17 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   tut.trigger('camera');
   setTimeout(() => { if (runState === 'ready') tut.trigger('first-patch'); }, 1800);
   setTimeout(() => { if (runState === 'ready') tut.trigger('score'); }, 3600);
+  // Proactively explain two-lane strategy when entering a multi-lane world.
+  if (world.lanes.length >= 2) {
+    setTimeout(() => { if (runState === 'ready') tut.trigger('two-lanes'); }, 5400);
+  }
+  const WORLD_ENTRY_TUTORIALS: Record<string, string> = {
+    w100: 'timing', w120: 'mixing', w140: 'filtering', w160: 'sequencing',
+  };
+  const entryTut = WORLD_ENTRY_TUTORIALS[worldId];
+  if (entryTut) {
+    setTimeout(() => { if (runState === 'ready') tut.trigger(entryTut); }, 7000);
+  }
   if (worldSave.completed && canAttemptCipher(save, CAMPAIGN_ORDER) && !save.secretRevealed) {
     setTimeout(() => tut.trigger('cipher'), 5200);
   }

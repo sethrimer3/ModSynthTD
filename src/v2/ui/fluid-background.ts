@@ -80,6 +80,11 @@ export interface LevelFluidBackground {
    * High graphics uses 3Ã— more particles for a denser fluid background.
    */
   setLowGraphicsMode(enabled: boolean): void;
+  /**
+   * Inject a gentle ambient dye seed across the whole grid.
+   * Call once per frame at idle/prep time to tint background with the world color.
+   */
+  seedColor(r: number, g: number, b: number, strength: number): void;
 }
 
 export function createLevelFluidBackground(): LevelFluidBackground {
@@ -235,6 +240,16 @@ export function createLevelFluidBackground(): LevelFluidBackground {
     }
   }
 
-  return { resize, addForce, addExplosion, step, render, reset, setLowGraphicsMode };
+  function seedColor(r: number, g: number, b: number, strength: number): void {
+    if (strength <= 0) return;
+    // Inject a low-velocity dye pulse at a random interior grid point each call.
+    // Calling this once per frame keeps the background gently tinted without
+    // overwhelming gameplay-driven splats.
+    const gx = 4 + Math.random() * (FLUID_COLS - 8);
+    const gy = 4 + Math.random() * (FLUID_ROWS - 8);
+    splat(gx, gy, 0, 0, r, g, b, strength * 0.18);
+  }
+
+  return { resize, addForce, addExplosion, step, render, reset, setLowGraphicsMode, seedColor };
 }
 
