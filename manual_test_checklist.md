@@ -287,6 +287,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] OSC waveform visibly changes projectile shape/motion and OSC band changes projectile color
 - [ ] AMP changes projectile intensity and hit-text scale; DELAY echoes appear ghosted
 - [ ] Splitter/Router multi-direction fire is visible at the output tower
+- [ ] Clock, cable, module, and OUT faceplate pulses continue visibly while preparing, counting in, live, and after a wave clears
 - [ ] Cleared waves show KO, escapes, shots, matched hits, and resisted hits
 - [ ] With `?dev` enabled, enemy escapes can drive `BASE` HP below zero without changing the run state to `FAILED`
 - [ ] Buying an additional OUT module succeeds and selling it removes its saved tower placement

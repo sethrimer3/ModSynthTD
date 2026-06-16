@@ -48,6 +48,7 @@ import { NotationColors } from './notation';
 const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
 const MAX_BASE_HP = 10;
 const SCENE_GAP = 60;
+const SIGNAL_PREVIEW_LOOP_TICKS = TICKS_PER_MEASURE * 4;
 
 type RunState = 'ready' | 'countin' | 'wave' | 'cleared' | 'failed' | 'victory';
 
@@ -786,6 +787,10 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     return world.waves[Math.min(waveIndex, world.waves.length - 1)];
   }
 
+  function effectiveWaveScore(): WaveScore {
+    return levelMusic?.getMidiScore(waveIndex) ?? currentWaveScore();
+  }
+
   function waveSeed(): number {
     return combineSeeds(hashString(worldId), waveIndex, runSeed, endlessActive ? endlessCount : 0);
   }
@@ -794,20 +799,24 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   let cachedActivity = new Map<string, number>();
   let cachedEventsByOutput = new Map<string, SignalEvent[]>();
 
-  function recompilePreview(): void {
-    const score = currentWaveScore();
-    const total = score.measures * TICKS_PER_MEASURE;
-    // Evaluate the patch over the whole wave window for cable pulses + notation-independent traffic.
+  function refreshPreviewTraffic(): void {
     const seed = waveSeed();
-    const result = evaluatePatch(graph, { startTick: 0, endTick: total + PPQ * 4, seedBase: seed, upgradeLevels: upgradeLevels(save) });
+    const result = evaluatePatch(graph, { startTick: 0, endTick: SIGNAL_PREVIEW_LOOP_TICKS, seedBase: seed, upgradeLevels: upgradeLevels(save) });
     cachedTraffic = result.cableTraffic;
     cachedActivity = result.moduleActivity;
-    cachedEventsByOutput = result.eventsByOutput;
     rack.setTraffic(cachedTraffic, cachedActivity);
+  }
+
+  function recompilePreview(): void {
+    refreshPreviewTraffic();
+    const notationScore = effectiveWaveScore();
+    const total = notationScore.measures * TICKS_PER_MEASURE;
+    // Evaluate the patch over the active wave window for combat analysis.
+    const seed = waveSeed();
+    const result = evaluatePatch(graph, { startTick: 0, endTick: total + PPQ * 4, seedBase: seed, upgradeLevels: upgradeLevels(save) });
+    cachedEventsByOutput = result.eventsByOutput;
 
     // Notation render — prefer MIDI score if available, fall back to authored.
-    const midiScore = levelMusic?.getMidiScore(waveIndex) ?? null;
-    const notationScore = midiScore ?? score;
     effectiveCompiled = compileScore(notationScore);
     rebuildNotation(notationScore);
     refreshPatchPanel();
@@ -820,14 +829,12 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
   function markGraphDirty(): void { graphDirty = true; }
 
-  function rebuildSignalsForWave(): ReturnType<typeof evaluatePatch> {
-    const score = currentWaveScore();
+  function rebuildSignalsForWave(score: WaveScore = effectiveWaveScore()): ReturnType<typeof evaluatePatch> {
     const total = score.measures * TICKS_PER_MEASURE;
     const seed = waveSeed();
     const result = evaluatePatch(graph, { startTick: 0, endTick: total + PPQ * 4, seedBase: seed, upgradeLevels: upgradeLevels(save) });
-    cachedTraffic = result.cableTraffic;
-    cachedActivity = result.moduleActivity;
-    rack.setTraffic(cachedTraffic, cachedActivity);
+    cachedEventsByOutput = result.eventsByOutput;
+    refreshPreviewTraffic();
     return result;
   }
 
@@ -856,7 +863,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
     // Resolve the wave score: prefer MIDI-derived, fall back to authored.
     const midiScore = levelMusic?.getMidiScore(waveIndex) ?? null;
-    const effectiveScore = midiScore ?? currentWaveScore();
+    const effectiveScore = effectiveWaveScore();
     effectiveCompiled = compileScore(effectiveScore);
     waveTotalTicks = effectiveScore.measures * TICKS_PER_MEASURE;
 
@@ -865,7 +872,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       rebuildNotation(midiScore);
     }
 
-    const evaluation = rebuildSignalsForWave();
+    const evaluation = rebuildSignalsForWave(effectiveScore);
     const missing = [...evaluation.eventsByOutput.keys()].filter(outputId => !towers.has(outputId));
     if (missing.length > 0) {
       flashState(`Place tower for ${missing.map(id => graph.modules.find(m => m.instanceId === id)?.typeId.toUpperCase() ?? 'OUT').join(', ')}`, '#ff6677');
@@ -1253,8 +1260,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     // Try to start background loops once audio is unlocked and buffers ready.
     levelMusic?.tryStartLoops();
 
-    // Rack pulses use local tick.
-    rack.setCurrentTick(runState === 'wave' || runState === 'countin' ? tickFloat - waveStartTick : (tickFloat % (TICKS_PER_MEASURE * 2)));
+    // Rack pulses run on a looping preview clock, even between waves.
+    rack.setCurrentTick(((tickFloat % SIGNAL_PREVIEW_LOOP_TICKS) + SIGNAL_PREVIEW_LOOP_TICKS) % SIGNAL_PREVIEW_LOOP_TICKS);
     rack.update(now);
 
     // Notation playhead.
