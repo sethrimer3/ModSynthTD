@@ -288,6 +288,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] AMP changes projectile intensity and hit-text scale; DELAY echoes appear ghosted
 - [ ] Splitter/Router multi-direction fire is visible at the output tower
 - [ ] Cleared waves show KO, escapes, shots, matched hits, and resisted hits
+- [ ] With `?dev` enabled, enemy escapes can drive `BASE` HP below zero without changing the run state to `FAILED`
 - [ ] Buying an additional OUT module succeeds and selling it removes its saved tower placement
 - [ ] Old single-tower saves load with the placement assigned to the first OUT module
 - [ ] Each OUT faceplate shows a deterministic shape/color tower slot and placement state

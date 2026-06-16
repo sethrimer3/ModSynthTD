@@ -1215,8 +1215,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
           for (const spawned of outcome.spawnedEvents) flashResolvedNote(spawned.spawnIndex);
           if (outcome.escapes > 0) {
             waveEscapes += outcome.escapes;
-            baseHp = Math.max(0, baseHp - outcome.escapes);
-            if (baseHp <= 0) { triggerDamageFlash(); onFailed(); break; }
+            baseHp -= outcome.escapes;
+            if (!devMode && baseHp <= 0) { triggerDamageFlash(); onFailed(); break; }
             triggerDamageFlash();
             flashState(`BASE HIT · ${baseHp}/${MAX_BASE_HP} HP`, '#ff3344', 1200);
           }
