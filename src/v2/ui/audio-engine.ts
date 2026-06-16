@@ -11,17 +11,12 @@
  * Each bus has its own gain node so the audio mixer controls are independent.
  */
 
-import { SignalEvent, FrequencyBand, Waveform } from '../core/events';
+import { SignalEvent, FrequencyBand, Waveform, eventHertz } from '../core/events';
 import { ticksToSec } from '../core/ticks';
 import { MAX_AUDIO_VOICES, MIN_OSC_FREQ, MAX_OSC_FREQ } from '../core/limits';
+import { BAND_HZ } from '../core/pitch';
 import kick1Url from '../../../ASSETS/sfx/kick/kick_1.mp3';
 import kick2Url from '../../../ASSETS/sfx/kick/kick_2.mp3';
-
-const BAND_BASE_MIDI: Record<FrequencyBand, number> = {
-  low: 41,  // F2
-  mid: 60,  // C4
-  high: 72, // C5
-};
 
 const OSC_TYPES: Record<Waveform, OscillatorType> = {
   pulse: 'square',
@@ -30,10 +25,6 @@ const OSC_TYPES: Record<Waveform, OscillatorType> = {
   saw: 'sawtooth',
   triangle: 'triangle',
 };
-
-function midiToFreq(midi: number): number {
-  return 440 * Math.pow(2, (midi - 69) / 12);
-}
 
 interface ActiveVoice {
   id: string;
@@ -260,8 +251,12 @@ export class AudioEngine {
 
     const osc = ctx.createOscillator();
     osc.type = OSC_TYPES[e.waveform] ?? 'square';
-    const midi = BAND_BASE_MIDI[e.band] + e.pitchOffset;
-    osc.frequency.value = Math.min(MAX_OSC_FREQ, Math.max(MIN_OSC_FREQ, midiToFreq(midi)));
+    // Use the event's exact hertz when present (matches combat projectile tuning).
+    // Fall back to band anchor + pitchOffset via the canonical BAND_HZ table.
+    const hz = e.hertz != null && Number.isFinite(e.hertz) && e.hertz > 0
+      ? e.hertz
+      : eventHertz({ ...e, baseHz: e.baseHz ?? BAND_HZ[e.band] });
+    osc.frequency.value = Math.min(MAX_OSC_FREQ, Math.max(MIN_OSC_FREQ, hz));
 
     const g = ctx.createGain();
     const peak = Math.min(0.5, 0.16 * e.amplitude);

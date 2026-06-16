@@ -10,6 +10,9 @@ import './ticks.test';
 import './save.test';
 import './economy.test';
 import './worlds.test';
+import './economy-exploits.test';
+import './audio-config.test';
+import './sim.test';
 import { runAll } from './harness';
 
 const failed = runAll();

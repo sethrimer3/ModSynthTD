@@ -55,17 +55,17 @@ test('world completion reward is one-time', () => {
 
 test('shelf purchase and eligible refund', () => {
   const save = defaultSave();
-  save.resonance = 100;
+  save.resonance = 50;
   let r = purchaseShelf(save, 'w40');
-  assertEq(r.ok, true, 'shelf 2 affordable at 60');
-  assertEq(save.resonance, 40, 'cost deducted');
+  assertEq(r.ok, true, 'shelf 2 affordable at 30');
+  assertEq(save.resonance, 20, 'cost deducted');
   assertEq(getWorldSave(save, 'w40').shelfCount, 2, 'shelf added');
   r = purchaseShelf(save, 'w40');
-  assertEq(r.ok, false, 'shelf 3 costs 120 — cannot afford');
-  assertEq(save.resonance, 40, 'failed purchase changes nothing');
+  assertEq(r.ok, false, 'shelf 3 costs 60 — cannot afford');
+  assertEq(save.resonance, 20, 'failed purchase changes nothing');
   r = refundShelf(save, 'w40');
   assertEq(r.ok, true, 'empty shelf 2 refundable');
-  assertEq(save.resonance, 100, '100% refund');
+  assertEq(save.resonance, 50, '100% refund');
   r = refundShelf(save, 'w40');
   assertEq(r.ok, false, 'first shelf not refundable');
 });
@@ -84,6 +84,8 @@ test('occupied shelf cannot be refunded', () => {
 test('module purchase requires blueprint, funds, and space; full refund on sell', () => {
   const save = defaultSave();
   save.resonance = 100;
+  // v3: all modules are h≥2; give the rack 2 rows so the purchase can place.
+  getWorldSave(save, 'w40').shelfCount = 2;
   let r = purchaseModule(save, 'w40', 'amp');
   assertEq(r.ok, false, 'amp blueprint locked initially');
   save.blueprints.push('amp');
@@ -168,6 +170,8 @@ test('repeated purchases never duplicate instance ids', () => {
   const save = defaultSave();
   save.resonance = 1000;
   save.blueprints.push('connector');
+  // v3: connector is h:2; give the rack enough rows to fit 10 of them.
+  getWorldSave(save, 'w40').shelfCount = 2;
   const ids = new Set<string>();
   for (let i = 0; i < 10; i++) {
     const r = purchaseModule(save, 'w40', 'connector');

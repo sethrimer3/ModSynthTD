@@ -21,7 +21,7 @@ function fakeStorage(initial: Record<string, string> = {}): SaveStorage & { map:
 
 test('fresh storage loads defaults', () => {
   const r = loadSave(fakeStorage());
-  assertEq(r.save.schemaVersion, 2, 'current schema');
+  assertEq(r.save.schemaVersion, 3, 'current schema');
   assertEq(r.save.resonance, 0, 'no currency');
   assertEq(r.recoveredFromCorrupt, false, 'not a recovery');
 });
@@ -146,7 +146,7 @@ test('v1 save migrates shelfIndex/slotX to gridY/gridX', () => {
     },
   };
   const { data } = migrateSave(v1Raw as Record<string, unknown>);
-  assertEq(data.schemaVersion, 2, 'version bumped');
+  assertEq(data.schemaVersion, 3, 'version bumped');
   const modules = ((data as Record<string, unknown>).worlds as Record<string, Record<string, Record<string, Record<string, unknown>[]>>>).w40.rack.modules;
   assertEq((modules[0] as Record<string, unknown>).gridX, 0, 'clock gridX=0');
   assertEq((modules[0] as Record<string, unknown>).gridY, 0, 'clock gridY=0');
