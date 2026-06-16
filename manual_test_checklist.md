@@ -310,6 +310,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 
 ## 27. Alpha Stabilization QA
 
+- [ ] Main menu shows `BUILD 001` in bright golden text at the top-left
 - [ ] Run `npm test` and confirm the balance simulator prints all rack profiles plus the detailed w60 sample
 - [ ] Run `npm run build` and confirm production build succeeds
 - [ ] Confirm `QA_STATUS.md` known gaps still match the current build

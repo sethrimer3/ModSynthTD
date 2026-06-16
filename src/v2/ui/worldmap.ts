@@ -16,6 +16,7 @@ import { openSettings } from './settings-ui';
 import { getAudioEngine } from './audio-engine';
 
 const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
+const MAIN_MENU_BUILD_LABEL = 'BUILD 001';
 
 export interface WorldMapOpts {
   save: SaveData;
@@ -34,6 +35,16 @@ export function showWorldMap(app: HTMLElement, opts: WorldMapOpts): void {
   const root = document.createElement('div');
   root.style.cssText = 'min-height:100%;display:flex;flex-direction:column;align-items:center;gap:1.2rem;padding:2rem 1rem 3rem;';
   app.appendChild(root);
+
+  const buildLabel = document.createElement('div');
+  buildLabel.textContent = MAIN_MENU_BUILD_LABEL;
+  buildLabel.style.cssText = `
+    position:fixed;top:12px;left:14px;z-index:5;${FF}
+    font-size:0.78rem;font-weight:900;letter-spacing:0.12em;
+    color:#ffdd55;text-shadow:0 0 8px rgba(255,210,64,0.9),0 0 22px rgba(255,150,20,0.6);
+    pointer-events:none;
+  `;
+  app.appendChild(buildLabel);
 
   // Header.
   const header = document.createElement('div');
