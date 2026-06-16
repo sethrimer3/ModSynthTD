@@ -308,3 +308,13 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] A 25%-opacity playhead always shows the current background-loop position on the sheet music
 - [ ] Next-wave sheet music shrinks to fit fully inside its box without clipping on the right
 
+## 27. Alpha Stabilization QA
+
+- [ ] Run `npm test` and confirm the balance simulator prints all rack profiles plus the detailed w60 sample
+- [ ] Run `npm run build` and confirm production build succeeds
+- [ ] Confirm `QA_STATUS.md` known gaps still match the current build
+- [ ] Confirm w60 wave 1 uses MIDI/audio content and later w60 waves fall back to authored scores safely
+- [ ] Confirm replaying cleared waves/worlds cannot double-claim Resonance
+- [ ] Confirm buy/sell and shelf buy/refund loops cannot increase Resonance
+- [ ] Confirm selling a purchased OUT removes only that output tower placement
+

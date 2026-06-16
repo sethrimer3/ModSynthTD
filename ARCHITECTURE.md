@@ -156,9 +156,15 @@ tails are allowed to finish naturally.
 ## 8. Tests
 
 `npm test` compiles `src/v2/{core,data,state,tests}` (CommonJS, no DOM) and runs
-the node harness: 81 deterministic tests across timing/RNG, graph
-validation+evaluation, score compilation, economy, save/migration, and world
-data. `npm run build` validates the full browser bundle.
+the node harness. The suite covers timing/RNG, graph validation+evaluation,
+score compilation, economy, save/migration, world data, audio-content
+validation, and a deterministic headless campaign balance simulator.
+`npm run build` validates the full browser bundle.
+
+The balance simulator lives in `src/v2/tests/sim.ts`. It evaluates representative
+rack profiles against campaign waves without DOM, canvas, or AudioContext and
+prints world/wave diagnostics from the same pure graph and score data used by
+the live game.
 
 ## 9. Combat feedback
 

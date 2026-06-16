@@ -16,6 +16,8 @@
 
 import { test, assert, assertEq } from './harness';
 import { validateLevelAudioConfig, LevelAudioConfig } from '../data/level-audio-config';
+import { LEVEL_AUDIO_COVERAGE } from '../data/level-audio-coverage';
+import { CAMPAIGN_ORDER, getWorld } from '../data/worlds';
 
 function makeConfig(overrides: Partial<LevelAudioConfig> = {}): LevelAudioConfig {
   return {
@@ -117,4 +119,32 @@ test('missing introOgg in a waveAudio entry is a warning', () => {
   });
   const issues = validateLevelAudioConfig(config, 3, 'w60');
   assert(issues.some(i => i.severity === 'warning' && i.message.includes('introOgg')), 'missing introOgg warning');
+});
+
+test('current campaign audio coverage is explicit and partial-safe', () => {
+  const known = new Map(LEVEL_AUDIO_COVERAGE.map(entry => [entry.worldId, entry]));
+  const w60 = known.get('w60');
+  assert(w60 !== undefined, 'w60 audio coverage is tracked');
+  assertEq(w60!.coveredWaveIndices, [0], 'w60 currently covers wave 1 only');
+
+  for (const worldId of CAMPAIGN_ORDER) {
+    const world = getWorld(worldId)!;
+    const coverage = known.get(worldId);
+    if (!coverage) continue;
+    const config = makeConfig({
+      bpm: world.bpm,
+      waveAudio: coverage.coveredWaveIndices.map(waveIndex => ({
+        waveIndex,
+        introOgg: `wave${waveIndex + 1}.ogg`,
+        midiUrl: `wave${waveIndex + 1}.mid`,
+      })),
+    });
+    const issues = validateLevelAudioConfig(config, world.waves.length, worldId);
+    if (coverage.coveredWaveIndices.length > 0 && coverage.coveredWaveIndices.length < world.waves.length) {
+      assert(
+        issues.some(i => i.severity === 'warning' && i.message.includes('Partial audio coverage')),
+        `${worldId} partial audio coverage should be reported as a warning`,
+      );
+    }
+  }
 });

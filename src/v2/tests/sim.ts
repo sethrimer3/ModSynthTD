@@ -24,17 +24,24 @@ import { TICKS_PER_MEASURE } from '../core/ticks';
 import { damageMultiplier, bandToHz } from '../core/pitch';
 import { eventHertz } from '../core/events';
 import { getEnemyDef } from '../core/enemy-defs';
+import { cumulativeReward } from '../state/economy';
+import { WorldDef } from '../data/worlds';
 
 export interface SimWaveResult {
   waveId: string;
   worldId: string;
   waveIndex: number;
   clear: boolean;
+  waveTitle: string;
+  enemyCount: number;
+  totalEnemyHp: number;
   leaked: number;
   defeated: number;
   spawned: number;
   shotsFired: number;
   matchedHits: number;
+  resistedHits: number;
+  estimatedReward: number;
 }
 
 export interface SimWorldResult {
@@ -55,6 +62,7 @@ export function simulateWave(
   laneLength: number,
   worldId: string,
   waveIndex: number,
+  rewardTable: readonly number[] = [],
 ): SimWaveResult {
   const compiled = compileScore(score);
   const measures = score.measures;
@@ -107,6 +115,7 @@ export function simulateWave(
 
   let shotsFired = 0;
   let matchedHits = 0;
+  let resistedHits = 0;
 
   // Process each signal event in tick order (they're already sorted).
   for (const ev of events) {
@@ -128,6 +137,7 @@ export function simulateWave(
       enemy.hp = Math.max(0, enemy.hp - dmg);
       shotsFired++;
       if (mult >= 2) matchedHits++;
+      else resistedHits++;
       if (enemy.hp <= 0) { enemy.alive = false; }
     }
   }
@@ -149,12 +159,17 @@ export function simulateWave(
     waveId: score.waveId,
     worldId,
     waveIndex,
+    waveTitle: score.title ?? score.waveId,
     clear: leaked === 0,
+    enemyCount: enemies.length,
+    totalEnemyHp: enemies.reduce((sum, e) => sum + e.maxHp, 0),
     leaked,
     defeated,
     spawned: enemies.length,
     shotsFired,
     matchedHits,
+    resistedHits,
+    estimatedReward: cumulativeReward(rewardTable, waveIndex + 1),
   };
 }
 
@@ -174,3 +189,92 @@ export function starterRack(): RackGraph {
     ],
   };
 }
+
+/** A deliberately bad rack: slow clock, low-band oscillator, no modifiers. */
+export function weakRack(): RackGraph {
+  return {
+    modules: [
+      { instanceId: 'm-clock', typeId: 'clock', gridY: 0, gridX: 0, settings: { subdivisionTicks: 192, phaseTicks: 0, gate: 0.4 } },
+      { instanceId: 'm-osc', typeId: 'osc', gridY: 0, gridX: 2, settings: { waveform: 'sine', band: 'low', baseNote: 'band' } },
+      { instanceId: 'm-out', typeId: 'output', gridY: 0, gridX: 5, settings: { synthOn: false, synthVolume: 0.5 } },
+    ],
+    cables: [
+      { cableId: 'c-clock-osc', fromModuleId: 'm-clock', fromPortId: 'out', toModuleId: 'm-osc', toPortId: 'in' },
+      { cableId: 'c-osc-out', fromModuleId: 'm-osc', fromPortId: 'out', toModuleId: 'm-out', toPortId: 'in' },
+    ],
+  };
+}
+
+/** Early shop patch: starter path with a safe gain boost after w40 unlocks AMP. */
+export function recommendedEarlyRack(worldId: string): RackGraph {
+  const band = worldId === 'w60' || worldId === 'w80' || worldId === 'w120' ? 'high'
+    : worldId === 'w40' || worldId === 'w140' ? 'mid'
+      : 'low';
+  return {
+    modules: [
+      { instanceId: 'm-clock', typeId: 'clock', gridY: 0, gridX: 0, settings: { subdivisionTicks: 48, phaseTicks: 0, gate: 0.65 } },
+      { instanceId: 'm-osc', typeId: 'osc', gridY: 0, gridX: 2, settings: { waveform: 'pulse', band, baseNote: 'band' } },
+      { instanceId: 'm-amp', typeId: 'amp', gridY: 0, gridX: 5, settings: { gain: 1.35 } },
+      { instanceId: 'm-out', typeId: 'output', gridY: 0, gridX: 8, settings: { synthOn: false, synthVolume: 0.5 } },
+    ],
+    cables: [
+      { cableId: 'c-clock-osc', fromModuleId: 'm-clock', fromPortId: 'out', toModuleId: 'm-osc', toPortId: 'in' },
+      { cableId: 'c-osc-amp', fromModuleId: 'm-osc', fromPortId: 'out', toModuleId: 'm-amp', toPortId: 'in' },
+      { cableId: 'c-amp-out', fromModuleId: 'm-amp', fromPortId: 'out', toModuleId: 'm-out', toPortId: 'in' },
+    ],
+  };
+}
+
+/** Multi-output profile: splitter branches into two independent output towers. */
+export function multiOutputRack(): RackGraph {
+  return {
+    modules: [
+      { instanceId: 'm-clock', typeId: 'clock', gridY: 0, gridX: 0, settings: { subdivisionTicks: 48, phaseTicks: 0, gate: 0.55 } },
+      { instanceId: 'm-osc', typeId: 'osc', gridY: 0, gridX: 2, settings: { waveform: 'square', band: 'mid', baseNote: 'band' } },
+      { instanceId: 'm-split', typeId: 'splitter', gridY: 0, gridX: 5, settings: { dirB: 'east', dirC: 'south' } },
+      { instanceId: 'm-out-a', typeId: 'output', gridY: 0, gridX: 8, settings: { synthOn: false, synthVolume: 0.5 } },
+      { instanceId: 'm-out-b', typeId: 'output', gridY: 1, gridX: 8, settings: { synthOn: false, synthVolume: 0.5 } },
+    ],
+    cables: [
+      { cableId: 'c-clock-osc', fromModuleId: 'm-clock', fromPortId: 'out', toModuleId: 'm-osc', toPortId: 'in' },
+      { cableId: 'c-osc-split', fromModuleId: 'm-osc', fromPortId: 'out', toModuleId: 'm-split', toPortId: 'in' },
+      { cableId: 'c-split-a', fromModuleId: 'm-split', fromPortId: 'outA', toModuleId: 'm-out-a', toPortId: 'in' },
+      { cableId: 'c-split-b', fromModuleId: 'm-split', fromPortId: 'outB', toModuleId: 'm-out-b', toPortId: 'in' },
+    ],
+  };
+}
+
+/** Strong late-game profile: fast clock plus auto-tuning and gain. */
+export function lateGameStrongRack(): RackGraph {
+  return {
+    modules: [
+      { instanceId: 'm-clock', typeId: 'clock', gridY: 0, gridX: 0, settings: { subdivisionTicks: 24, phaseTicks: 0, gate: 0.75 } },
+      { instanceId: 'm-osc', typeId: 'osc', gridY: 0, gridX: 2, settings: { waveform: 'saw', band: 'mid', baseNote: 'band' } },
+      { instanceId: 'm-harm', typeId: 'harmonizer', gridY: 0, gridX: 5, settings: { intervalSet: 'SPREAD', balance: true } },
+      { instanceId: 'm-auto', typeId: 'targetTuner', gridY: 0, gridX: 8, settings: { mode: 'nearest' } },
+      { instanceId: 'm-amp', typeId: 'amp', gridY: 0, gridX: 11, settings: { gain: 1.4 } },
+      { instanceId: 'm-out', typeId: 'output', gridY: 0, gridX: 14, settings: { synthOn: false, synthVolume: 0.5 } },
+    ],
+    cables: [
+      { cableId: 'c-clock-osc', fromModuleId: 'm-clock', fromPortId: 'out', toModuleId: 'm-osc', toPortId: 'in' },
+      { cableId: 'c-osc-harm', fromModuleId: 'm-osc', fromPortId: 'out', toModuleId: 'm-harm', toPortId: 'in' },
+      { cableId: 'c-harm-auto', fromModuleId: 'm-harm', fromPortId: 'out', toModuleId: 'm-auto', toPortId: 'in' },
+      { cableId: 'c-auto-amp', fromModuleId: 'm-auto', fromPortId: 'out', toModuleId: 'm-amp', toPortId: 'in' },
+      { cableId: 'c-amp-out', fromModuleId: 'm-amp', fromPortId: 'out', toModuleId: 'm-out', toPortId: 'in' },
+    ],
+  };
+}
+
+export interface RackProfile {
+  profileId: string;
+  label: string;
+  graphForWorld(world: WorldDef): RackGraph;
+}
+
+export const SIM_RACK_PROFILES: readonly RackProfile[] = [
+  { profileId: 'starter', label: 'starter patch: clock -> oscillator -> output', graphForWorld: () => starterRack() },
+  { profileId: 'recommendedEarly', label: 'recommended early patch for world', graphForWorld: world => recommendedEarlyRack(world.worldId) },
+  { profileId: 'multiOutput', label: 'multi-output patch', graphForWorld: () => multiOutputRack() },
+  { profileId: 'weak', label: 'intentionally weak/bad patch', graphForWorld: () => weakRack() },
+  { profileId: 'lateStrong', label: 'late-game strong patch', graphForWorld: () => lateGameStrongRack() },
+];

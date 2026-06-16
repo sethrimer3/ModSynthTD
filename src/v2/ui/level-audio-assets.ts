@@ -9,6 +9,7 @@
  */
 
 import { LevelAudioConfig } from '../data/level-audio-config';
+import { getLevelAudioCoverage } from '../data/level-audio-coverage';
 
 declare const require: {
   context(directory: string, useSubdirectories: boolean, regExp: RegExp): {
@@ -65,6 +66,11 @@ const LEVEL_60BPM: LevelAudioConfig = {
     // { waveIndex: 1, introOgg: wave2OggUrl, midiUrl: wave2MidUrl },
   ],
 };
+
+const w60Coverage = getLevelAudioCoverage('w60')?.coveredWaveIndices ?? [];
+if (w60Coverage.length !== LEVEL_60BPM.waveAudio.length) {
+  console.warn('[w60] Level audio coverage metadata does not match configured waveAudio entries.');
+}
 
 /**
  * Registry of level audio configs keyed by worldId.

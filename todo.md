@@ -21,6 +21,7 @@ The factory-defense items below are **legacy** (superseded by the campaign) and
 kept only for history.
 
 ### Done
+- [x] Add alpha-stabilization diagnostics: expanded headless balance profiles, audio coverage validation, exact-Hz frequency tests, and QA status notes.
 - [x] Make canonical SignalEvent properties visibly affect combat projectiles, tower fire feedback, hit results, and transient wave summaries.
 - [x] Pure core: integer-tick timing (PPQ 48), canonical SignalEvent, typed
   ports, data-driven module registry, deterministic bounded graph
@@ -45,6 +46,8 @@ kept only for history.
 - [x] Build passing, browser-verified: enter world, run wave, clear, reward.
 
 ### Deferred / follow-up
+- [ ] Decide where the V2 visible build number should live; current V2 source does not expose an obvious build-number constant to increment.
+- [ ] Use the headless balance simulator output to tune impossible/trivial waves before alpha.
 - [ ] Finish per-output tower UI/runtime: direct slot-to-board dragging, unique shapes/colors, per-output controls, and independent Combat firing/rendering from `eventsByOutput`.
 - [ ] Require every contributing output to have a placed tower before wave start and surface missing-output placement warnings.
 - [ ] Balance pass across all nine worlds (per-wave difficulty curves, default

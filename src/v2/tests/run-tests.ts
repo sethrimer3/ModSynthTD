@@ -12,6 +12,7 @@ import './economy.test';
 import './worlds.test';
 import './economy-exploits.test';
 import './audio-config.test';
+import './audio-frequency.test';
 import './sim.test';
 import { runAll } from './harness';
 

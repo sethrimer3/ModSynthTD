@@ -1,5 +1,18 @@
 # Implementation Decisions
 
+## D-038: Alpha Stabilization Uses Headless Diagnostics Before Rebalance
+
+**Decision**: The alpha pass keeps gameplay systems unchanged and adds
+deterministic tests/utilities around the existing campaign: economy exploit
+regressions, exact-Hz signal contracts, audio coverage warnings, and a headless
+balance simulator with starter, early, multi-output, weak, and late-game rack
+profiles.
+
+**Reason**: The game needs shippability signals before broad content tuning.
+The simulator is diagnostic rather than authoritative; it should identify
+impossible/trivial waves and reward-curve issues without moving UI behavior or
+adding modules.
+
 ## D-037: Output Instance Identity Is Preserved Through Evaluation
 
 **Decision**: A rack may contain multiple output modules. Evaluation retains the
