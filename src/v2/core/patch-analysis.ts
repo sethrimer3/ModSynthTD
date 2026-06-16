@@ -262,8 +262,20 @@ function generateHints(
     }
   }
 
-  // Multiple pitches needed but only one output pitch found.
-  if (uniqueGroupHz.length >= 3 && uniqueOutputHz.length <= 1 && hints.length < 2) {
+  // Many distinct pitches: adaptive tuning hint (Target Tuner or Sequencer).
+  if (uniqueGroupHz.length >= 4 && hints.length < 2) {
+    if (rackTypeIds.has('targetTuner')) {
+      hints.push(`${uniqueGroupHz.length} distinct pitch targets — Target Tuner will adapt per-shot, but planned tuning beats it on predictable waves.`);
+    } else if (blueprintTypeIds.has('targetTuner') && uniqueGroupHz.length >= 5) {
+      hints.push(`${uniqueGroupHz.length} distinct pitches — consider Target Tuner (AUTO module) to auto-track each enemy's resonance.`);
+    } else if (rackTypeIds.has('sequencer')) {
+      hints.push(`Wave has ${uniqueGroupHz.length} distinct pitches — a Sequencer can cycle through them.`);
+    } else if (rackTypeIds.has('arp')) {
+      hints.push(`Wave has ${uniqueGroupHz.length} distinct pitches — an Arpeggiator can hit multiple frequencies.`);
+    } else if (blueprintTypeIds.has('sequencer')) {
+      hints.push(`Wave has ${uniqueGroupHz.length} distinct pitches. Try adding a Sequencer module.`);
+    }
+  } else if (uniqueGroupHz.length >= 3 && uniqueOutputHz.length <= 1 && hints.length < 2) {
     if (rackTypeIds.has('sequencer')) {
       hints.push(`Wave has ${uniqueGroupHz.length} distinct pitches — a Sequencer can cycle through them.`);
     } else if (rackTypeIds.has('arp')) {
@@ -273,17 +285,27 @@ function generateHints(
     }
   }
 
+  // Multi-lane routing hint.
+  if (laneCount >= 2 && outputCount >= 2 && hints.length < 2) {
+    const hasPitchRouter = rackTypeIds.has('pitchRouter') || blueprintTypeIds.has('pitchRouter');
+    if (hasPitchRouter && uniqueGroupHz.length >= 3) {
+      hints.push(`Multiple lanes + varied pitches — Pitch Router can send HI/MID/LO bands to specialized towers per lane.`);
+    }
+  }
+
   // Dense / chord wave hint.
   const chordSpawns = groups.filter(g => g.count >= 3 && groups.length >= 3);
   if (chordSpawns.length > 0 && hints.length < 2) {
     if (rackTypeIds.has('harmonizer') || blueprintTypeIds.has('harmonizer')) {
-      hints.push(`Dense chord wave ahead — a Harmonizer can cover multiple bands at once.`);
+      hints.push(`Chord-heavy wave — a Harmonizer fires stacked pitch copies, covering multiple resonance targets simultaneously.`);
+    } else if (rackTypeIds.has('splitter')) {
+      hints.push(`Chord-heavy wave — route through a Splitter to fire from multiple towers for broader coverage.`);
     }
   }
 
   // Basic band mismatch hint for early-game players with no pitch tools.
-  const hasPitchTools = rackTypeIds.has('pitch') || rackTypeIds.has('octave') || rackTypeIds.has('targetTuner')
-    || blueprintTypeIds.has('pitch') || blueprintTypeIds.has('octave');
+  const hasPitchTools = rackTypeIds.has('pitchDial') || rackTypeIds.has('octaveSwitch') || rackTypeIds.has('targetTuner')
+    || blueprintTypeIds.has('pitchDial') || blueprintTypeIds.has('octaveSwitch');
   const overallBad = matchRows.filter(r => r.rating === 'bad').length;
   if (overallBad >= Math.ceil(matchRows.length / 2) && hints.length < 2) {
     if (!hasPitchTools && rackTypeIds.has('osc')) {
@@ -294,8 +316,8 @@ function generateHints(
       } else {
         hints.push(`Enemies span multiple bands — try changing OSC Band (HI/MI/LO) to match the colored rings.`);
       }
-    } else if (blueprintTypeIds.has('targetTuner')) {
-      hints.push(`Many enemies mismatched. Target Tuner auto-tunes output to the nearest enemy.`);
+    } else if (!rackTypeIds.has('targetTuner') && blueprintTypeIds.has('targetTuner')) {
+      hints.push(`Many enemies mismatched. Target Tuner auto-tunes each shot to the nearest live enemy — strong on chaotic-pitch waves.`);
     }
   }
 

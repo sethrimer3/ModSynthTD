@@ -100,8 +100,8 @@ export function showWorldMap(app: HTMLElement, opts: WorldMapOpts): void {
 
   if (save.finalBossDefeated) {
     const banner = document.createElement('div');
-    banner.textContent = '★ CAMPAIGN COMPLETE — The Final Measure has been resolved ★';
-    banner.style.cssText = 'font-size:0.78rem;font-weight:800;color:#fff;text-shadow:0 0 18px #88ccff;letter-spacing:0.06em;margin-top:0.5rem;';
+    banner.textContent = '✦ SIGNAL CIPHER COMPLETE — The Final Measure has been resolved ✦';
+    banner.style.cssText = 'font-size:0.76rem;font-weight:800;color:#ffdd66;text-shadow:0 0 18px #ffdd6688,0 0 40px #cc88ff55;letter-spacing:0.06em;margin-top:0.5rem;text-align:center;';
     root.appendChild(banner);
   }
 }
@@ -114,18 +114,23 @@ function makeWorldCard(world: WorldDef, opts: WorldMapOpts): HTMLElement {
 
   const card = document.createElement('button');
   card.disabled = !unlocked;
-  const accent = secret ? '#ffffff' : world.theme.primary;
+  const accent = secret ? '#cc88ff' : world.theme.primary;
+  const secretBorder = unlocked ? '#cc88ff77' : '#2a1a44';
+  const secretShadow = unlocked ? '0 0 28px rgba(200,136,255,0.35), 0 0 60px rgba(255,221,102,0.15)' : '';
   card.style.cssText = `
     display:flex;flex-direction:column;align-items:center;gap:0.5rem;
-    background:#0a0f1c;border:1.5px solid ${unlocked ? (secret ? '#88ccff' : '#2a3d65') : '#151e30'};
+    background:${secret ? '#0a0414' : '#0a0f1c'};
+    border:${secret ? '2px' : '1.5px'} solid ${unlocked ? (secret ? secretBorder : '#2a3d65') : '#151e30'};
     border-radius:14px;padding:1rem;width:180px;
     cursor:${unlocked ? 'pointer' : 'not-allowed'};opacity:${unlocked ? '1' : '0.5'};
     ${FF}transition:border-color 0.15s,box-shadow 0.15s,transform 0.1s;
-    ${secret ? 'box-shadow:0 0 22px rgba(120,200,255,0.25);' : ''}
+    ${secret && unlocked ? `box-shadow:${secretShadow};` : ''}
   `;
   if (unlocked) {
-    card.addEventListener('mouseenter', () => { card.style.borderColor = world.theme.glow; card.style.boxShadow = `0 0 22px ${world.theme.primary}33`; card.style.transform = 'translateY(-2px)'; });
-    card.addEventListener('mouseleave', () => { card.style.borderColor = secret ? '#88ccff' : '#2a3d65'; card.style.boxShadow = secret ? '0 0 22px rgba(120,200,255,0.25)' : ''; card.style.transform = ''; });
+    const hoverBorder = secret ? '#ffdd66' : world.theme.glow;
+    const hoverShadow = secret ? '0 0 32px rgba(255,221,102,0.4), 0 0 60px rgba(200,136,255,0.25)' : `0 0 22px ${world.theme.primary}33`;
+    card.addEventListener('mouseenter', () => { card.style.borderColor = hoverBorder; card.style.boxShadow = hoverShadow; card.style.transform = 'translateY(-2px)'; });
+    card.addEventListener('mouseleave', () => { card.style.borderColor = secret ? secretBorder : '#2a3d65'; card.style.boxShadow = secret ? secretShadow : ''; card.style.transform = ''; });
     card.addEventListener('click', () => opts.onEnterWorld(world.worldId));
   }
 
@@ -136,14 +141,22 @@ function makeWorldCard(world: WorldDef, opts: WorldMapOpts): HTMLElement {
   drawLevelPreview(preview, world, unlocked);
   card.appendChild(preview);
 
+  // For the secret world: cipher glyph label above the name.
+  if (secret && unlocked) {
+    const cipherLabel = document.createElement('div');
+    cipherLabel.textContent = '✦ SIGNAL CIPHER ✦';
+    cipherLabel.style.cssText = 'font-size:0.5rem;font-weight:800;letter-spacing:0.14em;color:#ffdd66;text-shadow:0 0 8px #ffdd6688;';
+    card.appendChild(cipherLabel);
+  }
+
   const name = document.createElement('div');
   name.textContent = unlocked ? world.name : '???';
-  name.style.cssText = `font-size:0.84rem;font-weight:800;color:${unlocked ? '#dff6ff' : '#445566'};`;
+  name.style.cssText = `font-size:0.84rem;font-weight:800;color:${unlocked ? (secret ? '#cc88ff' : '#dff6ff') : '#445566'};${secret && unlocked ? 'text-shadow:0 0 12px #cc88ff66;' : ''}`;
   card.appendChild(name);
 
   const bpm = document.createElement('div');
   bpm.textContent = `${world.bpm} BPM`;
-  bpm.style.cssText = `font-size:0.66rem;font-weight:800;color:${unlocked ? accent : '#2a4444'};letter-spacing:0.06em;`;
+  bpm.style.cssText = `font-size:0.66rem;font-weight:800;color:${unlocked ? accent : '#2a4444'};letter-spacing:0.06em;${secret && unlocked ? 'text-shadow:0 0 8px #cc88ff44;' : ''}`;
   card.appendChild(bpm);
 
   if (unlocked) {

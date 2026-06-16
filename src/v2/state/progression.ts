@@ -66,9 +66,13 @@ export function secretHintLevel(save: SaveData, order: readonly string[]): Secre
 
 export const SECRET_HINTS: Record<SecretHintLevel, string | null> = {
   0: null,
-  1: 'Separate voices may form a hidden measure…',
-  2: 'Divide the pulse. Displace one voice in time. Reunite them at the mix — and listen for the final measure.',
+  1: '✦ Something resonates beyond the eighth world — separate voices may form a hidden measure.',
+  2: '✦ Divide the pulse. Displace one voice in time. Reunite them at the mix — then send a pulse and listen for the cipher.',
 };
+
+/** Clue text shown in the w180 post-victory screen, prompting cipher discovery. */
+export const CIPHER_POST_VICTORY_CLUE =
+  'The Target Lock world unlocks the Signal Cipher challenge. Build a split-time patch and send a test pulse — a hidden world may reveal itself.';
 
 // ── Signal Cipher route check ───────────────────────────────────────────────
 

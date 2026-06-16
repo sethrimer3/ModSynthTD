@@ -25,6 +25,7 @@ import {
 } from '../state/upgrades';
 import {
   applyWorldCompletionUnlocks, checkCipherRoute, revealSecretWorld, canAttemptCipher,
+  CIPHER_POST_VICTORY_CLUE,
 } from '../state/progression';
 import { Camera, attachCameraControls } from './camera';
 import { Combat, TowerState, rotateTower, TILE_PX, preloadSprites } from './combat';
@@ -688,8 +689,12 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   const cipherBanner = document.createElement('div');
   cipherBanner.style.cssText = `
     position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(0.6);opacity:0;
-    font-size:1.1rem;font-weight:800;color:#fff;text-align:center;z-index:160;pointer-events:none;
-    text-shadow:0 0 30px #fff,0 0 60px #88ccff;transition:transform 0.6s,opacity 0.6s;max-width:80%;
+    font-size:1.2rem;font-weight:800;color:#cc88ff;text-align:center;z-index:160;pointer-events:none;
+    text-shadow:0 0 20px #cc88ff,0 0 50px #ffdd66,0 0 90px #cc88ff44;
+    transition:transform 0.5s cubic-bezier(0.22,1.2,0.36,1),opacity 0.5s;
+    max-width:82%;line-height:1.5;
+    background:rgba(7,3,16,0.88);border:1.5px solid #cc88ff66;border-radius:16px;
+    padding:18px 28px;
   `;
   app.appendChild(cipherBanner);
 
@@ -970,11 +975,33 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
           </div>`;
       }
     }
+    // w180: add cipher challenge clue (fires when cipher not yet unlocked or revealed).
+    if (worldId === 'w180' && !save.secretRevealed) {
+      subHtml += `
+        <div style="background:#140828;border:1px solid #cc88ff44;border-radius:8px;padding:7px 10px;margin:8px 0 0;text-align:left;">
+          <div style="color:#cc88ff;font-size:0.66rem;font-weight:800;letter-spacing:0.07em;">✦ SIGNAL CIPHER CHALLENGE UNLOCKED</div>
+          <div style="color:#8866bb;font-size:0.57rem;line-height:1.4;margin-top:3px;">${CIPHER_POST_VICTORY_CLUE}</div>
+        </div>`;
+    }
+
+    // w200: grand final completion.
+    if (worldId === 'w200') {
+      save.finalBossDefeated = true;
+      overlayTitle.textContent = '✦ THE FINAL MEASURE RESOLVES ✦';
+      overlayTitle.style.cssText += `;text-shadow:0 0 30px #ffdd66,0 0 60px #cc88ff;`;
+      subHtml = `
+        <div style="color:#ffdd66;font-size:0.72rem;font-weight:800;letter-spacing:0.1em;margin-bottom:8px;">SIGNAL CIPHER — COMPLETE</div>
+        ${subHtml}
+        <div style="color:#8866bb;font-size:0.6rem;margin-top:10px;line-height:1.5;">
+          You have resolved the hidden composition.<br>
+          The rack falls silent. The measure is complete.
+        </div>
+      `;
+    }
     overlaySub.innerHTML = subHtml;
-    if (worldId === 'w200') save.finalBossDefeated = true;
     overlayBtns.innerHTML = '';
     addOverlayBtn('↩ WORLD MAP', aesthetic.primary, () => host.exitToMap());
-    addOverlayBtn('∞ ENDLESS', '#aa66ff', () => { hideOverlay(); beginEndless(); });
+    addOverlayBtn('∞ ENDLESS', worldId === 'w200' ? '#ffdd66' : '#aa66ff', () => { hideOverlay(); beginEndless(); });
     host.persist();
     showOverlay();
   }
@@ -1031,10 +1058,17 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
         rack.highlightRoute(new Set(check.routeModuleIds));
         for (const id of check.routeModuleIds) rack.flashModule(id);
       }
-      cipherBanner.innerHTML = 'THE HIDDEN MEASURE REVEALS ITSELF<br><span style="font-size:0.7rem;color:#cceeff">A ninth world appears on the map — The Final Measure, 200 BPM.</span>';
+      cipherBanner.innerHTML = `
+        <div style="font-size:0.72rem;letter-spacing:0.18em;color:#ffdd66;margin-bottom:6px;">✦ SIGNAL CIPHER RESOLVED ✦</div>
+        THE HIDDEN MEASURE REVEALS ITSELF
+        <div style="font-size:0.66rem;color:#cc88ff;margin-top:8px;font-weight:600;letter-spacing:0.06em;">
+          A ninth world appears on the map — The Final Measure, 200 BPM.
+        </div>
+        <div style="font-size:0.55rem;color:#8866bb;margin-top:4px;">Return to the world map to enter.</div>
+      `;
       cipherBanner.style.transform = 'translate(-50%,-50%) scale(1)';
       cipherBanner.style.opacity = '1';
-      setTimeout(() => { cipherBanner.style.opacity = '0'; cipherBanner.style.transform = 'translate(-50%,-50%) scale(0.6)'; }, 4500);
+      setTimeout(() => { cipherBanner.style.opacity = '0'; cipherBanner.style.transform = 'translate(-50%,-50%) scale(0.8)'; }, 5500);
     }
   }
 
@@ -1365,6 +1399,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   }
   const WORLD_ENTRY_TUTORIALS: Record<string, string> = {
     w100: 'timing', w120: 'mixing', w140: 'filtering', w160: 'sequencing',
+    w180: 'target-lock',
   };
   const entryTut = WORLD_ENTRY_TUTORIALS[worldId];
   if (entryTut) {

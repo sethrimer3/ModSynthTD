@@ -888,6 +888,22 @@ export class Combat {
     ctx.lineWidth = Math.max(0.8, 1.1 * z);
     ctx.shadowBlur = 3 * z;
     ctx.beginPath(); ctx.arc(hx, hy, r * 1.8, 0, Math.PI * 2); ctx.stroke();
+
+    // Auto-tune reticle: cross-hair arcs around auto-tuned projectiles.
+    if (p.autoTuned) {
+      const rr = r * 2.8;
+      const sweep = Math.PI * 0.35;
+      ctx.strokeStyle = '#ff55aa';
+      ctx.lineWidth = Math.max(1, 1.4 * z);
+      ctx.shadowColor = '#ff55aa';
+      ctx.shadowBlur = 6 * z;
+      for (let i = 0; i < 4; i++) {
+        const angle = (i * Math.PI / 2) + ageTiles * 1.8;
+        ctx.beginPath();
+        ctx.arc(hx, hy, rr, angle, angle + sweep);
+        ctx.stroke();
+      }
+    }
     ctx.restore();
   }
 

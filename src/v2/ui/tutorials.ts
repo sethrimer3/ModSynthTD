@@ -33,6 +33,7 @@ export const TUTORIALS: Record<string, string> = {
   'mixing': 'MIXER combines up to four signals — route two differently-tuned OSC voices into one tower for layered damage. HARMONIZER stacks pitch copies automatically.',
   'filtering': 'BAND FILTER passes one resonance band and silences others. Combine with PITCH FILTER to cut enemies by both color and Hz for precision targeting.',
   'sequencing': 'SEQUENCER steps through a pitch pattern — one step per incoming event. Pair with ARP to arpeggiate chords across dense note streams.',
+  'target-lock': 'TARGET LOCK world: enemies vary too fast for static tuning. Use TARGET TUNER (AUTO module) to auto-aim each shot at a live enemy — or plan carefully with Pitch Router and Sequencer for predictable waves.',
 };
 
 export class TutorialManager {

@@ -352,35 +352,38 @@ const W160: WorldDef = {
   isSecret: false,
 };
 
-// ── w180 · Overdrive ────────────────────────────────────────────────────────
+// ── w180 · Target Lock ───────────────────────────────────────────────────────
 
 const W180: WorldDef = {
   worldId: 'w180',
-  name: 'Overdrive',
+  name: 'Target Lock',
   bpm: 180,
-  lesson: 'Everything at once — fermatas, ties, and full-rack mastery.',
-  description: 'The spiral track funnels every kind of note toward the core. This is the proving ground.',
-  theme: { primary: '#ff3344', glow: '#ff6677' },
+  lesson: 'Enemies vary too fast for static tuning. Use Target Tuner, Pitch Router, and Pitch Memory to auto-adapt.',
+  description: 'The spiral track funnels a ceaseless variety of pitches toward the core. Static tuning works on isolated waves — but the mixed-pitch gauntlet demands adaptive automation.',
+  theme: { primary: '#ff2266', glow: '#ff55aa' },
   gridWidth: 22,
   gridHeight: 14,
   lanes: [track([0, 1], [20, 1], [20, 12], [2, 12], [2, 3], [17, 3], [17, 9], [5, 9], [5, 6], [12, 6])],
   towerStart: [10, 7],
   waves: [
-    wave('w180-1', ['F rq q q | q q q q'], 'The held note'),
-    wave('w180-2', ['T rh | T rh'], 'Tied pairs'),
-    wave('w180-3', ['F q F q | T T'], 'Holds and ties'),
-    wave('w180-4', ['e e e e e e e e | A A A A'], 'Overdrive begins'),
-    wave('w180-5', ['T rh | C C | F rq F rq'], 'Weighted holds'),
-    wave('w180-6', ['t t t t t t t t t t t t | s s s s s s s s q q'], 'Velocity'),
-    wave('w180-7', ['[q q:h] [q h:l] rq | T rh | e e e e q q'], 'Knotted lines'),
-    wave('w180-8', ['F A F A | d d q | C rh'], 'Bent holds'),
-    wave('w180-9', ['s s s s q e e q | t t t t t t q q | A A rh'], 'Redline'),
-    wave('w180-10', ['T T | [q h:l] [q q:h] rq | F rq q q'], 'The long phrase'),
-    wave('w180-11', ['C C | e:h e:h e:h e:h e:h e:h e:h e:h | h:l h:l | w:l'], 'Full spectrum'),
-    wave('w180-12', ['F T q | s s s s s s s s e e e e | [A h:l] [A q:h] rq | t t t t t t t t t t t t | w:l'], 'Overdrive mastery'),
+    // Early: single-band, instructional — static tuning works fine here.
+    wave('w180-1', ['q:h q:h q:h q:h | q:h q:h q:h q:h'], 'Lock-On'),
+    wave('w180-2', ['e:h e:h e:h e:h e:h e:h e:h e:h | q:l q:l q:l q:l'], 'Split Band'),
+    wave('w180-3', ['F rq q:h q:h | A A A A | e:h e:h e:h e:h q:h q:h'], 'Accidental Drift'),
+    // Mid: mixed registers, chord splits — Pitch Router and Sequencer help.
+    wave('w180-4', ['[q:h h:l] [q:l q:h] rq | e:h e:h e:h e:h e:h e:h e:h e:h | A:l A:l A:l A:l'], 'Chord Split'),
+    wave('w180-5', ['T rh | C:l C:l | F rq q:h q:h'], 'Crescendo and Ties'),
+    wave('w180-6', ['t t t t t t t t t t t t | s:h s:h s:h s:h s:l s:l s:l s:l q:h q:l'], 'Speed Variance'),
+    wave('w180-7', ['[q:h h:l] [q:l q:h] rq | T rh | e:h e:h e:h e:h q:l q:l'], 'Knotted Registers'),
+    wave('w180-8', ['F:h A:l F:h A:l | d:l d:h q:h | C:h rh'], 'Adaptive Fire'),
+    // Late: pitch chaos — Target Tuner / Pitch Memory become strong here.
+    wave('w180-9', ['s:h s:l s:h s:l q:h e:l e:h q:l | t t t t t t q:h q:l | A:h A:l rh'], 'Redline'),
+    wave('w180-10', ['T T | [q:h h:l] [q:l q:h] rq | F rq q:l q:h'], 'Long Phrase'),
+    wave('w180-11', ['C:h C:l | e:h e:l e:h e:l e:h e:l e:h e:l | h:l h:h | w:h'], 'Full Spectrum'),
+    wave('w180-12', ['F:h T q:h | s:h s:l s:h s:l s:h s:l s:h s:l e:h e:l e:h e:l | [A:h h:l] [A:l q:h] rq | t t t t t t t t t t t t | w:l'], 'Target Lock Mastery'),
   ],
-  rewardTable: cum(12, 12, 13, 13, 14, 15, 16, 17, 18, 19, 20, 22),
-  completionReward: 130,
+  rewardTable: cum(14, 15, 16, 16, 17, 18, 19, 20, 22, 24, 26, 30),
+  completionReward: 150,
   isSecret: false,
 };
 
@@ -392,7 +395,7 @@ const W200: WorldDef = {
   bpm: 200,
   lesson: 'The hidden measure. A living score conducts itself.',
   description: 'Beyond the eighth world, a composition wakes. Survive its gauntlet, then face the score itself.',
-  theme: { primary: '#ffffff', glow: '#cceeff' },
+  theme: { primary: '#cc88ff', glow: '#ffdd66' },
   gridWidth: 22,
   gridHeight: 14,
   lanes: [
