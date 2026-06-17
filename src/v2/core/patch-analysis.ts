@@ -50,6 +50,8 @@ export interface OutputSummary {
   synthOn: boolean;
   /** Non-null when this output has a notable problem. */
   warning: string | null;
+  /** Average ticks between this output's events, or null when it fires fewer than twice. */
+  averageIntervalTicks: number | null;
 }
 
 export type MatchRating = 'excellent' | 'good' | 'weak' | 'bad';
@@ -354,13 +356,19 @@ export function analyzePatch(opts: AnalysisOptions): PatchAnalysis {
     const hasVoice = events.some(e => e.hasVoice);
     const domHz = dominantOutputHz(events);
     const synthOn = m.settings['synthOn'] === true;
+    let averageIntervalTicks: number | null = null;
+    if (events.length >= 2) {
+      let span = 0;
+      for (let i = 1; i < events.length; i++) span += Math.max(0, events[i].tick - events[i - 1].tick);
+      averageIntervalTicks = span / (events.length - 1);
+    }
 
     let warning: string | null = null;
     if (!isPlaced) warning = 'No tower placed — output has no battlefield presence.';
     else if (eventCount === 0) warning = 'No signal events reaching this output.';
     else if (!hasVoice) warning = 'Output receives signal but no voiced events — no Hz to match.';
 
-    return { outputModuleId: m.instanceId, isPlaced, eventCount, dominantHz: domHz, hasVoice, synthOn, warning };
+    return { outputModuleId: m.instanceId, isPlaced, eventCount, dominantHz: domHz, hasVoice, synthOn, warning, averageIntervalTicks };
   });
 
   // ── Match diagnostics ─────────────────────────────────────────────────────

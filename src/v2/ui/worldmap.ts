@@ -16,7 +16,7 @@ import { openSettings } from './settings-ui';
 import { getAudioEngine } from './audio-engine';
 
 const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
-const MAIN_MENU_BUILD_LABEL = 'BUILD 001';
+const MAIN_MENU_BUILD_LABEL = 'BUILD 002';
 
 export interface WorldMapOpts {
   save: SaveData;

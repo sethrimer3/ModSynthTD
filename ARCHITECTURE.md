@@ -174,3 +174,17 @@ transient wave diagnostics directly from canonical `SignalEvent` data.
 # Per-Output Emitter Towers
 
 Each V2 `output` module instance owns an optional placement in `WorldSave.towersByOutputId`. Graph evaluation groups final events in `eventsByOutput`; level wave setup validates contributing outputs and passes those grouped events to combat, where projectile origin, orientation, pulse state, shape, and color are keyed by output module instance id.
+
+## 10. First-Playable Onboarding Layer
+
+The first-playable UX pass keeps graph/evaluation pure and translates existing
+state into UI feedback in `ui/level.ts`, `ui/notation.ts`, `ui/rack-ui.ts`, and
+`ui/combat.ts`. `validateGraph()` still owns structural patch validity; the
+level layer maps its issue codes to one-sentence player actions. Patch Analysis
+uses `core/patch-analysis.ts` to summarize output firing rate, dominant Hz,
+tower placement, wave groups, and match quality without mutating simulation.
+
+Notation hover/tap popups compare note Hz against currently evaluated output
+events using canonical pitch math. Tower placement feedback remains a combat
+renderer concern because the battlefield canvas already owns track blocking,
+tower drawing, and placement ghosts.

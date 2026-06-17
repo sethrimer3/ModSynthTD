@@ -13,12 +13,13 @@ export interface TutorialDef {
 
 export const TUTORIALS: Record<string, string> = {
   'camera': 'Drag to pan · scroll or pinch to zoom. The rack and battlefield share one space — find your rack!',
-  'first-patch': 'Signal flows CLOCK → OSC → OUT. Drag from a glowing output plug to a matching input to patch.',
-  'score': 'The glowing score IS the wave: each note is an enemy, placed exactly on its beat.',
+  'first-patch': 'Patch the starter route: CLOCK out to OSC trig, then OSC voice to OUT.',
+  'score': 'The glowing score IS the wave. Hover a note to see its Hz, HP, speed, and match quality.',
   'tower': 'Each OUT owns an emitter tower. Drag its silhouette from the module onto the grid.',
+  'start-wave': 'When Patch Analysis says VALID and the OUT tower is placed, press START WAVE.',
   'multi-output': 'Multiple OUT modules create multiple towers. Patch different routes into different OUTs to fire from different places.',
   'bands': 'Match your OSC band (LO/MI/HI) to an enemy\'s ring color for ×2 damage. Mismatches resist.',
-  'hz-match': 'Enemy ring color = resonance band. Set OSC Band to match it — a perfect Hz match deals ×4 damage. Check Patch Analysis for the gap.',
+  'hz-match': 'Exact Hz hits resonate hardest. Near matches still work; mismatches look weak and deal reduced damage.',
   'two-lanes': 'Two lanes, two threats. Place a second Output tower on the far path — one tower fires in one direction and cannot cover both routes alone.',
   'osc-combat': 'OSC changes the tower voice: BAND changes resonant color and match damage; WAVE changes projectile shape.',
   'clock-combat': 'CLOCK RATE is the firing rhythm. Faster subdivisions produce more frequent tower pulses.',

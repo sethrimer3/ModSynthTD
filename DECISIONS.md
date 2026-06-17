@@ -1,5 +1,16 @@
 # Implementation Decisions
 
+## D-039: First-Playable UX Pass Stays in Presentation Layers
+
+**Decision**: Onboarding, invalid-patch explanations, note stat popups, tower
+placement feedback, and hit readability are implemented as UI translations of
+existing graph, score, pitch, and combat state. No new modules, worlds,
+currencies, or graph semantics were added.
+
+**Reason**: The first playable needs to explain the already-stabilized alpha
+loop. Keeping the pure graph/module logic unchanged preserves determinism and
+testability while making w40 and w60 easier to learn.
+
 ## D-038: Alpha Stabilization Uses Headless Diagnostics Before Rebalance
 
 **Decision**: The alpha pass keeps gameplay systems unchanged and adds

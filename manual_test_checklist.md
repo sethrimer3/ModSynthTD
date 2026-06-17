@@ -319,3 +319,16 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Confirm buy/sell and shelf buy/refund loops cannot increase Resonance
 - [ ] Confirm selling a purchased OUT removes only that output tower placement
 
+## 28. First-Playable UX And Onboarding
+
+- [ ] Fresh save w40 teaches CLOCK -> OSC -> OUT, OUT tower placement, score preview, and Start Wave through short contextual prompts.
+- [ ] Patch Analysis answers valid/invalid, which outputs fire, firing rate, dominant Hz, tower placement, match quality, and missing/weak next steps.
+- [ ] Hovering or tapping next-wave notes shows note name, Hz, HP, speed, behavior/modifier, and current output match quality.
+- [ ] Matched, near-matched, weak, and mismatched note rows/hover states are visually distinct.
+- [ ] Chords and tied notes remain readable in the sheet preview and popup text.
+- [ ] Starting a wave with no clock source, no oscillator voice, no output route, incompatible cable, cycle, or missing tower gives a specific action.
+- [ ] Dragging an OUT tower shows the output-specific color/shape ghost, valid tile glow, invalid blocked indicator, and predictable snapping.
+- [ ] Rotating a placed tower visibly changes the facing arrow.
+- [ ] Resonant hits look stronger than resisted hits; resisted hits are labeled sparingly and damage numbers do not flood the screen.
+- [ ] Enemy escapes produce an obvious base-hit flash and finish-lane pulse.
+

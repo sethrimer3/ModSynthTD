@@ -1,33 +1,48 @@
-# Alpha QA Status
+# QA Status
 
-Date: 2026-06-16
+Manual alpha checklist for the first-playable onboarding pass.
 
-## Automated Status
+## Fresh Save Flow
 
-- `npm test`: passing, 125 tests.
-- `npm run build`: passing; Webpack reports bundle-size warnings only.
-- Headless balance simulation: covered by `src/v2/tests/sim.test.ts` and prints profile/world summaries during `npm test`.
+- [ ] Clear/reset save data and launch the app.
+- [ ] Enter w40 from the world map.
+- [ ] New player can identify the rack, battlefield, next-wave score, Patch Analysis, Shop, and Start Wave without external instructions.
+- [ ] Tutorial prompts teach CLOCK -> OSC -> OUT, OUT tower placement, score preview, and Start Wave without a long modal.
+- [ ] Complete w40 wave 1 with the starter patch and placed OUT tower.
+- [ ] Confirm Resonance reward appears and the next unlock/reward state is understandable.
 
-## Known Incomplete Systems
+## Early Progression
 
-- Campaign balance is diagnostic, not final. Several non-tutorial worlds still fail under simple profiles, which is expected until a content balance pass.
-- Endless-mode scaling is still follow-up work.
-- Boss-specific presentation for `w200` remains incomplete.
-- Mobile pinch/orientation behavior still needs real-device testing.
+- [ ] Buy the first affordable/unlocked module from the Shop.
+- [ ] Unaffordable but unlocked modules explain the Resonance cost.
+- [ ] Place or reposition the OUT tower from its rack silhouette.
+- [ ] Clear w60 wave 1 and confirm Hz/note matching is readable in Patch Analysis and note hover popups.
 
-## Known Content Gaps
+## Invalid Patch Cases
 
-- Level audio coverage is intentionally partial. `w60` has wave 1 OGG/MIDI coverage; later `w60` waves and other worlds fall back to authored wave scores and default audio behavior.
-- Some enemy sprite identities still reuse base note sprites.
-- Audio output quality has not been manually captured in this environment.
+- [ ] No clock source: Start Wave explains to add/keep CLOCK and patch it into the chain.
+- [ ] No oscillator/voice: Start Wave explains CLOCK -> OSC -> OUT.
+- [ ] No output route: Start Wave explains to patch into OUT.
+- [ ] Incompatible cable: cable route is rejected or Start Wave explains matching jack colors.
+- [ ] Output module has no placed tower: Start Wave blocks and asks for OUT tower placement.
+- [ ] Graph cycle detected: Start Wave explains to break the feedback loop.
+- [ ] Module unlocked but not affordable: Shop shows required Resonance.
+- [ ] Tower placed on invalid tile: drag ghost shows blocked feedback and the placement is rejected.
 
-## Manual Alpha QA Steps
+## Persistence And Shell
 
-- Fresh save: clear localStorage, load the app, confirm starter rack, world map, settings defaults, tutorial prompts, and visible tower placement.
-- `w40`: place the starter output tower, run waves 1-2, confirm clears, Resonance rewards, wave replay no double-claim, and no missing-output warning.
-- `w60`: start wave 1, confirm MIDI-derived notation/spawns match audible synth pitch when synth is enabled, then confirm later waves fall back safely to authored waves.
-- Shop: buy and sell unlocked modules, buy/refund shelves, confirm no Resonance gain from loops and starter modules remain protected.
-- Multi-output tower placement: buy an extra OUT, patch it, place both towers, run a wave, save/load, confirm both placements persist; sell the purchased OUT and confirm its tower disappears.
-- Settings: test audio mixer sliders, synth toggle, wire layer, wire opacity, reduced motion, zoom sensitivity, save export/import, and reset.
-- Save/load: reload after wave progress, module purchases, shelf changes, tower placement, and settings changes.
-- Electron startup: run `run-desktop.bat`, `run-desktop-dev.bat`, and `run-desktop-no-build.bat`; confirm title, app render, and no startup console errors.
+- [ ] Save/reload preserves rack, cables, placed towers, completed waves, settings, and tutorial seen state.
+- [ ] Electron startup works through `run-desktop.bat`.
+- [ ] `run-desktop-no-build.bat` opens the existing `dist` build.
+
+## Layout And Settings
+
+- [ ] Mobile portrait layout keeps rack, battlefield, HUD, notation, and Patch Analysis readable.
+- [ ] Desktop landscape layout keeps rack and playfield reachable with Fit/Rack/Grid.
+- [ ] Settings audio toggles and volume sliders apply live.
+- [ ] Reduced motion keeps notation, tower placement, and combat feedback understandable.
+
+## Validation
+
+- [ ] `npm test` passes.
+- [ ] `npm run build` passes.

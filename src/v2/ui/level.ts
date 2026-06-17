@@ -8,7 +8,7 @@
 
 import { WorldDef, getWorld, CAMPAIGN_ORDER, nearestExteriorWorldTile } from '../data/worlds';
 import { compileScore, WaveScore } from '../core/score';
-import { evaluatePatch, validateGraph, RackGraph } from '../core/graph';
+import { evaluatePatch, validateGraph, RackGraph, GraphIssue, GraphValidation } from '../core/graph';
 import { SignalEvent } from '../core/events';
 import { PPQ, TICKS_PER_MEASURE, ticksToSec } from '../core/ticks';
 import { combineSeeds, hashString } from '../core/rng';
@@ -35,6 +35,7 @@ import { renderNotation, NotationLayout, NotationNoteLayout } from './notation';
 import { getEnemyDef } from '../core/enemy-defs';
 import { analyzePatch, PatchAnalysis, MatchRating } from '../core/patch-analysis';
 import { BEHAVIOR_DESCRIPTION, BEHAVIOR_TACTIC, BEHAVIOR_THREAT_LABEL, modifierSummaryLines } from '../core/enemy-modifiers';
+import { damageMultiplier, formatHz, formatNoteNameFromMidi } from '../core/pitch';
 import { getAudioEngine } from './audio-engine';
 import { LevelMusicManager } from './level-music';
 import { LEVEL_AUDIO_CONFIGS } from './level-audio-assets';
@@ -115,6 +116,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   let countinStartTick = 0;  // tick when the countin/intro began
   let activeIntroBars = 1;   // bars of intro for current wave (4 for MIDI, 1 otherwise)
   let placement = { active: false, tile: null as [number, number] | null, outputModuleId: null as string | null };
+  let placementError = '';
 
   const fluid = createLevelFluidBackground();
   fluid.resize(world.gridWidth * TILE_PX, world.gridHeight * TILE_PX);
@@ -377,7 +379,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   const notationInner = document.createElement('div');
   notationInner.style.cssText = 'position:relative;';
   const notationLabel = document.createElement('div');
-  notationLabel.textContent = 'NEXT WAVE  ·  NOTE LENGTH = ENEMY SPEED';
+  notationLabel.textContent = 'NEXT WAVE - HOVER NOTES FOR Hz MATCH';
   notationLabel.style.cssText = `position:absolute;left:8px;top:2px;font-size:7px;font-weight:800;letter-spacing:0.12em;color:${aesthetic.glow};opacity:0.72;z-index:4;`;
   const notationEffects = document.createElement('div');
   notationEffects.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:3;';
@@ -405,6 +407,49 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   app.appendChild(notePopup);
 
   let popupPinnedNote: NotationNoteLayout | null = null;
+
+  function matchLabelForHz(enemyHz: number): { text: string; color: string } {
+    let best = 0;
+    let bestHz: number | null = null;
+    for (const events of cachedEventsByOutput.values()) {
+      for (const event of events) {
+        if (!event.hasVoice || event.hertz == null || event.hertz <= 0) continue;
+        const mult = damageMultiplier(enemyHz, event.hertz);
+        if (mult > best) { best = mult; bestHz = event.hertz; }
+      }
+    }
+    if (bestHz == null) return { text: 'No voiced output yet', color: '#ff6677' };
+    const grade = best >= 3.5 ? 'MATCHED' : best >= 2 ? 'NEAR' : best >= 0.75 ? 'WEAK' : 'MISMATCH';
+    const color = best >= 3.5 ? '#33ffcc' : best >= 2 ? '#44ddff' : best >= 0.75 ? '#ffcc44' : '#ff6677';
+    return { text: `${grade} - ${formatHz(bestHz)} Hz - x${best.toFixed(1)}`, color };
+  }
+
+  function escapeHtml(text: string): string {
+    return text.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch] ?? ch));
+  }
+
+  function issueAction(issue: GraphIssue): string {
+    switch (issue.code) {
+      case 'no-source': return 'Buy or keep a CLOCK, then patch its output into the chain.';
+      case 'missing-starter': return 'Patch CLOCK into OSC, then patch OSC voice into OUT.';
+      case 'no-output':
+      case 'no-output-route': return 'Patch the final voice cable into an OUT module.';
+      case 'incompatible-ports': return 'Use matching jack colors: trigger to trigger, voice to voice/either.';
+      case 'cycle':
+      case 'self-cycle': return 'Break the feedback loop. Signals must flow forward into OUT.';
+      case 'fanout-exceeded': return 'That output jack is full. Add a Splitter or reroute one cable.';
+      case 'fanin-exceeded': return 'That input jack is full. Use a Mixer or remove a cable.';
+      case 'duplicate-cable': return 'Remove the duplicate cable and keep one route.';
+      default: return issue.message;
+    }
+  }
+
+  function patchErrorMessage(validation: GraphValidation): string {
+    const issue = validation.issues.find(i => i.severity === 'error');
+    if (!issue) return 'Patch invalid. Check cable colors and the route into OUT.';
+    const label = issue.code.replace(/-/g, ' ').toUpperCase();
+    return `${label}: ${issueAction(issue)}`;
+  }
 
   // ── Patch Analysis Panel ──────────────────────────────────────────────────
   const patchPanel = document.createElement('div');
@@ -437,125 +482,85 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     patchPanel.style.display = visible ? 'block' : 'none';
     if (!visible) return;
 
-    const rackTypeIds = new Set(graph.modules.map(m => m.typeId));
-    const blueprintTypeIds = new Set(save.blueprints);
-
     const analysis: PatchAnalysis = analyzePatch({
       compiled: effectiveCompiled,
       eventsByOutput: cachedEventsByOutput,
       graph,
       placedOutputIds: new Set(towers.keys()),
-      rackTypeIds,
-      blueprintTypeIds,
+      rackTypeIds: new Set(graph.modules.map(m => m.typeId)),
+      blueprintTypeIds: new Set(save.blueprints),
       laneCount: world.lanes.length,
     });
 
     const overallColor = RATING_COLOR[analysis.overallRating];
-
     const parts: string[] = [];
-
-    // Header
     parts.push(
       `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;border-bottom:1px solid ${aesthetic.primary}33;padding-bottom:4px;">` +
       `<span style="font-weight:800;font-size:0.62rem;color:${aesthetic.glow};letter-spacing:0.08em;">PATCH ANALYSIS</span>` +
-      `<span style="font-weight:800;color:${overallColor};letter-spacing:0.06em;">${RATING_LABEL[analysis.overallRating]}</span>` +
+      `<span style="font-weight:800;color:${overallColor};letter-spacing:0.06em;">VALID - ${RATING_LABEL[analysis.overallRating]}</span>` +
       `</div>`
     );
 
-    // ── Section 1: Upcoming wave summary ────────────────────────────────────
-    parts.push(
-      `<div style="font-weight:800;color:#aabbdd;margin-bottom:2px;letter-spacing:0.07em;">` +
-      `WAVE · ${analysis.totalEnemies} ENEM${analysis.totalEnemies === 1 ? 'Y' : 'IES'}` +
-      `</div>`
-    );
+    parts.push(`<div style="font-weight:800;color:#aabbdd;margin-bottom:2px;letter-spacing:0.07em;">WAVE - ${analysis.totalEnemies} ENEM${analysis.totalEnemies === 1 ? 'Y' : 'IES'}</div>`);
     if (analysis.enemyGroups.length === 0) {
       parts.push(`<div style="color:#445566;">No enemies in this wave.</div>`);
     } else {
       for (const g of analysis.enemyGroups) {
-        const sym = g.symbols.join(' ');
         parts.push(
           `<div style="display:flex;justify-content:space-between;padding:1px 0;">` +
-          `<span style="color:#c8daf0;">${sym} ${g.label}</span>` +
-          `<span style="color:#5577aa;">×${g.count} · ${g.totalHp}HP</span>` +
+          `<span style="color:#c8daf0;">${g.symbols.join(' ')} ${escapeHtml(g.label)}</span>` +
+          `<span style="color:#5577aa;">x${g.count} - ${g.totalHp}HP</span>` +
           `</div>`
         );
       }
     }
 
-    // ── Section 2: Output summary ────────────────────────────────────────────
-    parts.push(
-      `<div style="font-weight:800;color:#aabbdd;margin-top:6px;margin-bottom:2px;letter-spacing:0.07em;">OUTPUT PATCH</div>`
-    );
+    parts.push(`<div style="font-weight:800;color:#aabbdd;margin-top:6px;margin-bottom:2px;letter-spacing:0.07em;">OUTPUTS</div>`);
     if (analysis.outputSummaries.length === 0) {
-      parts.push(`<div style="color:#ff5566;">No output module in rack.</div>`);
+      parts.push(`<div style="color:#ff5566;">No OUT module. Buy or repair an Output module.</div>`);
     } else {
       for (const s of analysis.outputSummaries) {
-        const domLabel = s.dominantHz != null ? `${s.dominantHz >= 1000 ? `${(s.dominantHz / 1000).toFixed(1)}k` : Math.round(s.dominantHz)} Hz` : '—';
-        const events = s.eventCount > 0 ? `${s.eventCount} events · ${domLabel}` : 'no events';
+        const domLabel = s.dominantHz != null ? `${formatHz(s.dominantHz)} Hz` : '-';
+        const fireLabel = s.averageIntervalTicks != null ? `every ${(s.averageIntervalTicks / PPQ).toFixed(2)} beats` : (s.eventCount === 1 ? 'one shot' : 'silent');
+        const events = s.eventCount > 0 ? `${s.eventCount} shots - ${fireLabel} - ${domLabel}` : 'no shots';
         const statusColor = s.warning ? '#ff5566' : '#33ffcc';
-        const statusIcon = s.warning ? '⚠' : (s.isPlaced ? '●' : '○');
+        const statusIcon = s.warning ? '!' : (s.isPlaced ? '?' : '?');
         parts.push(
           `<div style="display:flex;justify-content:space-between;gap:6px;padding:1px 0;">` +
-          `<span style="color:${statusColor};">${statusIcon} ${s.isPlaced ? 'Tower placed' : 'No tower'}</span>` +
-          `<span style="color:#5577aa;">${events}</span>` +
+          `<span style="color:${statusColor};">${statusIcon} ${s.isPlaced ? 'Tower ready' : 'Place tower'}</span>` +
+          `<span style="color:#5577aa;text-align:right;">${events}</span>` +
           `</div>`
         );
-        if (s.warning) {
-          parts.push(`<div style="color:#ff5566;padding-left:10px;font-size:0.53rem;">${s.warning}</div>`);
-        }
+        if (s.warning) parts.push(`<div style="color:#ff5566;padding-left:10px;font-size:0.53rem;">${escapeHtml(s.warning)}</div>`);
       }
     }
 
-    // ── Section 3: Match quality ─────────────────────────────────────────────
-    parts.push(
-      `<div style="font-weight:800;color:#aabbdd;margin-top:6px;margin-bottom:2px;letter-spacing:0.07em;">MATCH QUALITY</div>`
-    );
+    parts.push(`<div style="font-weight:800;color:#aabbdd;margin-top:6px;margin-bottom:2px;letter-spacing:0.07em;">HZ MATCH</div>`);
     if (analysis.matchRows.length === 0) {
-      parts.push(`<div style="color:#445566;">Nothing to compare.</div>`);
+      parts.push(`<div style="color:#445566;">No voiced signal to compare yet.</div>`);
     } else {
       for (const row of analysis.matchRows) {
         const rc = RATING_COLOR[row.rating];
-        const rl = RATING_LABEL[row.rating];
-        const outLabel = row.bestOutputHz != null
-          ? `→ ${row.bestOutputHz >= 1000 ? `${(row.bestOutputHz / 1000).toFixed(1)}k` : Math.round(row.bestOutputHz)} Hz`
-          : '→ no signal';
-        const multLabel = row.bestOutputHz != null ? `×${row.multiplier.toFixed(1)}` : '';
-        const sym = row.group.symbols[0] ?? '';
+        const outLabel = row.bestOutputHz != null ? `-> ${formatHz(row.bestOutputHz)} Hz` : '-> no signal';
+        const multLabel = row.bestOutputHz != null ? `x${row.multiplier.toFixed(1)}` : '';
         parts.push(
-          `<div style="display:flex;justify-content:space-between;gap:6px;padding:1px 0;">` +
-          `<span style="color:#c8daf0;">${sym} ${row.group.label}</span>` +
+          `<div style="display:grid;grid-template-columns:1fr auto auto;gap:6px;padding:1px 0;align-items:center;">` +
+          `<span style="color:#c8daf0;">${row.group.symbols[0] ?? ''} ${escapeHtml(row.group.label)}</span>` +
           `<span style="color:#445566;">${outLabel}</span>` +
-          `<span style="color:${rc};font-weight:800;min-width:28px;text-align:right;">${multLabel} <span style="font-size:0.5rem;">${rl}</span></span>` +
+          `<span style="color:${rc};font-weight:800;text-align:right;">${multLabel} <span style="font-size:0.5rem;">${RATING_LABEL[row.rating]}</span></span>` +
           `</div>`
         );
       }
     }
 
-    // ── Hints ────────────────────────────────────────────────────────────────
     if (analysis.hints.length > 0) {
-      parts.push(
-        `<div style="margin-top:7px;border-top:1px solid ${aesthetic.primary}33;padding-top:5px;">`
-      );
-      for (const hint of analysis.hints) {
-        parts.push(
-          `<div style="color:#ffcc44;font-size:0.54rem;padding:1px 0;">💡 ${hint}</div>`
-        );
-      }
+      parts.push(`<div style="margin-top:7px;border-top:1px solid ${aesthetic.primary}33;padding-top:5px;">`);
+      for (const hint of analysis.hints) parts.push(`<div style="color:#ffcc44;font-size:0.54rem;padding:1px 0;">Hint: ${escapeHtml(hint)}</div>`);
       parts.push(`</div>`);
     }
 
-    // Preview stub button
-    parts.push(
-      `<div style="margin-top:7px;border-top:1px solid ${aesthetic.primary}22;padding-top:5px;">` +
-      `<button title="Preview Patch (coming soon)" disabled style="${FF}font-size:0.54rem;font-weight:700;` +
-      `background:rgba(8,15,28,0.6);border:1px solid #2a3d65;color:#445566;border-radius:5px;` +
-      `padding:3px 10px;cursor:not-allowed;opacity:0.5;">▷ Preview Patch</button>` +
-      `</div>`
-    );
-
     patchPanel.innerHTML = parts.join('');
   }
-
   function showNotePopup(note: NotationNoteLayout, refEl: HTMLElement): void {
     const def = getEnemyDef(note.enemyTypeId);
     if (!def) return;
@@ -568,20 +573,23 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     const threatLabel = BEHAVIOR_THREAT_LABEL[behavior];
     const isSpecial = behavior !== 'normal';
     const descColor = isSpecial ? def.color : '#6688aa';
-    const chordLabel = note.chordGroup ? ` · group ${note.chordGroup}` : '';
-    const tiedLabel = note.tiedToNext ? ' · first of pair' : (behavior === 'tied' && !note.tiedToNext ? ' · second of pair' : '');
+    const chordLabel = note.chordGroup ? ` - chord ${note.chordGroup}` : '';
+    const tiedLabel = note.tiedToNext ? ' - first tied note' : (behavior === 'tied' && !note.tiedToNext ? ' - second tied note' : '');
     const bandLabel = note.band ? note.band : def.band;
+    const match = matchLabelForHz(note.hz);
+    const noteName = note.midiPitch != null ? formatNoteNameFromMidi(note.midiPitch) : bandLabel.toUpperCase();
+    const speedLabel = note.durationTicks <= 24 ? 'fast' : note.durationTicks >= 96 ? 'slow/heavy' : 'steady';
     notePopup.innerHTML = [
-      `<div style="color:${note.color};font-weight:800;font-size:0.68rem;margin-bottom:3px;">${def.symbol} ${def.label}${threatLabel ? ` <span style="font-weight:400;color:${note.color}88;">[${threatLabel}]</span>` : ''}</div>`,
-      `<div style="color:#5577aa;">HP <span style="color:#c8daf0;">${def.maxHp}</span> &nbsp; Band <span style="color:#c8daf0;">${bandLabel}</span> &nbsp; Hz <span style="color:#c8daf0;">${note.hz.toFixed(1)}</span></div>`,
-      `<div style="color:#5577aa;">Threat <span style="color:#c8daf0;">${def.threat}/4</span></div>`,
-      `<div style="color:#5577aa;margin-top:3px;">Behavior <span style="color:${descColor};">${behaviorDesc}${chordLabel}${tiedLabel}</span></div>`,
-      behaviorTip ? `<div style="color:#88776a;font-size:0.52rem;margin-top:2px;border-top:1px solid #22334488;padding-top:2px;">${behaviorTip}</div>` : '',
+      `<div style="color:${note.color};font-weight:800;font-size:0.68rem;margin-bottom:3px;">${escapeHtml(def.symbol)} ${escapeHtml(noteName)} - ${escapeHtml(def.label)}${threatLabel ? ` <span style="font-weight:400;color:${note.color}88;">[${escapeHtml(threatLabel)}]</span>` : ''}</div>`,
+      `<div style="color:#5577aa;">Hz <span style="color:#c8daf0;">${note.hz.toFixed(1)}</span> &nbsp; HP <span style="color:#c8daf0;">${def.maxHp}</span> &nbsp; Speed <span style="color:#c8daf0;">${speedLabel}</span></div>`,
+      `<div style="color:#5577aa;">Band <span style="color:#c8daf0;">${bandLabel}</span> &nbsp; Threat <span style="color:#c8daf0;">${def.threat}/4</span></div>`,
+      `<div style="color:${match.color};font-weight:800;">${match.text}</div>`,
+      `<div style="color:#5577aa;margin-top:3px;">Behavior <span style="color:${descColor};">${escapeHtml(behaviorDesc)}${escapeHtml(chordLabel)}${escapeHtml(tiedLabel)}</span></div>`,
+      behaviorTip ? `<div style="color:#88776a;font-size:0.52rem;margin-top:2px;border-top:1px solid #22334488;padding-top:2px;">${escapeHtml(behaviorTip)}</div>` : '',
     ].join('');
     notePopup.style.display = 'block';
-    // Position to the right of the element; clamp to viewport.
     const vw = window.innerWidth, vh = window.innerHeight;
-    const popW = 230, popH = behavior !== 'normal' ? 130 : 100;
+    const popW = 240, popH = behavior !== 'normal' ? 145 : 112;
     let left = rect.right + 8;
     let top = rect.top - 10;
     if (left + popW > vw - 8) left = rect.left - popW - 8;
@@ -591,7 +599,6 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     notePopup.style.left = `${left}px`;
     notePopup.style.top = `${top}px`;
   }
-
   function hideNotePopup(): void {
     notePopup.style.display = 'none';
     popupPinnedNote = null;
@@ -721,6 +728,9 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
           saveTowers();
           host.persist();
           rack.rebuild();
+        } else {
+          placementError = 'Tower blocked: choose an open grid tile, not the enemy track.';
+          flashState(placementError, '#ff6677', 1800);
         }
       }
     },
@@ -731,6 +741,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     const r = viewport.getBoundingClientRect();
     const w = camera.screenToWorld(clientX - r.left, clientY - r.top);
     placement.tile = [Math.floor(w.x / TILE_PX), Math.floor(w.y / TILE_PX)];
+    placementError = '';
     viewport.style.cursor = 'crosshair';
   }
   viewport.addEventListener('pointermove', (e) => {
@@ -749,6 +760,9 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       towers.set(placement.outputModuleId, { tileX: tx, tileY: ty, orientation: previous?.orientation ?? 'north' });
       saveTowers();
       host.persist();
+    } else {
+      placementError = 'Tower blocked: choose an open grid tile, not the enemy track.';
+      flashState(placementError, '#ff6677', 1800);
     }
     placement.active = false;
     placement.outputModuleId = null;
@@ -844,7 +858,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     hideNotePopup();
     const v = validateGraph(graph);
     if (v.status === 'cycle' || v.status === 'no-output-route' || v.status === 'missing-starter' || v.status === 'incompatible' || v.status === 'invalid') {
-      flashState(`Patch invalid: ${v.status.replace(/-/g, ' ')}`, '#ff6677');
+      flashState(patchErrorMessage(v), '#ff6677', 2600);
       return;
     }
     void audio.unlock();
@@ -875,7 +889,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     const evaluation = rebuildSignalsForWave(effectiveScore);
     const missing = [...evaluation.eventsByOutput.keys()].filter(outputId => !towers.has(outputId));
     if (missing.length > 0) {
-      flashState(`Place tower for ${missing.map(id => graph.modules.find(m => m.instanceId === id)?.typeId.toUpperCase() ?? 'OUT').join(', ')}`, '#ff6677');
+      flashState('OUTPUT HAS NO TOWER: drag the OUT tower silhouette onto an open grid tile.', '#ff6677', 2600);
       tut.trigger('tower');
       return;
     }
@@ -895,6 +909,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
     runState = 'countin';
     tut.trigger('live-lock');
+    tut.trigger('start-wave');
     tut.trigger('bands');
     tut.trigger('osc-combat');
     tut.trigger('clock-combat');
@@ -1291,7 +1306,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
     // Render battlefield.
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    combat.draw(ctx, canvas, camera, tickFloat, placement, save.settings.reducedMotion);
+    combat.draw(ctx, canvas, camera, tickFloat, placement, save.settings.reducedMotion, placementError);
 
     // Dev overlay.
     if (debugEl && levelMusic) {

@@ -545,18 +545,18 @@ export class Combat {
               if (pairAlsoDead) this.stats.modifiers.tiedPairsDefeated++;
             }
           }
-          if (dmgAmount > 0) {
+          if (dmgAmount > 0 && (isGoodHit || this.damageNumbers.length < 18)) {
             spawnDamageNumber(this.damageNumbers, etx + 0.5, ety + 0.5, dmgAmount, e.pool.maxHp, BAND_COLORS[p.band]);
           }
-          // Color: green ≥3×, yellow ≥1.5×, orange ≥0.5×, grey = fizzle
           const isResonant = mult >= 3.5;
           const multColor = mult >= 3 ? '#33ff88' : mult >= 1.5 ? '#ffcc00' : mult >= 0.5 ? '#ff8833' : '#556677';
           const [hr, hg, hb] = rgb(BAND_COLORS[p.band]);
-          this.fluid.addExplosion((etx + 0.5) * TILE_PX, (ety + 0.5) * TILE_PX, !e.alive ? 1.8 : isResonant ? 1.2 : 0.85, hr, hg, hb);
-          this.floaters.push({
-            x: etx + 0.5 + (Math.random() * 0.5 - 0.25),
+          this.fluid.addExplosion((etx + 0.5) * TILE_PX, (ety + 0.5) * TILE_PX, !e.alive ? 1.8 : isResonant ? 1.25 : mult < 0.75 ? 0.45 : 0.8, hr, hg, hb);
+          const shouldFloat = isGoodHit || p.autoTuned || mult < 0.75 || this.floaters.length < 8;
+          if (shouldFloat) this.floaters.push({
+            x: etx + 0.5 + ((((etx * 17 + ety * 31 + Math.round(tickFloat)) % 11) - 5) * 0.035),
             y: ety,
-            text: isResonant ? `RESONATE ×${mult.toFixed(1)}` : (p.autoTuned ? `AUTO ×${mult.toFixed(1)}` : `×${mult.toFixed(1)}`),
+            text: isResonant ? `RESONATE x${mult.toFixed(1)}` : (mult < 0.75 ? `RESIST x${mult.toFixed(1)}` : (p.autoTuned ? `AUTO x${mult.toFixed(1)}` : `x${mult.toFixed(1)}`)),
             color: multColor,
             t: isResonant ? 1.2 : 0.9,
             scale: isResonant ? 1.25 + Math.min(1.5, p.amplitude) * 0.15 : 0.85 + Math.min(1.5, p.amplitude) * 0.25,
@@ -574,7 +574,7 @@ export class Combat {
 
   // ── Rendering ─────────────────────────────────────────────────────────────
 
-  draw(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, camera: Camera, tickFloat: number, placement: { active: boolean; tile: Tile | null; outputModuleId: string | null }, reducedMotion = false): void {
+  draw(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, camera: Camera, tickFloat: number, placement: { active: boolean; tile: Tile | null; outputModuleId: string | null }, reducedMotion = false, placementError = ''): void {
     const dpr = devicePixelRatio;
     const z = camera.zoom * dpr;
     const tileZ = TILE_PX * z;
@@ -670,17 +670,47 @@ export class Combat {
     if (placement.active && placement.tile) {
       const [ptx, pty] = placement.tile;
       const valid = ptx >= 0 && ptx < w.gridWidth && pty >= 0 && pty < w.gridHeight && !this.isTrackTile(ptx, pty);
-      ctx.save();
-      ctx.globalAlpha = 0.55;
       const style = placement.outputModuleId ? this.towerStyles.get(placement.outputModuleId) : undefined;
+      if (valid) {
+        ctx.save();
+        ctx.fillStyle = hexAlpha(style?.color ?? '#ffcc00', 0.07);
+        for (let yy = 0; yy < w.gridHeight; yy++) {
+          for (let xx = 0; xx < w.gridWidth; xx++) {
+            if (!this.isTrackTile(xx, yy)) ctx.fillRect(xx * tileZ, yy * tileZ, tileZ, tileZ);
+          }
+        }
+        ctx.restore();
+      }
+      ctx.save();
+      ctx.globalAlpha = 0.78;
       ctx.strokeStyle = valid ? (style?.color ?? '#ffcc00') : '#ff3344';
+      ctx.fillStyle = valid ? hexAlpha(style?.color ?? '#ffcc00', 0.12) : 'rgba(255,40,60,0.14)';
       ctx.lineWidth = Math.max(1.5, 2 * z);
       const px = ptx * tileZ + tileZ / 2, py = pty * tileZ + tileZ / 2;
+      ctx.fillRect(ptx * tileZ + 2 * z, pty * tileZ + 2 * z, tileZ - 4 * z, tileZ - 4 * z);
       ctx.translate(px, py);
       const half = tileZ * 0.24;
       traceTowerShape(ctx, style?.shape ?? 'diamond', half);
       ctx.stroke();
+      if (!valid) {
+        ctx.beginPath();
+        ctx.moveTo(-half * 1.25, -half * 1.25);
+        ctx.lineTo(half * 1.25, half * 1.25);
+        ctx.moveTo(half * 1.25, -half * 1.25);
+        ctx.lineTo(-half * 1.25, half * 1.25);
+        ctx.stroke();
+      }
       ctx.restore();
+      if (placementError && !valid) {
+        ctx.save();
+        ctx.font = `bold ${Math.max(9, tileZ * 0.16)}px 'Pixelify Sans',sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ff6677';
+        ctx.shadowColor = '#ff3344';
+        ctx.shadowBlur = 8 * z;
+        ctx.fillText('BLOCKED', ptx * tileZ + tileZ / 2, pty * tileZ - 4 * z);
+        ctx.restore();
+      }
     }
 
     // Tower.
