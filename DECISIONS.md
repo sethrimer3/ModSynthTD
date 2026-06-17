@@ -1,5 +1,17 @@
 # Implementation Decisions
 
+## D-040: Alpha Balance Favors Exact Resonance And Live Tail Fire
+
+**Decision**: The alpha balance pass makes exact-Hz hits more decisive, keeps near
+matches useful, weakens octave/register mismatches, lowers basic enemy HP, and
+aligns the headless balance simulator with live combat's one-measure tail-fire
+window.
+
+**Reason**: The campaign should be readable and playable for public alpha
+without adding modules or changing the campaign structure. Exact matching now
+feels clearly rewarding, while late-campaign worlds remain dependent on
+deliberate patch logic rather than raw starter-rack output.
+
 ## D-039: First-Playable UX Pass Stays in Presentation Layers
 
 **Decision**: Onboarding, invalid-patch explanations, note stat popups, tower

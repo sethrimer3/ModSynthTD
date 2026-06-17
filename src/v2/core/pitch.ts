@@ -53,14 +53,16 @@ export function pitchOffsetToHz(band: FrequencyBand, semitones: number): number 
 
 /**
  * Piecewise-linear damage multiplier from a semitone distance:
- *   0 st → ×4.0, 6 st → ×1.0 (pivot), 12 st → ×0.25, 14+ st → ×0.0.
- *   dist ∈ [0, 6]  → 4 − 0.5 × dist
- *   dist ∈ [6, 14] → 1 − (dist − 6) / 8
+ *   0 st -> x5.0, 6 st -> x1.1 (near match), 12 st -> x0.15, 14+ st -> x0.0.
+ * Exact resonance should feel decisive, near matches should still contribute,
+ * and octave/register mistakes should read as inefficient instead of useless.
  */
 export function damageMultiplierForSemitoneDistance(distance: number): number {
   const dist = Math.abs(distance);
-  const raw = dist <= 6 ? 4 - 0.5 * dist : 1 - (dist - 6) / 8;
-  return Math.max(0, Math.min(4, raw));
+  if (dist <= 6) return Math.max(1.1, 5 - 0.65 * dist);
+  if (dist <= 12) return 1.1 - (dist - 6) * (0.95 / 6);
+  const raw = 0.15 - (dist - 12) * 0.075;
+  return Math.max(0, Math.min(5, raw));
 }
 
 /** Damage multiplier directly from two frequencies. */

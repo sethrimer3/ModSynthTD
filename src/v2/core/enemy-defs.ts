@@ -6,7 +6,7 @@
  */
 
 import { FrequencyBand } from './events';
-import { QUARTER_TICKS, EIGHTH_TICKS, SIXTEENTH_TICKS, HALF_TICKS, WHOLE_TICKS, DOTTED_QUARTER_TICKS, EIGHTH_TRIPLET_TICKS } from './ticks';
+import { QUARTER_TICKS, EIGHTH_TICKS, HALF_TICKS, WHOLE_TICKS, DOTTED_QUARTER_TICKS, EIGHTH_TRIPLET_TICKS } from './ticks';
 
 export type EnemyBehavior =
   | 'normal'
@@ -38,47 +38,47 @@ export interface EnemyDef {
 export const ENEMY_DEFS: Record<string, EnemyDef> = {
   sixteenth: {
     id: 'sixteenth', label: 'Sixteenth', symbol: '♬', color: '#ff3366',
-    band: 'high', moveEveryTicks: SIXTEENTH_TICKS, maxHp: 3, behavior: 'normal', threat: 2,
+    band: 'high', moveEveryTicks: EIGHTH_TICKS, maxHp: 2, behavior: 'normal', threat: 2,
   },
   eighth: {
     id: 'eighth', label: 'Eighth', symbol: '♪', color: '#ff8800',
-    band: 'high', moveEveryTicks: EIGHTH_TICKS, maxHp: 4, behavior: 'normal', threat: 2,
+    band: 'high', moveEveryTicks: QUARTER_TICKS, maxHp: 3, behavior: 'normal', threat: 2,
   },
   quarter: {
     id: 'quarter', label: 'Quarter', symbol: '♩', color: '#ffcc00',
-    band: 'mid', moveEveryTicks: QUARTER_TICKS, maxHp: 5, behavior: 'normal', threat: 1,
+    band: 'mid', moveEveryTicks: QUARTER_TICKS, maxHp: 3, behavior: 'normal', threat: 1,
   },
   half: {
     id: 'half', label: 'Half', symbol: '𝅗𝅥', color: '#44ddff',
-    band: 'low', moveEveryTicks: HALF_TICKS, maxHp: 8, behavior: 'normal', threat: 2,
+    band: 'low', moveEveryTicks: HALF_TICKS, maxHp: 5, behavior: 'normal', threat: 2,
   },
   whole: {
     id: 'whole', label: 'Whole', symbol: '𝅝', color: '#aa55ff',
-    band: 'low', moveEveryTicks: WHOLE_TICKS, maxHp: 14, behavior: 'normal', threat: 3,
+    band: 'low', moveEveryTicks: WHOLE_TICKS, maxHp: 9, behavior: 'normal', threat: 3,
   },
   dotted: {
     id: 'dotted', label: 'Dotted Quarter', symbol: '♩.', color: '#ffdd66',
-    band: 'mid', moveEveryTicks: DOTTED_QUARTER_TICKS, maxHp: 7, behavior: 'normal', threat: 2,
+    band: 'mid', moveEveryTicks: DOTTED_QUARTER_TICKS, maxHp: 5, behavior: 'normal', threat: 2,
   },
   triplet: {
     id: 'triplet', label: 'Triplet', symbol: '♪³', color: '#66ffcc',
-    band: 'high', moveEveryTicks: EIGHTH_TRIPLET_TICKS, maxHp: 3, behavior: 'normal', threat: 3,
+    band: 'high', moveEveryTicks: EIGHTH_TICKS, maxHp: 2, behavior: 'normal', threat: 3,
   },
   accidental: {
     id: 'accidental', label: 'Accidental', symbol: '♯', color: '#ff66ff',
-    band: 'mid', moveEveryTicks: QUARTER_TICKS, maxHp: 6, behavior: 'accidental', threat: 3,
+    band: 'mid', moveEveryTicks: QUARTER_TICKS, maxHp: 5, behavior: 'accidental', threat: 3,
   },
   crescendo: {
     id: 'crescendo', label: 'Crescendo', symbol: '<', color: '#ff4444',
-    band: 'low', moveEveryTicks: HALF_TICKS, maxHp: 12, behavior: 'crescendo', threat: 4,
+    band: 'low', moveEveryTicks: HALF_TICKS, maxHp: 9, behavior: 'crescendo', threat: 4,
   },
   fermata: {
     id: 'fermata', label: 'Fermata', symbol: '𝄐', color: '#88aaff',
-    band: 'low', moveEveryTicks: QUARTER_TICKS, maxHp: 10, behavior: 'fermata', threat: 3,
+    band: 'low', moveEveryTicks: QUARTER_TICKS, maxHp: 7, behavior: 'fermata', threat: 3,
   },
   tied: {
     id: 'tied', label: 'Tied Pair', symbol: '♩‿♩', color: '#44ffdd',
-    band: 'mid', moveEveryTicks: QUARTER_TICKS, maxHp: 9, behavior: 'tied', threat: 3,
+    band: 'mid', moveEveryTicks: QUARTER_TICKS, maxHp: 6, behavior: 'tied', threat: 3,
   },
 };
 

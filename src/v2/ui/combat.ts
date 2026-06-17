@@ -415,6 +415,9 @@ export class Combat {
         this.finishFlash = 0.55;
         const finish = e.lane[e.lane.length - 1];
         this.fluid.addExplosion((finish[0] + 0.5) * TILE_PX, (finish[1] + 0.5) * TILE_PX, 1.5, 255, 45, 105);
+        if (this.floaters.length < 14) {
+          this.floaters.push({ x: finish[0] + 0.5, y: finish[1] + 0.35, text: 'ESCAPE!', color: '#ff3366', t: 1.05, scale: 1.15 });
+        }
       }
     }
 
@@ -548,18 +551,27 @@ export class Combat {
           if (dmgAmount > 0 && (isGoodHit || this.damageNumbers.length < 18)) {
             spawnDamageNumber(this.damageNumbers, etx + 0.5, ety + 0.5, dmgAmount, e.pool.maxHp, BAND_COLORS[p.band]);
           }
+          const isExact = mult >= 4.5;
           const isResonant = mult >= 3.5;
-          const multColor = mult >= 3 ? '#33ff88' : mult >= 1.5 ? '#ffcc00' : mult >= 0.5 ? '#ff8833' : '#556677';
+          const isNear = mult >= 1.1 && mult < 3.5;
+          const isResisted = mult < 0.75;
+          const multColor = isResonant ? '#33ff88' : isNear ? '#ffcc00' : mult >= 0.5 ? '#ff8833' : '#556677';
           const [hr, hg, hb] = rgb(BAND_COLORS[p.band]);
-          this.fluid.addExplosion((etx + 0.5) * TILE_PX, (ety + 0.5) * TILE_PX, !e.alive ? 1.8 : isResonant ? 1.25 : mult < 0.75 ? 0.45 : 0.8, hr, hg, hb);
-          const shouldFloat = isGoodHit || p.autoTuned || mult < 0.75 || this.floaters.length < 8;
+          this.fluid.addExplosion((etx + 0.5) * TILE_PX, (ety + 0.5) * TILE_PX, !e.alive ? 1.9 : isExact ? 1.55 : isResonant ? 1.25 : isResisted ? 0.42 : 0.75, hr, hg, hb);
+          const shouldFloat = isGoodHit || p.autoTuned || isResisted || this.floaters.length < 8;
+          const label = isExact ? `EXACT x${mult.toFixed(1)}`
+            : isResonant ? `RESONATE x${mult.toFixed(1)}`
+              : isNear ? `NEAR x${mult.toFixed(1)}`
+                : isResisted ? `RESIST x${mult.toFixed(1)}`
+                  : p.autoTuned ? `AUTO x${mult.toFixed(1)}`
+                    : `x${mult.toFixed(1)}`;
           if (shouldFloat) this.floaters.push({
             x: etx + 0.5 + ((((etx * 17 + ety * 31 + Math.round(tickFloat)) % 11) - 5) * 0.035),
             y: ety,
-            text: isResonant ? `RESONATE x${mult.toFixed(1)}` : (mult < 0.75 ? `RESIST x${mult.toFixed(1)}` : (p.autoTuned ? `AUTO x${mult.toFixed(1)}` : `x${mult.toFixed(1)}`)),
+            text: label,
             color: multColor,
-            t: isResonant ? 1.2 : 0.9,
-            scale: isResonant ? 1.25 + Math.min(1.5, p.amplitude) * 0.15 : 0.85 + Math.min(1.5, p.amplitude) * 0.25,
+            t: isExact ? 1.3 : isResonant ? 1.15 : 0.85,
+            scale: isExact ? 1.36 + Math.min(1.5, p.amplitude) * 0.16 : isResonant ? 1.18 + Math.min(1.5, p.amplitude) * 0.14 : 0.82 + Math.min(1.5, p.amplitude) * 0.22,
           });
           if (!e.alive) this.floaters.push({ x: etx + 0.5, y: ety + 0.35, text: 'NOTE OFF', color: BAND_COLORS[e.band], t: 0.7, scale: 0.9 });
           break;

@@ -66,10 +66,11 @@ export function simulateWave(
 ): SimWaveResult {
   const compiled = compileScore(score);
   const measures = score.measures;
-  // Evaluate the patch for the entire wave duration.
+  // Match live combat: the level evaluates one measure of tail fire so the
+  // last authored spawn can still be answered after the phrase resolves.
   const result = evaluatePatch(graph, {
     startTick: 0,
-    endTick: measures * TICKS_PER_MEASURE,
+    endTick: measures * TICKS_PER_MEASURE + TICKS_PER_MEASURE,
     seedBase,
   });
   const events = result.events;

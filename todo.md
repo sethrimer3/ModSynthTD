@@ -22,6 +22,7 @@ kept only for history.
 
 ### Done
 - [x] First-playable UX/onboarding pass: contextual starter prompts, actionable invalid-patch messages, clearer patch analysis, richer note hover stats, tower placement ghost feedback, combat readability polish, and alpha QA checklist.
+- [x] Alpha content/balance feel pass: simulator/live-tail alignment, easier exact-resonance tuning, lowered basic enemy HP, clearer exact/near/resist/escape feedback, and alpha release checklist updates.
 - [x] Add alpha-stabilization diagnostics: expanded headless balance profiles, audio coverage validation, exact-Hz frequency tests, and QA status notes.
 - [x] Add a bright golden build number to the main menu top-left.
 - [x] Make canonical SignalEvent properties visibly affect combat projectiles, tower fire feedback, hit results, and transient wave summaries.
@@ -49,7 +50,7 @@ kept only for history.
 
 ### Deferred / follow-up
 - [ ] Manually run the full `QA_STATUS.md` alpha flow on desktop and a real mobile portrait device before external alpha.
-- [ ] Use the headless balance simulator output to tune impossible/trivial waves before alpha.
+- [ ] Manually verify the tuned simulator curve against fresh-save w40/w60 play before external alpha.
 - [ ] Finish per-output tower UI/runtime: direct slot-to-board dragging, unique shapes/colors, per-output controls, and independent Combat firing/rendering from `eventsByOutput`.
 - [ ] Require every contributing output to have a placed tower before wave start and surface missing-output placement warnings.
 - [ ] Balance pass across all nine worlds (per-wave difficulty curves, default

@@ -164,13 +164,18 @@ validation, and a deterministic headless campaign balance simulator.
 The balance simulator lives in `src/v2/tests/sim.ts`. It evaluates representative
 rack profiles against campaign waves without DOM, canvas, or AudioContext and
 prints world/wave diagnostics from the same pure graph and score data used by
-the live game.
+the live game. It uses the same one-measure post-phrase signal tail as
+`ui/level.ts`, so final authored spawns can be answered by live combat and by
+headless diagnostics consistently.
 
 ## 9. Combat feedback
 
 `ui/combat.ts` derives projectile band color, waveform shape/motion, amplitude
 intensity, envelope trail length, echo styling, tower route pulses, and
-transient wave diagnostics directly from canonical `SignalEvent` data.
+transient wave diagnostics directly from canonical `SignalEvent` data. Hit text
+uses the pitch multiplier bands `EXACT`, `RESONATE`, `NEAR`, and `RESIST` so
+players can read exact tuning, acceptable near matches, and inefficient
+mismatches without a separate combat model.
 # Per-Output Emitter Towers
 
 Each V2 `output` module instance owns an optional placement in `WorldSave.towersByOutputId`. Graph evaluation groups final events in `eventsByOutput`; level wave setup validates contributing outputs and passes those grouped events to combat, where projectile origin, orientation, pulse state, shape, and color are keyed by output module instance id.

@@ -310,7 +310,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 
 ## 27. Alpha Stabilization QA
 
-- [ ] Main menu shows `BUILD 001` in bright golden text at the top-left
+- [ ] Main menu shows `BUILD 003` in bright golden text at the top-left
 - [ ] Run `npm test` and confirm the balance simulator prints all rack profiles plus the detailed w60 sample
 - [ ] Run `npm run build` and confirm production build succeeds
 - [ ] Confirm `QA_STATUS.md` known gaps still match the current build
@@ -329,6 +329,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Starting a wave with no clock source, no oscillator voice, no output route, incompatible cable, cycle, or missing tower gives a specific action.
 - [ ] Dragging an OUT tower shows the output-specific color/shape ghost, valid tile glow, invalid blocked indicator, and predictable snapping.
 - [ ] Rotating a placed tower visibly changes the facing arrow.
+- [ ] Exact-Hz hits show stronger `EXACT` feedback than `RESONATE`, `NEAR`, or `RESIST` hits.
 - [ ] Resonant hits look stronger than resisted hits; resisted hits are labeled sparingly and damage numbers do not flood the screen.
-- [ ] Enemy escapes produce an obvious base-hit flash and finish-lane pulse.
+- [ ] Enemy escapes produce an obvious base-hit flash, finish-lane pulse, and `ESCAPE!` text.
 
