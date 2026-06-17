@@ -23,7 +23,7 @@ content-extension guide.
 | Desktop shell | Electron |
 | Rendering | HTML5 Canvas 2D (battlefield) + DOM/SVG (rack, cables) |
 | Audio | Web Audio API |
-| Persistence | `localStorage` (key `modsynth-td-save`, schema v1) |
+| Persistence | `localStorage` (key `modsynth-td-save`, schema v3) |
 
 Entry: `src/main.ts` → `src/v2/app.ts` `startModSynthTD()`.
 
@@ -135,12 +135,17 @@ same patch stream for combat projectiles and scoring.
 
 ## 6. Persistence
 
-`state/save.ts` — `modsynth-td-save`, schema v1. Per-world rack (modules with
+`state/save.ts` — `modsynth-td-save`, schema v3. Per-world rack (modules with
 stable ids, cables, tower, synth pref), shelves, best wave, claimed milestone
 watermark, completion; plus global Resonance, blueprints, secret reveal, boss
 state, settings, tutorials. Malformed saves are backed up (never overwritten);
 unknown module types are dropped with cables repaired and reported
 non-destructively. Migrations are keyed by version.
+
+Private-alpha builds expose a small copy-only feedback helper in Settings and
+the level HUD. It reports version/build/schema, current world/wave/run state,
+rack/cable/output-tower counts, browser user agent, motion setting, and audio
+state without sending telemetry or requiring a backend.
 
 ---
 

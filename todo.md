@@ -21,6 +21,7 @@ The factory-defense items below are **legacy** (superseded by the campaign) and
 kept only for history.
 
 ### Done
+- [x] Private-alpha release-candidate pass: visible version/schema labels, copy-only bug report helper, compact How to Play access, normal-mode dev button hiding, save hardening tests, and private-alpha release checklist.
 - [x] First-playable UX/onboarding pass: contextual starter prompts, actionable invalid-patch messages, clearer patch analysis, richer note hover stats, tower placement ghost feedback, combat readability polish, and alpha QA checklist.
 - [x] Public-alpha readiness polish pass: dev-build overlay fix, first-wave clarity, mobile overlay wrapping, preview projectile cap, desktop shell launch check, and QA status update.
 - [x] Fix alpha regressions: moved rack modules keep stable layers above decorative art, and rack/output preview keeps running between waves without combat damage.

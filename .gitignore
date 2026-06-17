@@ -4,6 +4,8 @@ dist/
 .electron-user-data/
 electron-runtime.log
 *.log
+devserver.out
+devserver.err
 .DS_Store
 .tests-build
 .claude/settings.local.json

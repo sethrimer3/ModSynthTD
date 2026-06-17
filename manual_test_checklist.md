@@ -312,7 +312,11 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 
 ## 27. Alpha Stabilization QA
 
-- [ ] Main menu shows `BUILD 005` in bright golden text at the top-left
+- [ ] Main menu shows `BUILD 006 · PRIVATE ALPHA` in bright golden text at the top-left
+- [ ] Settings and the level HUD expose version/build date, save schema version, and private-alpha labeling
+- [ ] `How to Play` is reachable from the world map and level HUD and stays compact
+- [ ] `Report Bug / Feedback` opens a copyable report with version, world, wave, run state, rack, cable, tower, browser, motion, audio, synth, and save-schema fields
+- [ ] Normal mode does not show the DEV button; `?dev` shows it intentionally
 - [ ] Run `npm test` and confirm the balance simulator prints all rack profiles plus the detailed w60 sample
 - [ ] Run `npm run build` and confirm production build succeeds
 - [ ] Confirm `QA_STATUS.md` known gaps still match the current build
@@ -320,6 +324,18 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Confirm replaying cleared waves/worlds cannot double-claim Resonance
 - [ ] Confirm buy/sell and shelf buy/refund loops cannot increase Resonance
 - [ ] Confirm selling a purchased OUT removes only that output tower placement
+
+## 29. Private-Alpha Smoke Path
+
+- [ ] Fresh save starts on the world map with w40 clearly available
+- [ ] Enter w40 and verify the rack and battlefield pan/zoom as one scene
+- [ ] Drag the OUT tower from the OUT module onto an open battlefield tile
+- [ ] Start and clear w40 wave 1
+- [ ] Buy one module from the shop
+- [ ] Reload and verify rack/tower placement renders correctly
+- [ ] Enter w60 and verify w60 wave 1 MIDI/audio/notation behavior
+- [ ] Return to map, open settings, export save, then reset progress
+- [ ] Import rejects malformed JSON without changing the current save
 
 ## 28. First-Playable UX And Onboarding
 

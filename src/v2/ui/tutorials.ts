@@ -1,5 +1,5 @@
 /**
- * tutorials.ts — Contextual, dismissible, persisted one-shot tips.
+ * tutorials.ts - Contextual, dismissible, persisted one-shot tips.
  */
 
 import { SaveData } from '../state/save';
@@ -12,29 +12,29 @@ export interface TutorialDef {
 }
 
 export const TUTORIALS: Record<string, string> = {
-  'camera': 'Drag to pan · scroll or pinch to zoom. The rack and battlefield share one space — find your rack!',
+  'camera': 'Drag to pan, scroll or pinch to zoom. The rack and battlefield are one shared scene.',
   'first-patch': 'Patch the starter route: CLOCK out to OSC trig, then OSC voice to OUT.',
   'score': 'The glowing score IS the wave. Hover a note to see its Hz, HP, speed, and match quality.',
-  'tower': 'Each OUT owns an emitter tower. Drag its silhouette from the module onto the grid.',
+  'tower': 'OUT owns the emitter tower. Drag the bright OUT tower silhouette onto the battlefield before starting.',
   'start-wave': 'When Patch Analysis says VALID and the OUT tower is placed, press START WAVE.',
   'multi-output': 'Multiple OUT modules create multiple towers. Patch different routes into different OUTs to fire from different places.',
-  'bands': 'Match your OSC band (LO/MI/HI) to an enemy\'s ring color for ×2 damage. Mismatches resist.',
+  'bands': 'Match your OSC band (LO/MI/HI) to an enemy ring color for x2 damage. Mismatches resist.',
   'hz-match': 'Exact Hz hits resonate hardest. Near matches still work; mismatches look weak and deal reduced damage.',
-  'two-lanes': 'Two lanes, two threats. Place a second Output tower on the far path — one tower fires in one direction and cannot cover both routes alone.',
+  'two-lanes': 'Two lanes, two threats. Place a second Output tower on the far path; one tower fires in one direction and cannot cover both routes alone.',
   'osc-combat': 'OSC changes the tower voice: BAND changes resonant color and match damage; WAVE changes projectile shape.',
   'clock-combat': 'CLOCK RATE is the firing rhythm. Faster subdivisions produce more frequent tower pulses.',
   'delay-combat': 'DELAY adds quieter repeated shots. Echo projectiles appear as ghosted copies.',
-  'shop': 'Buy modules with Resonance ◈. Selling refunds 100% outside combat — experiment freely.',
+  'shop': 'Buy modules with Resonance. Selling refunds 100% outside combat, so experiment freely.',
   'shelf': 'More shelves, more modules. Empty purchased shelves refund fully.',
   'live-lock': 'The rack is LIVE during a wave: topology is locked, but glowing knobs stay adjustable.',
   'test-pulse': 'PULSE sends one test signal through your patch so you can watch the route light up.',
-  'synth': 'The OUT module\'s SYNTH switch makes your patch audible. What you hear is what fights.',
-  'cipher': 'Divide the pulse. Displace one voice in time. Reunite them at a mixer — then send a PULSE.',
-  'timing': 'DELAY and PHASE shift events in time — echoes land on off-beats, phase-offset splits the stream into two staggered voices. Try patching CLOCK → PHASE → OUTPUT.',
-  'mixing': 'MIXER combines up to four signals — route two differently-tuned OSC voices into one tower for layered damage. HARMONIZER stacks pitch copies automatically.',
-  'filtering': 'BAND FILTER passes one resonance band and silences others. Combine with PITCH FILTER to cut enemies by both color and Hz for precision targeting.',
-  'sequencing': 'SEQUENCER steps through a pitch pattern — one step per incoming event. Pair with ARP to arpeggiate chords across dense note streams.',
-  'target-lock': 'TARGET LOCK world: enemies vary too fast for static tuning. Use TARGET TUNER (AUTO module) to auto-aim each shot at a live enemy — or plan carefully with Pitch Router and Sequencer for predictable waves.',
+  'synth': 'The OUT module SYNTH switch makes your patch audible. What you hear is what fights.',
+  'cipher': 'Divide the pulse. Displace one voice in time. Reunite them at a mixer, then send a PULSE.',
+  'timing': 'DELAY and PHASE shift events in time. Echoes land on off-beats, and phase offset splits the stream into two staggered voices.',
+  'mixing': 'MIXER combines up to four signals. Route two differently tuned OSC voices into one tower for layered damage.',
+  'filtering': 'BAND FILTER passes one resonance band and silences others. Combine it with PITCH FILTER for precision targeting.',
+  'sequencing': 'SEQUENCER steps through a pitch pattern, one step per incoming event. Pair it with ARP to spread chords across dense note streams.',
+  'target-lock': 'TARGET LOCK world: enemies vary too fast for static tuning. Use TARGET TUNER to auto-aim, or plan with Pitch Router and Sequencer.',
 };
 
 export class TutorialManager {
@@ -56,7 +56,6 @@ export class TutorialManager {
     parent.appendChild(this.container);
   }
 
-  /** Show a tutorial once; subsequent calls are no-ops unless replay=true. */
   trigger(id: string, replay = false): void {
     if (!TUTORIALS[id]) return;
     if (!replay && this.save.tutorialsSeen.includes(id)) return;
@@ -82,7 +81,7 @@ export class TutorialManager {
     `;
     el.textContent = TUTORIALS[id];
     const close = document.createElement('button');
-    close.textContent = '×';
+    close.textContent = 'x';
     close.style.cssText = `
       position:absolute;top:4px;right:6px;background:none;border:none;color:#5577aa;
       ${FF}font-size:14px;cursor:pointer;padding:2px;

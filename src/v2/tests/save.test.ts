@@ -46,6 +46,7 @@ test('malformed JSON is backed up, not overwritten', () => {
   assertEq(r.recoveredFromCorrupt, true, 'flagged as recovery');
   assertEq(storage.map.get(SAVE_BACKUP_PREFIX + '777'), '{broken json!!', 'raw value preserved in backup');
   assertEq(r.save.resonance, 0, 'defaults loaded');
+  assertEq(storage.map.get(SAVE_KEY), '{broken json!!', 'corrupt original key is not overwritten during load');
 });
 
 test('unknown blueprint and module types repaired without data loss elsewhere', () => {
@@ -80,11 +81,22 @@ test('import validates before replacing', () => {
   assertEq(wrongShape.ok, false, 'non-object rejected');
   const newer = importSave(JSON.stringify({ schemaVersion: 99 }));
   assertEq(newer.ok, false, 'future version rejected');
+  const badSchema = importSave(JSON.stringify({ schemaVersion: '3' }));
+  assertEq(badSchema.ok, false, 'string schema rejected');
   const save = defaultSave();
   save.resonance = 9;
   const good = importSave(exportSave(save));
   assertEq(good.ok, true, 'valid export imports');
   assertEq(good.save!.resonance, 9, 'data preserved through export/import');
+});
+
+test('exported save is parseable JSON with current schema', () => {
+  const save = defaultSave();
+  save.resonance = 17;
+  const text = exportSave(save);
+  const parsed = JSON.parse(text) as SaveData;
+  assertEq(parsed.schemaVersion, 3, 'export includes current schema');
+  assertEq(parsed.resonance, 17, 'export includes save data');
 });
 
 test('reset clears the save key', () => {

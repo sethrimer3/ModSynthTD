@@ -1,4 +1,6 @@
+const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const packageJson = require('./package.json');
 
 module.exports = {
   entry: './src/main.ts',
@@ -44,6 +46,10 @@ module.exports = {
     ]
   },
   plugins: [
+    new webpack.DefinePlugin({
+      __APP_VERSION__: JSON.stringify(packageJson.version),
+      __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
+    }),
     new HtmlWebpackPlugin({
       templateContent: `<!doctype html>
 <html lang="en">

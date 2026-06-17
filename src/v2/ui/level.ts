@@ -43,6 +43,7 @@ import { validateLevelAudioConfig } from '../data/level-audio-config';
 import { TutorialManager } from './tutorials';
 import { openShop } from './shop-ui';
 import { openSettings } from './settings-ui';
+import { BUILD_LABEL, createBugReportText, openCopyPanel, openHowToPlay, releaseVersionLine } from './release-info';
 import { createLevelFluidBackground } from './fluid-background';
 import { getWorldAesthetic, WorldAesthetic } from '../data/world-aesthetics';
 import { NotationColors } from './notation';
@@ -334,7 +335,11 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   const lessonEl = document.createElement('div');
   lessonEl.textContent = world.lesson;
   lessonEl.style.cssText = 'font-size:0.56rem;color:#44608a;max-width:260px;';
-  hudLeft.append(nameEl, bpmEl, lessonEl);
+  const versionEl = document.createElement('div');
+  versionEl.textContent = `${BUILD_LABEL} · PRIVATE ALPHA`;
+  versionEl.title = releaseVersionLine();
+  versionEl.style.cssText = 'font-size:0.5rem;color:#556b8a;letter-spacing:0.08em;';
+  hudLeft.append(nameEl, bpmEl, lessonEl, versionEl);
 
   const hudCenter = document.createElement('div');
   hudCenter.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:3px;pointer-events:auto;flex:1;';
@@ -374,6 +379,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   mkHudBtn('Rack', 'Focus camera on the rack', focusRack);
   mkHudBtn('Grid', 'Focus camera on the playfield', focusGrid);
   mkHudBtn('↩ Map', 'Return to the world map', () => host.exitToMap());
+  mkHudBtn('?', 'How to Play', () => openHowToPlay(app));
+  mkHudBtn('Report', 'Copy bug / feedback report', openReportUI);
   hudRight.append(hpEl, resEl, loopEl, btnRow);
 
   hud.append(hudLeft, hudCenter, hudRight);
@@ -1253,6 +1260,17 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   }
 
   // ── HUD refresh ───────────────────────────────────────────────────────────
+  function openReportUI(): void {
+    openCopyPanel(app, 'BUG / FEEDBACK REPORT', createBugReportText({
+      save,
+      worldId,
+      waveIndex,
+      runState,
+      graph,
+      placedOutputTowerCount: towers.size,
+    }));
+  }
+
   let stateFlash = '';
   let stateFlashColor = '';
   let stateFlashUntil = 0;

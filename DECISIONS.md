@@ -1,5 +1,15 @@
 # Implementation Decisions
 
+## D-041: Private-Alpha Release Helpers Are Local And Copy-Only
+
+**Decision**: Private-alpha version labels, How to Play, and bug/feedback report
+helpers live in UI-only release helpers. The report panel generates copyable
+text from existing save, graph, level, browser, and audio state and never sends
+data automatically.
+
+**Reason**: External testers need precise build and state details without
+network telemetry, backend requirements, or gameplay-system changes.
+
 ## D-040: Alpha Balance Favors Exact Resonance And Live Tail Fire
 
 **Decision**: The alpha balance pass makes exact-Hz hits more decisive, keeps near

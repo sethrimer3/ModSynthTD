@@ -14,9 +14,9 @@ import { CURRENCY_SYMBOL } from '../state/economy';
 import { getModuleType, MODULE_TYPES } from '../core/modules';
 import { openSettings } from './settings-ui';
 import { getAudioEngine } from './audio-engine';
+import { BUILD_LABEL, openHowToPlay, releaseVersionLine } from './release-info';
 
 const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
-const MAIN_MENU_BUILD_LABEL = 'BUILD 005';
 
 export interface WorldMapOpts {
   save: SaveData;
@@ -37,7 +37,7 @@ export function showWorldMap(app: HTMLElement, opts: WorldMapOpts): void {
   app.appendChild(root);
 
   const buildLabel = document.createElement('div');
-  buildLabel.textContent = MAIN_MENU_BUILD_LABEL;
+  buildLabel.textContent = `${BUILD_LABEL} · PRIVATE ALPHA`;
   buildLabel.style.cssText = `
     position:fixed;top:12px;left:14px;z-index:5;${FF}
     font-size:0.78rem;font-weight:900;letter-spacing:0.12em;
@@ -55,7 +55,10 @@ export function showWorldMap(app: HTMLElement, opts: WorldMapOpts): void {
   const sub = document.createElement('div');
   sub.textContent = 'BUILD THE RACK · CONDUCT THE DEFENSE';
   sub.style.cssText = 'font-size:0.66rem;color:#5577aa;letter-spacing:0.18em;';
-  header.append(title, sub);
+  const version = document.createElement('div');
+  version.textContent = releaseVersionLine();
+  version.style.cssText = 'font-size:0.54rem;color:#5577aa;letter-spacing:0.06em;';
+  header.append(title, sub, version);
   root.appendChild(header);
 
   // Top bar: currency + settings.
@@ -76,12 +79,18 @@ export function showWorldMap(app: HTMLElement, opts: WorldMapOpts): void {
       onReset: opts.onReset,
     });
   });
+  const helpBtn = document.createElement('button');
+  helpBtn.textContent = 'How to Play';
+  helpBtn.style.cssText = `${FF}font-size:0.66rem;font-weight:700;background:rgba(8,15,28,0.85);border:1px solid #2a3d65;color:#88aacc;border-radius:6px;padding:5px 12px;cursor:pointer;`;
+  helpBtn.addEventListener('click', () => openHowToPlay(app));
   const devBtn = document.createElement('button');
   devBtn.textContent = 'DEV';
   devBtn.title = 'Dev mode: unlock everything + infinite money';
   devBtn.style.cssText = `${FF}font-size:0.56rem;font-weight:700;background:rgba(8,15,28,0.85);border:1px solid #2a2a1a;color:#665500;border-radius:6px;padding:5px 10px;cursor:pointer;letter-spacing:0.08em;`;
   devBtn.addEventListener('click', () => openDevModal(app, save, opts));
-  topBar.append(currency, settingsBtn, devBtn);
+  topBar.append(currency, helpBtn, settingsBtn);
+  const devMode = typeof location !== 'undefined' && new URLSearchParams(location.search).has('dev');
+  if (devMode) topBar.appendChild(devBtn);
   root.appendChild(topBar);
 
   // Progress + secret hint.
@@ -187,7 +196,7 @@ function makeWorldCard(world: WorldDef, opts: WorldMapOpts): HTMLElement {
     const best = secret
       ? (ws.completed ? 'CLEARED' : `${ws.bestWave}/${world.waves.length}`)
       : `${ws.bestWave}/${world.waves.length}`;
-    summary.innerHTML = `best wave ${best}<br>${moduleCount} modules · ${ws.shelfCount} shelf${ws.shelfCount > 1 ? 'ves' : ''}<br><span style="color:${validOutput ? '#33dd88' : '#aa6677'}">${validOutput ? '◈ output routed' : '○ no output route'}</span>`;
+    summary.innerHTML = `best wave ${best}<br>${moduleCount} modules · ${ws.shelfCount} ${ws.shelfCount === 1 ? 'shelf' : 'shelves'}<br><span style="color:${validOutput ? '#33dd88' : '#aa6677'}">${validOutput ? '◈ output routed' : '○ no output route'}</span>`;
     card.appendChild(summary);
 
     if (ws.completed) {

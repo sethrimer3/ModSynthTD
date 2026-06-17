@@ -5,6 +5,7 @@
 
 import { SaveData, RackPosition, exportSave, importSave, persistSave, resetSave, SaveStorage } from '../state/save';
 import { getAudioEngine } from './audio-engine';
+import { createBugReportText, openCopyPanel, releaseVersionLine } from './release-info';
 
 const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
 
@@ -35,6 +36,11 @@ export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
   h.textContent = 'SETTINGS — ModSynth TD';
   h.style.cssText = 'font-size:0.85rem;font-weight:800;letter-spacing:0.1em;color:#dff6ff;';
   panel.appendChild(h);
+
+  const version = document.createElement('div');
+  version.textContent = releaseVersionLine();
+  version.style.cssText = 'font-size:0.56rem;color:#88aacc;line-height:1.35;';
+  panel.appendChild(version);
 
   const row = (label: string, control: HTMLElement) => {
     const r = document.createElement('div');
@@ -222,6 +228,10 @@ export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
     a.click();
     URL.revokeObjectURL(a.href);
     status.textContent = 'Save exported.';
+  });
+
+  toolBtn('REPORT BUG / FEEDBACK', '#ffcc44', () => {
+    openCopyPanel(parent.ownerDocument.getElementById('app') ?? parent, 'BUG / FEEDBACK REPORT', createBugReportText({ save: opts.save }));
   });
 
   toolBtn('IMPORT SAVE', '#44aaff', () => {
