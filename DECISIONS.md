@@ -359,3 +359,20 @@ remains a silent visual/transport preview for the upcoming wave audio.
 Wave count-in ends at the next four-bar planet-music boundary, regardless of
 how much of the current cycle remains. A persistent dim sheet-music playhead
 shows the current phase of the beat/background loops.
+
+# D-028: Always-Running Rack Preview Transport
+
+The synth rack remains active outside combat waves. `level.ts` continuously
+evaluates a bounded four-measure preview window in `ready` and `cleared`, and
+uses those canonical `SignalEvent`s for cable pulses, module meters, output
+tower preview fire, and optional synth audio.
+
+Preview tower projectiles are marked visual-only in `combat.ts`, so they animate
+and pulse emitter towers but never damage enemies or contribute combat stats.
+Live waves still use the wave-length patch evaluation, subscribe combat to the
+same output-grouped event stream, and remain the only source of enemy damage and
+scoring.
+
+Rack case artwork is also kept strictly decorative: shelf canvases are
+pointer-inert and module bodies, controls, plugs, drag ghosts, and output tower
+slots restore explicit higher stacking layers after moves.

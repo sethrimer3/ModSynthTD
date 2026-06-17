@@ -274,6 +274,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Mouse-wheel zoom is fine-grained at the default 100% sensitivity
 - [ ] Zoom sensitivity persists and noticeably ranges from 50% to 200%
 - [ ] Module controls and ports do not accidentally move the module or pan the camera
+- [ ] Moving, buying, reloading, and dragging normal/output modules always keeps module controls, plugs, labels, and tower slots above rack sun/mountain artwork
 - [ ] Invalid/locked module movement gives visible red feedback
 - [ ] Cable drag connects to a valid port and cancels cleanly on empty space
 - [ ] Cable dragging still works after Escape, window blur, pointer cancel, and panning/zooming
@@ -288,6 +289,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] AMP changes projectile intensity and hit-text scale; DELAY echoes appear ghosted
 - [ ] Splitter/Router multi-direction fire is visible at the output tower
 - [ ] Clock, cable, module, and OUT faceplate pulses continue visibly while preparing, counting in, live, and after a wave clears
+- [ ] Before starting a wave and after clearing one, output towers show preview pulses/projectiles without damaging enemies or doubling wave-start fire
 - [ ] Cleared waves show KO, escapes, shots, matched hits, and resisted hits
 - [ ] With `?dev` enabled, enemy escapes can drive `BASE` HP below zero without changing the run state to `FAILED`
 - [ ] Buying an additional OUT module succeeds and selling it removes its saved tower placement
@@ -310,7 +312,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 
 ## 27. Alpha Stabilization QA
 
-- [ ] Main menu shows `BUILD 003` in bright golden text at the top-left
+- [ ] Main menu shows `BUILD 005` in bright golden text at the top-left
 - [ ] Run `npm test` and confirm the balance simulator prints all rack profiles plus the detailed w60 sample
 - [ ] Run `npm run build` and confirm production build succeeds
 - [ ] Confirm `QA_STATUS.md` known gaps still match the current build
@@ -330,6 +332,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Dragging an OUT tower shows the output-specific color/shape ghost, valid tile glow, invalid blocked indicator, and predictable snapping.
 - [ ] Rotating a placed tower visibly changes the facing arrow.
 - [ ] Exact-Hz hits show stronger `EXACT` feedback than `RESONATE`, `NEAR`, or `RESIST` hits.
+- [ ] The first successful tower hit in a wave shows `FIRST HIT` feedback.
 - [ ] Resonant hits look stronger than resisted hits; resisted hits are labeled sparingly and damage numbers do not flood the screen.
-- [ ] Enemy escapes produce an obvious base-hit flash, finish-lane pulse, and `ESCAPE!` text.
+- [ ] Enemy escapes produce an obvious base-hit flash, finish-lane pulse, and `ESCAPE! BASE -1` text.
 

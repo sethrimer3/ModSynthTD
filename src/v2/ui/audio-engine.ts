@@ -284,6 +284,7 @@ export class AudioEngine {
     this.voices.push(voice);
     osc.onended = () => {
       osc.disconnect(); g.disconnect();
+      this.scheduledIds.delete(e.id);
       const idx = this.voices.indexOf(voice);
       if (idx !== -1) this.voices.splice(idx, 1);
     };

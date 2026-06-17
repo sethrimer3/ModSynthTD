@@ -63,7 +63,7 @@ export function openShop(parent: HTMLElement, opts: ShopUIOpts): void {
   overlay.appendChild(panel);
 
   const header = document.createElement('div');
-  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';
+  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:0.6rem;flex-wrap:wrap;';
   const title = document.createElement('div');
   title.textContent = 'MODULE SHOP';
   title.style.cssText = 'font-size:0.85rem;font-weight:800;letter-spacing:0.1em;color:#dff6ff;';
@@ -91,7 +91,7 @@ export function openShop(parent: HTMLElement, opts: ShopUIOpts): void {
 
   const grid = document.createElement('div');
   grid.style.cssText = `
-    display:grid;grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));
+    display:grid;grid-template-columns:repeat(auto-fill, minmax(min(180px, 100%), 1fr));
     gap:0.5rem;overflow-y:auto;padding-right:4px;
   `;
   panel.appendChild(grid);

@@ -267,6 +267,8 @@ interface Projectile {
   attackTicks: number;
   releaseTicks: number;
   isEcho: boolean;
+  /** Preview projectiles animate the always-running rack between waves and never damage enemies. */
+  isPreview: boolean;
   /** True if Target Tuner retuned this projectile to a live enemy at fire time. */
   autoTuned?: boolean;
   dead: boolean;
@@ -316,6 +318,7 @@ export class Combat {
   private damageNumbers: DamageNumber[] = [];
   private spawnEffects: SpawnEffect[] = [];
   private stats: WaveCombatStats = { enemiesDefeated: 0, shotsFired: 0, matchedHits: 0, resistedHits: 0, modifiers: emptyModifierStats() };
+  private hasShownFirstHit = false;
   private towerPulse = new Map<string, number>();
   private routePulse = new Map<string, number>();
   private lastFireDirections = new Map<string, Array<[number, number]>>();
@@ -345,6 +348,7 @@ export class Combat {
     this.spawnEffects = [];
     this.signalCursor = 0;
     this.stats = { enemiesDefeated: 0, shotsFired: 0, matchedHits: 0, resistedHits: 0, modifiers: emptyModifierStats() };
+    this.hasShownFirstHit = false;
   }
 
   getWaveStats(): WaveCombatStats { return { ...this.stats }; }
@@ -372,6 +376,42 @@ export class Combat {
     this.projectiles = [];
     this.signalEvents = [];
     this.signalCursor = 0;
+  }
+
+  previewFire(outputId: string, ev: SignalEvent, tick: number): boolean {
+    const tower = this.towers.get(outputId);
+    if (!tower || ev.directions.length === 0) return false;
+    if (this.projectiles.length > 120) {
+      this.projectiles = this.projectiles.filter(p => !p.dead);
+      if (this.projectiles.length > 120) return false;
+    }
+    const baseHz = ev.hertz ?? pitchOffsetToHz(ev.band, ev.pitchOffset);
+    for (const rel of ev.directions) {
+      const [dx, dy] = orientedDir(rel, tower.orientation);
+      this.projectiles.push({
+        spawnTick: tick,
+        originX: tower.tileX,
+        originY: tower.tileY,
+        dirX: dx, dirY: dy,
+        waveform: ev.waveform,
+        amplitude: ev.amplitude,
+        band: ev.band,
+        hz: baseHz,
+        color: BAND_COLORS[ev.band],
+        attackTicks: ev.attackTicks,
+        releaseTicks: ev.releaseTicks,
+        isEcho: ev.tags.includes('echo'),
+        isPreview: true,
+        dead: false,
+      });
+    }
+    this.lastFireDirections.set(outputId, ev.directions.map(rel => orientedDir(rel, tower.orientation)));
+    this.towerPulse.set(outputId, 0.65);
+    this.routePulse.set(outputId, 0.65);
+    const styleColor = this.towerStyles.get(outputId)?.color ?? BAND_COLORS[ev.band];
+    const [tr, tg, tb] = rgb(styleColor);
+    this.fluid.addExplosion((tower.tileX + 0.5) * TILE_PX, (tower.tileY + 0.5) * TILE_PX, 0.38, tr, tg, tb);
+    return true;
   }
 
   get pendingSpawnCount(): number { return this.pendingSpawns.length; }
@@ -416,7 +456,7 @@ export class Combat {
         const finish = e.lane[e.lane.length - 1];
         this.fluid.addExplosion((finish[0] + 0.5) * TILE_PX, (finish[1] + 0.5) * TILE_PX, 1.5, 255, 45, 105);
         if (this.floaters.length < 14) {
-          this.floaters.push({ x: finish[0] + 0.5, y: finish[1] + 0.35, text: 'ESCAPE!', color: '#ff3366', t: 1.05, scale: 1.15 });
+          this.floaters.push({ x: finish[0] + 0.5, y: finish[1] + 0.35, text: 'ESCAPE! BASE -1', color: '#ff3366', t: 1.15, scale: 1.18 });
         }
       }
     }
@@ -452,6 +492,7 @@ export class Combat {
           attackTicks: ev.attackTicks,
           releaseTicks: ev.releaseTicks,
           isEcho: ev.tags.includes('echo'),
+          isPreview: false,
           autoTuned,
           dead: false,
         });
@@ -523,6 +564,7 @@ export class Combat {
         p.dead = true;
         continue;
       }
+      if (p.isPreview) continue;
       const rx = Math.round(tx), ry = Math.round(ty);
       for (const e of this.enemies) {
         if (!e.alive || !e.spawned) continue;
@@ -573,6 +615,10 @@ export class Combat {
             t: isExact ? 1.3 : isResonant ? 1.15 : 0.85,
             scale: isExact ? 1.36 + Math.min(1.5, p.amplitude) * 0.16 : isResonant ? 1.18 + Math.min(1.5, p.amplitude) * 0.14 : 0.82 + Math.min(1.5, p.amplitude) * 0.22,
           });
+          if (!this.hasShownFirstHit) {
+            this.hasShownFirstHit = true;
+            this.floaters.push({ x: etx + 0.5, y: ety - 0.25, text: 'FIRST HIT', color: '#ffdd66', t: 1.05, scale: 1.05 });
+          }
           if (!e.alive) this.floaters.push({ x: etx + 0.5, y: ety + 0.35, text: 'NOTE OFF', color: BAND_COLORS[e.band], t: 0.7, scale: 0.9 });
           break;
         }

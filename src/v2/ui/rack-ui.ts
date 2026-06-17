@@ -67,6 +67,15 @@ const DOMAIN_COLORS: Record<string, string> = {
   either: '#88aacc',
 };
 
+const RACK_CASE_Z = '0';
+const MODULE_BG_Z = '20';
+const MODULE_PLUG_Z = '33';
+const MODULE_CONTENT_Z = '34';
+const MODULE_DRAG_BG_Z = '45';
+const MODULE_DRAG_CONTENT_Z = '46';
+const MODULE_DRAG_PLUG_Z = '47';
+const MODULE_GHOST_Z = '49';
+
 // ── Public interface ────────────────────────────────────────────────────────
 
 /** Per-world rack color overrides. All fields are optional; missing fields fall back to defaults. */
@@ -171,7 +180,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
   root.dataset.rackInteractive = 'true';
 
   const shelvesEl = document.createElement('div');
-  shelvesEl.style.cssText = 'position:absolute;inset:0;';
+  shelvesEl.style.cssText = `position:absolute;inset:0;z-index:${RACK_CASE_Z};`;
   root.appendChild(shelvesEl);
 
   const soft = createSoftWireRenderer(root);
@@ -610,6 +619,14 @@ export function createRackUI(opts: RackUIOpts): RackUI {
   }
   let moduleDrag: ModuleDrag | null = null;
 
+  function setModuleStack(mv: ModuleView, isDragging: boolean): void {
+    mv.rootEl.style.zIndex = isDragging ? MODULE_DRAG_BG_Z : MODULE_BG_Z;
+    mv.contentEl.style.zIndex = isDragging ? MODULE_DRAG_CONTENT_Z : MODULE_CONTENT_Z;
+    for (const pv of mv.plugs) {
+      pv.wrapEl.style.zIndex = isDragging ? MODULE_DRAG_PLUG_Z : MODULE_PLUG_Z;
+    }
+  }
+
   function beginModuleDrag(mv: ModuleView, e: PointerEvent): void {
     if (opts.isLive() || drag || moduleDrag) {
       mv.rootEl.style.borderColor = '#ff3344';
@@ -621,7 +638,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     const ghost = document.createElement('div');
     ghost.style.cssText = `
       position:absolute;border:2px dashed ${opts.themeColor};border-radius:8px;
-      pointer-events:none;z-index:40;opacity:0;
+      pointer-events:none;z-index:${MODULE_GHOST_Z};opacity:0;
       width:${mv.def.rackSize.w * SLOT_PX}px;height:${moduleHeightPx(mv.def.rackSize.h)}px;
     `;
     root.appendChild(ghost);
@@ -637,8 +654,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       moved: false,
     };
     root.setPointerCapture(e.pointerId);
-    mv.rootEl.style.zIndex = '45';
-    mv.contentEl.style.zIndex = '46';
+    setModuleStack(mv, true);
     mv.rootEl.style.opacity = '0.85';
     mv.contentEl.style.opacity = '0.85';
   }
@@ -688,8 +704,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     if (!md) return;
     moduleDrag = null;
     md.ghost.remove();
-    md.mv.rootEl.style.zIndex = '';
-    md.mv.contentEl.style.zIndex = '';
+    setModuleStack(md.mv, false);
     md.mv.rootEl.style.opacity = '';
     md.mv.contentEl.style.opacity = '';
     md.mv.rootEl.style.borderColor = md.valid ? '#1a2a44' : '#ff3344';
@@ -709,8 +724,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     const md = moduleDrag;
     moduleDrag = null;
     md.ghost.remove();
-    md.mv.rootEl.style.zIndex = '';
-    md.mv.contentEl.style.zIndex = '';
+    setModuleStack(md.mv, false);
     md.mv.rootEl.style.opacity = '';
     md.mv.contentEl.style.opacity = '';
     md.mv.rootEl.style.borderColor = '#1a2a44';
@@ -719,6 +733,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
 
   function positionModule(mv: ModuleView): void {
     const pos = modulePos(mv.inst);
+    setModuleStack(mv, moduleDrag?.mv === mv);
     mv.rootEl.style.left = `${pos.x}px`;
     mv.rootEl.style.top = `${pos.y}px`;
     mv.contentEl.style.left = `${pos.x}px`;
@@ -866,7 +881,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       background:linear-gradient(180deg,#0a1226,#060c18);
       border:1.5px solid #1a2a44;border-radius:8px;
       box-shadow:0 2px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(120,160,255,0.07);
-      z-index:20;touch-action:none;cursor:grab;user-select:none;
+      z-index:${MODULE_BG_Z};touch-action:none;cursor:grab;user-select:none;
       transition:border-color 0.15s, box-shadow 0.2s;
     `;
     bgEl.title = `${def.name} — ${def.tooltip}`;
@@ -923,7 +938,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
     const contentEl = document.createElement('div');
     contentEl.style.cssText = `
       position:absolute;width:${panelW}px;height:${panelH}px;
-      z-index:34;pointer-events:none;border-radius:8px;overflow:hidden;${FF}
+      z-index:${MODULE_CONTENT_Z};pointer-events:none;border-radius:8px;overflow:hidden;${FF}
     `;
 
     // Title — stays inside header band, uses ellipsis for long names.
@@ -957,7 +972,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       wrapEl.style.cssText = `
         position:absolute;left:0;top:0;width:32px;height:32px;
         display:flex;align-items:center;justify-content:center;touch-action:none;
-        cursor:crosshair;z-index:33;
+        cursor:crosshair;z-index:${MODULE_PLUG_Z};
       `;
       wrapEl.dataset.rackControl = 'true';
       const color = DOMAIN_COLORS[spec.domain];
@@ -1034,8 +1049,10 @@ export function createRackUI(opts: RackUIOpts): RackUI {
 
       // Tower drag slot — prominent button taking most of the vertical space.
       const slot = document.createElement('button');
-      slot.title = 'Drag this emitter tower onto the battlefield';
-      slot.style.cssText = `${FF}flex:1;min-height:44px;max-height:72px;position:relative;cursor:grab;background:#050914;border:3px solid ${towerState.style.color};border-radius:6px;color:${towerState.style.color};touch-action:none;overflow:hidden;`;
+      slot.title = towerState.isPlaced
+        ? 'Drag to reposition this emitter tower on the battlefield'
+        : 'Drag this emitter tower onto the battlefield grid';
+      slot.style.cssText = `${FF}flex:1;min-height:48px;max-height:76px;position:relative;cursor:grab;background:#050914;border:3px solid ${towerState.style.color};border-radius:6px;color:${towerState.style.color};touch-action:none;overflow:hidden;box-shadow:inset 0 0 0 1px ${towerState.style.color}55,0 0 10px ${towerState.style.color}33;`;
       const clip = towerState.style.shape === 'circle' ? 'circle(45%)'
         : towerState.style.shape === 'triangle' ? 'polygon(50% 0,100% 100%,0 100%)'
         : towerState.style.shape === 'hexagon' ? 'polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)'
@@ -1049,9 +1066,15 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       chargeRing.style.cssText = `position:absolute;left:21px;top:50%;transform:translate(-50%,-50%) scale(0.4);width:30px;height:30px;border-radius:50%;border:2px solid ${towerState.style.color};opacity:0;pointer-events:none;`;
       mv.outputFx = { silhouette, ring: chargeRing };
       const slotLabel = document.createElement('span');
-      slotLabel.textContent = towerState.isPlaced ? 'PLACED' : 'DRAG TOWER';
-      slotLabel.style.cssText = `position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:7px;font-weight:800;letter-spacing:0.07em;color:${towerState.style.color};white-space:nowrap;`;
-      slot.append(chargeRing, silhouette, slotLabel);
+      slotLabel.textContent = towerState.isPlaced ? 'PLACED' : 'DRAG';
+      slotLabel.style.cssText = `position:absolute;right:7px;top:10px;font-size:8px;font-weight:800;letter-spacing:0.08em;color:${towerState.style.color};white-space:nowrap;`;
+      const dragHint = document.createElement('span');
+      dragHint.textContent = towerState.isPlaced ? 'TO MOVE' : 'TO GRID';
+      dragHint.style.cssText = `position:absolute;right:7px;bottom:8px;font-size:7px;font-weight:800;letter-spacing:0.06em;color:${towerState.style.color}cc;white-space:nowrap;`;
+      const dragArrow = document.createElement('span');
+      dragArrow.textContent = '>>';
+      dragArrow.style.cssText = `position:absolute;left:42px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:800;color:${towerState.style.color};text-shadow:0 0 8px ${towerState.style.color};`;
+      slot.append(chargeRing, silhouette, dragArrow, slotLabel, dragHint);
       slot.addEventListener('pointerdown', (e: PointerEvent) => {
         e.stopPropagation();
         e.preventDefault();
@@ -1155,6 +1178,7 @@ export function createRackUI(opts: RackUIOpts): RackUI {
       background:${caseBg};
       border:2px solid ${caseBorder};border-radius:6px;
       box-shadow:inset 0 0 60px rgba(0,0,0,0.55),0 4px 24px rgba(0,0,0,0.6);
+      z-index:${RACK_CASE_Z};pointer-events:none;isolation:isolate;overflow:hidden;
     `;
 
     // 2D slot grid: vertical lines every SLOT_PX, horizontal lines every SHELF_H.

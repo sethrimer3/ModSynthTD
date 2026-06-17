@@ -22,6 +22,8 @@ kept only for history.
 
 ### Done
 - [x] First-playable UX/onboarding pass: contextual starter prompts, actionable invalid-patch messages, clearer patch analysis, richer note hover stats, tower placement ghost feedback, combat readability polish, and alpha QA checklist.
+- [x] Public-alpha readiness polish pass: dev-build overlay fix, first-wave clarity, mobile overlay wrapping, preview projectile cap, desktop shell launch check, and QA status update.
+- [x] Fix alpha regressions: moved rack modules keep stable layers above decorative art, and rack/output preview keeps running between waves without combat damage.
 - [x] Alpha content/balance feel pass: simulator/live-tail alignment, easier exact-resonance tuning, lowered basic enemy HP, clearer exact/near/resist/escape feedback, and alpha release checklist updates.
 - [x] Add alpha-stabilization diagnostics: expanded headless balance profiles, audio coverage validation, exact-Hz frequency tests, and QA status notes.
 - [x] Add a bright golden build number to the main menu top-left.

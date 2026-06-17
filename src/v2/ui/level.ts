@@ -39,6 +39,7 @@ import { damageMultiplier, formatHz, formatNoteNameFromMidi } from '../core/pitc
 import { getAudioEngine } from './audio-engine';
 import { LevelMusicManager } from './level-music';
 import { LEVEL_AUDIO_CONFIGS } from './level-audio-assets';
+import { validateLevelAudioConfig } from '../data/level-audio-config';
 import { TutorialManager } from './tutorials';
 import { openShop } from './shop-ui';
 import { openSettings } from './settings-ui';
@@ -50,6 +51,9 @@ const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
 const MAX_BASE_HP = 10;
 const SCENE_GAP = 60;
 const SIGNAL_PREVIEW_LOOP_TICKS = TICKS_PER_MEASURE * 4;
+const PREVIEW_AUDIO_LOOKAHEAD_TICKS = PPQ;
+
+const loggedAudioConfigWorldIds = new Set<string>();
 
 type RunState = 'ready' | 'countin' | 'wave' | 'cleared' | 'failed' | 'victory';
 
@@ -78,6 +82,12 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
   // ── Level music (optional: only present when a config exists for this world) ─
   const levelAudioConfig = LEVEL_AUDIO_CONFIGS[worldId] ?? null;
+  if (levelAudioConfig && !loggedAudioConfigWorldIds.has(worldId)) {
+    loggedAudioConfigWorldIds.add(worldId);
+    for (const issue of validateLevelAudioConfig(levelAudioConfig, world.waves.length, worldId)) {
+      console.warn(`Level audio config ${issue.severity}: ${issue.message}`);
+    }
+  }
   const levelMusic = levelAudioConfig
     ? new LevelMusicManager(audio, levelAudioConfig)
     : null;
@@ -464,6 +474,26 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   ].join('');
   app.appendChild(patchPanel);
 
+  function updateResponsiveChrome(): void {
+    if (window.innerWidth <= 700) {
+      patchPanel.style.left = '10px';
+      patchPanel.style.right = '10px';
+      patchPanel.style.bottom = '10px';
+      patchPanel.style.width = 'auto';
+      patchPanel.style.maxHeight = 'min(230px, 38vh)';
+      patchPanel.style.fontSize = '0.54rem';
+    } else {
+      patchPanel.style.left = '';
+      patchPanel.style.right = '12px';
+      patchPanel.style.bottom = '12px';
+      patchPanel.style.width = 'min(320px,calc(100vw - 24px))';
+      patchPanel.style.maxHeight = 'calc(100vh - 80px)';
+      patchPanel.style.fontSize = '0.58rem';
+    }
+  }
+  updateResponsiveChrome();
+  window.addEventListener('resize', updateResponsiveChrome);
+
   const RATING_COLOR: Record<MatchRating, string> = {
     excellent: '#33ffcc',
     good: '#44ddff',
@@ -492,12 +522,14 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       laneCount: world.lanes.length,
     });
 
-    const overallColor = RATING_COLOR[analysis.overallRating];
+    const hasUnplacedOutput = analysis.outputSummaries.some(s => !s.isPlaced);
+    const overallColor = hasUnplacedOutput ? '#ffcc44' : RATING_COLOR[analysis.overallRating];
+    const readyLabel = hasUnplacedOutput ? 'PATCH VALID - PLACE OUT TOWER' : `PATCH VALID - ${RATING_LABEL[analysis.overallRating]}`;
     const parts: string[] = [];
     parts.push(
       `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;border-bottom:1px solid ${aesthetic.primary}33;padding-bottom:4px;">` +
       `<span style="font-weight:800;font-size:0.62rem;color:${aesthetic.glow};letter-spacing:0.08em;">PATCH ANALYSIS</span>` +
-      `<span style="font-weight:800;color:${overallColor};letter-spacing:0.06em;">VALID - ${RATING_LABEL[analysis.overallRating]}</span>` +
+      `<span style="font-weight:800;color:${overallColor};letter-spacing:0.06em;text-align:right;">${readyLabel}</span>` +
       `</div>`
     );
 
@@ -523,11 +555,11 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
         const domLabel = s.dominantHz != null ? `${formatHz(s.dominantHz)} Hz` : '-';
         const fireLabel = s.averageIntervalTicks != null ? `every ${(s.averageIntervalTicks / PPQ).toFixed(2)} beats` : (s.eventCount === 1 ? 'one shot' : 'silent');
         const events = s.eventCount > 0 ? `${s.eventCount} shots - ${fireLabel} - ${domLabel}` : 'no shots';
-        const statusColor = s.warning ? '#ff5566' : '#33ffcc';
-        const statusIcon = s.warning ? '!' : (s.isPlaced ? '?' : '?');
+        const statusColor = s.warning ? '#ffcc44' : '#33ffcc';
+        const statusLabel = s.warning ? 'Place OUT tower' : 'Tower ready';
         parts.push(
           `<div style="display:flex;justify-content:space-between;gap:6px;padding:1px 0;">` +
-          `<span style="color:${statusColor};">${statusIcon} ${s.isPlaced ? 'Tower ready' : 'Place tower'}</span>` +
+          `<span style="color:${statusColor};font-weight:800;">${statusLabel}</span>` +
           `<span style="color:#5577aa;text-align:right;">${events}</span>` +
           `</div>`
         );
@@ -812,12 +844,16 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   let cachedTraffic = new Map<string, SignalEvent[]>();
   let cachedActivity = new Map<string, number>();
   let cachedEventsByOutput = new Map<string, SignalEvent[]>();
+  let cachedPreviewEventsByOutput = new Map<string, SignalEvent[]>();
+  let previewAudioScheduledIds = new Set<string>();
 
   function refreshPreviewTraffic(): void {
     const seed = waveSeed();
     const result = evaluatePatch(graph, { startTick: 0, endTick: SIGNAL_PREVIEW_LOOP_TICKS, seedBase: seed, upgradeLevels: upgradeLevels(save) });
     cachedTraffic = result.cableTraffic;
     cachedActivity = result.moduleActivity;
+    cachedPreviewEventsByOutput = result.eventsByOutput;
+    previewAudioScheduledIds = new Set();
     rack.setTraffic(cachedTraffic, cachedActivity);
   }
 
@@ -842,6 +878,66 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   }
 
   function markGraphDirty(): void { graphDirty = true; }
+
+  function isRackPreviewActive(): boolean {
+    return runState === 'ready' || runState === 'cleared';
+  }
+
+  function isSynthPreviewAudible(): boolean {
+    const out = graph.modules.find(m => m.typeId === 'output');
+    return out?.settings['synthOn'] === true && !save.settings.masterMuted && audio.unlocked;
+  }
+
+  function previewTickFor(globalTick: number): number {
+    return ((globalTick % SIGNAL_PREVIEW_LOOP_TICKS) + SIGNAL_PREVIEW_LOOP_TICKS) % SIGNAL_PREVIEW_LOOP_TICKS;
+  }
+
+  function previewCycleFor(globalTick: number): number {
+    return Math.floor(globalTick / SIGNAL_PREVIEW_LOOP_TICKS);
+  }
+
+  function processRackPreviewVisuals(globalTick: number): void {
+    if (!isRackPreviewActive()) return;
+    const localTick = previewTickFor(globalTick);
+    const loopIndex = previewCycleFor(globalTick);
+    for (const [outputId, events] of cachedPreviewEventsByOutput) {
+      let didFire = false;
+      for (const event of events) {
+        if (event.tick > localTick) break;
+        if (event.tick !== localTick) continue;
+        combat.previewFire(outputId, event, globalTick);
+        didFire = true;
+      }
+      if (didFire) rack.flashModule(outputId);
+    }
+  }
+
+  function scheduleRackPreviewAudio(tickFloat: number): void {
+    if (!isRackPreviewActive() || !isSynthPreviewAudible()) {
+      previewAudioScheduledIds = new Set();
+      return;
+    }
+    const startTick = Math.floor(tickFloat);
+    const endTick = startTick + PREVIEW_AUDIO_LOOKAHEAD_TICKS;
+    const keepIds = new Set<string>();
+    for (const [, events] of cachedPreviewEventsByOutput) {
+      for (let cycleTick = startTick; cycleTick <= endTick; cycleTick++) {
+        const localTick = previewTickFor(cycleTick);
+        const loopIndex = previewCycleFor(cycleTick);
+        for (const event of events) {
+          if (event.tick > localTick) break;
+          if (event.tick !== localTick) continue;
+          const previewId = `preview:${loopIndex}:${event.id}`;
+          keepIds.add(previewId);
+          if (previewAudioScheduledIds.has(previewId)) continue;
+          previewAudioScheduledIds.add(previewId);
+          const audioTime = audio.currentTime + ticksToSec(cycleTick - tickFloat, world.bpm);
+          audio.scheduleEvent({ ...event, id: previewId, tick: 0 }, audioTime, world.bpm);
+        }
+      }
+    }
+    previewAudioScheduledIds = new Set([...previewAudioScheduledIds].filter(id => keepIds.has(id)));
+  }
 
   function rebuildSignalsForWave(score: WaveScore = effectiveWaveScore()): ReturnType<typeof evaluatePatch> {
     const total = score.measures * TICKS_PER_MEASURE;
@@ -894,6 +990,8 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       return;
     }
     const localEvents = evaluation.events;
+    audio.cancelAll();
+    previewAudioScheduledIds = new Set();
     combat.startWave(effectiveCompiled, waveStartTick);
     combat.setSignalEvents(new Map([...evaluation.eventsByOutput].map(([id, events]) => [id, events.map(e => ({ ...e, tick: e.tick + waveStartTick }))])));
 
@@ -1095,20 +1193,28 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   }
 
   // ── Synth toggle ──────────────────────────────────────────────────────────
+  function applyCurrentAudioPrefs(synthOnOverride?: boolean): void {
+    const out = graph.modules.find(m => m.typeId === 'output');
+    audio.setPrefs({
+      synthOn: synthOnOverride ?? out?.settings['synthOn'] === true,
+      synthVolume: typeof out?.settings['synthVolume'] === 'number' ? out.settings['synthVolume'] as number : 0.5,
+      masterMuted: save.settings.masterMuted,
+      masterVolume: save.settings.masterVolume,
+      percussionVolume: save.settings.percussionVolume,
+      sfxVolume: save.settings.sfxVolume,
+      towersVolume: save.settings.towersVolume,
+      beatLoopVolume: save.settings.beatLoopVolume,
+      bgLoopVolume: save.settings.bgLoopVolume,
+      enemyNotesVolume: save.settings.enemyNotesVolume,
+    });
+  }
+
   function toggleSynth(): void {
     const out = graph.modules.find(m => m.typeId === 'output');
     if (!out) return;
     const next = !(out.settings['synthOn'] === true);
     out.settings['synthOn'] = next;
-    void audio.unlock().then(() => {
-      audio.setPrefs({
-        synthOn: next,
-        synthVolume: typeof out.settings['synthVolume'] === 'number' ? out.settings['synthVolume'] as number : 0.5,
-        masterMuted: save.settings.masterMuted,
-        masterVolume: save.settings.masterVolume,
-        percussionVolume: save.settings.percussionVolume,
-      });
-    });
+    void audio.unlock().then(() => applyCurrentAudioPrefs(next));
     setWorldRack(save, worldId, graph);
     host.persist();
     rack.refreshControls();
@@ -1231,6 +1337,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     if (gap > 0) {
       const from = gap > 64 ? intTick : lastTick + 1; // resync after suspension
       for (let t = from; t <= intTick; t++) {
+        processRackPreviewVisuals(t);
         if (runState === 'countin' && t >= waveStartTick) { runState = 'wave'; levelMusic?.setActiveWave(waveIndex); }
         if (runState === 'wave') {
           const outcome = combat.processTick(t);
@@ -1255,6 +1362,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       }
       lastTick = intTick;
     }
+    scheduleRackPreviewAudio(tickFloat);
 
     // Per-frame combat animation/collision.
     fluid.setLowGraphicsMode(save.settings.reducedMotion);
@@ -1398,19 +1506,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   }
 
   // Apply persisted synth/audio prefs (silent until a gesture).
-  const outMod = graph.modules.find(m => m.typeId === 'output');
-  audio.setPrefs({
-    synthOn: outMod?.settings['synthOn'] === true,
-    synthVolume: typeof outMod?.settings['synthVolume'] === 'number' ? outMod!.settings['synthVolume'] as number : 0.5,
-    masterMuted: save.settings.masterMuted,
-    masterVolume: save.settings.masterVolume,
-    percussionVolume: save.settings.percussionVolume,
-    sfxVolume: save.settings.sfxVolume,
-    towersVolume: save.settings.towersVolume,
-    beatLoopVolume: save.settings.beatLoopVolume,
-    bgLoopVolume: save.settings.bgLoopVolume,
-    enemyNotesVolume: save.settings.enemyNotesVolume,
-  });
+  applyCurrentAudioPrefs();
   refreshHud();
   tut.trigger('camera');
   setTimeout(() => { if (runState === 'ready') tut.trigger('first-patch'); }, 1800);
@@ -1437,6 +1533,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
     cancelAnimationFrame(rafId);
     ro.disconnect();
     window.removeEventListener('orientationchange', onOrient);
+    window.removeEventListener('resize', updateResponsiveChrome);
     window.removeEventListener('pointermove', onTowerPointerMove);
     window.removeEventListener('pointerup', onTowerPointerUp);
     window.removeEventListener('pointercancel', onTowerPointerUp);

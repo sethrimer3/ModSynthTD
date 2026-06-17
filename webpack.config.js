@@ -13,7 +13,12 @@ module.exports = {
     rules: [
       {
         test: /\.ts$/,
-        use: 'ts-loader',
+        use: {
+          loader: 'ts-loader',
+          options: {
+            onlyCompileBundledFiles: true
+          }
+        },
         exclude: /node_modules/
       },
       {

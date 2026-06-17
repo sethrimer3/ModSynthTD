@@ -109,6 +109,11 @@ The rack cable SVG, cable hit paths, and pulse overlay share persisted graphics
 preferences for front/behind module layering and opacity. Settings apply live
 without rebuilding the rack graph.
 
+Rack shelf art is a decorative case layer only. Module panels, content overlays,
+plug hit targets, drag ghosts, and output tower controls use explicit higher
+stacking layers; decorative masked sun/mountain canvases are pointer-inert and
+cannot intercept rack input.
+
 ---
 
 ## 5. Transport & wave lifecycle
@@ -119,6 +124,12 @@ crossed integer ticks (catch-up capped for tab suspension). States:
 `ready → countin → wave → cleared|failed`, then world `victory` and optional
 endless mode. During a wave, topology is locked; knobs flagged `liveSafe`
 recompute only future events.
+
+The rack transport is always alive in `ready` and `cleared`: a bounded
+four-measure preview evaluation drives cable pulses, module meters, output tower
+preview fire, and optional synth audio. Preview projectiles are visual-only and
+never damage enemies. Live waves subscribe to a wave-length evaluation of the
+same patch stream for combat projectiles and scoring.
 
 ---
 
@@ -141,6 +152,10 @@ SignalEvent (osc type from waveform, freq from band+pitch, gate/attack/release
 envelope), scheduled by event id (no duplicates after suspend/resume), capped
 at 12 voices with oldest-steal, and disconnected on `ended`. No audible sound
 before a user gesture.
+
+Between-wave rack preview schedules only a short rolling lookahead of upcoming
+events and releases event ids when voices end, so the scheduler does not
+accumulate an unbounded future queue while the instrument idles.
 
 Per-planet music automatically discovers `ASSETS/LEVELS/<BPM>BPM/kickLoop.ogg`.
 When present, that loop replaces the shared `kick_1` and `kick_2` one-shot

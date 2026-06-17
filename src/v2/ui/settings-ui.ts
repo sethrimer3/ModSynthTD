@@ -38,7 +38,7 @@ export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
 
   const row = (label: string, control: HTMLElement) => {
     const r = document.createElement('div');
-    r.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:0.8rem;';
+    r.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:0.8rem;flex-wrap:wrap;';
     const l = document.createElement('span');
     l.textContent = label;
     l.style.cssText = 'font-size:0.68rem;color:#88aacc;letter-spacing:0.05em;';
@@ -74,7 +74,7 @@ export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
     s.type = 'range';
     s.min = '0'; s.max = '100';
     s.value = String(Math.round(value * 100));
-    s.style.cssText = 'width:150px;accent-color:#00ddcc;';
+    s.style.cssText = 'width:min(150px, 54vw);accent-color:#00ddcc;';
     s.addEventListener('input', () => onInput(parseInt(s.value, 10) / 100));
     return s;
   };
@@ -156,7 +156,7 @@ export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
   zoomSensitivity.type = 'range';
   zoomSensitivity.min = '50'; zoomSensitivity.max = '200'; zoomSensitivity.step = '5';
   zoomSensitivity.value = String(Math.round(opts.save.settings.zoomSensitivity * 100));
-  zoomSensitivity.style.cssText = 'width:150px;accent-color:#00ddcc;';
+  zoomSensitivity.style.cssText = 'width:min(150px, 54vw);accent-color:#00ddcc;';
   const zoomValue = document.createElement('span');
   zoomValue.style.cssText = 'min-width:38px;font-size:0.62rem;color:#00ddcc;text-align:right;';
   const zoomWrap = document.createElement('div');
@@ -176,7 +176,7 @@ export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
   wireLayer.type = 'range';
   wireLayer.min = '0'; wireLayer.max = '1'; wireLayer.step = '1';
   wireLayer.value = opts.save.settings.wireLayer === 'front' ? '1' : '0';
-  wireLayer.style.cssText = 'width:150px;accent-color:#00ddcc;';
+  wireLayer.style.cssText = 'width:min(150px, 54vw);accent-color:#00ddcc;';
   const wireLayerValue = document.createElement('span');
   wireLayerValue.style.cssText = 'min-width:46px;font-size:0.62rem;color:#00ddcc;text-align:right;';
   const wireLayerWrap = document.createElement('div');
