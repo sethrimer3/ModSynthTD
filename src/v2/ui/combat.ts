@@ -272,6 +272,10 @@ interface Projectile {
   /** True if Target Tuner retuned this projectile to a live enemy at fire time. */
   autoTuned?: boolean;
   dead: boolean;
+  /** Discrete tile-hop movement (mirrors EnemyRt). */
+  tileIdx: number;
+  prevTileIdx: number;
+  hopT: number;
 }
 export type TowersByOutputId = Map<string, TowerState>;
 
@@ -403,6 +407,9 @@ export class Combat {
         isEcho: ev.tags.includes('echo'),
         isPreview: true,
         dead: false,
+        tileIdx: 0,
+        prevTileIdx: 0,
+        hopT: 1,
       });
     }
     this.lastFireDirections.set(outputId, ev.directions.map(rel => orientedDir(rel, tower.orientation)));
@@ -495,6 +502,9 @@ export class Combat {
           isPreview: false,
           autoTuned,
           dead: false,
+          tileIdx: 0,
+          prevTileIdx: 0,
+          hopT: 1,
         });
         this.stats.shotsFired++;
       }
@@ -533,6 +543,47 @@ export class Combat {
     return lineBest ?? nearBest;
   }
 
+  private projectileStepsAt(p: Projectile, tick: number): number {
+    const delta = tick - p.spawnTick;
+    if (delta < 0) return -1;
+    return Math.floor(delta / QUARTER_TICKS);
+  }
+
+  private updateProjectileTick(p: Projectile, tick: number): void {
+    const steps = this.projectileStepsAt(p, tick);
+    if (steps < 0) return;
+    if (steps !== p.tileIdx) {
+      const skipped = steps > p.tileIdx + 1;
+      p.prevTileIdx = skipped ? steps : p.tileIdx;
+      p.tileIdx = steps;
+      p.hopT = skipped ? 1 : 0;
+    }
+    const [tx, ty] = this.projectileLogicalTile(p);
+    if (tx < 0 || tx >= this.world.gridWidth || ty < 0 || ty >= this.world.gridHeight) {
+      p.dead = true;
+    }
+  }
+
+  private projectileLogicalTile(p: Projectile): [number, number] {
+    return [
+      p.originX + p.tileIdx * p.dirX,
+      p.originY + p.tileIdx * p.dirY,
+    ];
+  }
+
+  private projectileVisualPos(p: Projectile): { x: number; y: number } {
+    const fromX = p.originX + p.prevTileIdx * p.dirX;
+    const fromY = p.originY + p.prevTileIdx * p.dirY;
+    const toX = p.originX + p.tileIdx * p.dirX;
+    const toY = p.originY + p.tileIdx * p.dirY;
+    const t = smoothstep(p.hopT);
+    const arc = Math.sin(t * Math.PI) * 0.12;
+    return {
+      x: fromX + (toX - fromX) * t,
+      y: fromY + (toY - fromY) * t - arc,
+    };
+  }
+
   /** Per-frame: animation, collision, culling. tickFloat = fractional tick. */
   updateFrame(dt: number, tickFloat: number): void {
     this.finishFlash = Math.max(0, this.finishFlash - dt);
@@ -554,18 +605,14 @@ export class Combat {
     const w = this.world;
     updateDamageNumbers(this.damageNumbers, dt, { x: 0, y: 0, w: w.gridWidth, h: w.gridHeight });
 
-    // Projectile positions in tiles: 1 tile per quarter note.
+    // Projectile tile-hop movement: 1 discrete tile per quarter note.
     for (const p of this.projectiles) {
       if (p.dead) continue;
-      const ageTiles = (tickFloat - p.spawnTick) / QUARTER_TICKS;
-      const tx = p.originX + ageTiles * p.dirX;
-      const ty = p.originY + ageTiles * p.dirY;
-      if (tx < -1 || tx > this.world.gridWidth || ty < -1 || ty > this.world.gridHeight) {
-        p.dead = true;
-        continue;
-      }
+      this.updateProjectileTick(p, Math.floor(tickFloat));
+      if (p.hopT < 1) p.hopT = Math.min(1, p.hopT + dt * 12);
+      if (p.dead) continue;
       if (p.isPreview) continue;
-      const rx = Math.round(tx), ry = Math.round(ty);
+      const [rx, ry] = this.projectileLogicalTile(p);
       for (const e of this.enemies) {
         if (!e.alive || !e.spawned) continue;
         const [etx, ety] = e.logicalTile();
@@ -921,11 +968,12 @@ export class Combat {
   }
 
   private drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, tileZ: number, z: number, tickFloat: number): void {
-    const ageTiles = (tickFloat - p.spawnTick) / QUARTER_TICKS;
-    let vx = p.originX + ageTiles * p.dirX;
-    let vy = p.originY + ageTiles * p.dirY;
+    const pos = this.projectileVisualPos(p);
+    let vx = pos.x;
+    let vy = pos.y;
+    const travel = p.tileIdx + smoothstep(p.hopT);
     if (p.waveform === 'sine') {
-      const off = Math.sin(ageTiles * Math.PI * 2) * 0.3;
+      const off = Math.sin(travel * Math.PI * 2) * 0.22;
       vx += -p.dirY * off;
       vy += p.dirX * off;
     }
@@ -935,7 +983,7 @@ export class Combat {
     const r = Math.max(2.5, tileZ * 0.1) * (0.8 + p.amplitude * 0.25);
 
     // Tail.
-    const tailTiles = Math.min(ageTiles, 0.45 + Math.min(3, (p.attackTicks + p.releaseTicks) / QUARTER_TICKS));
+    const tailTiles = Math.min(travel, 0.45 + Math.min(3, (p.attackTicks + p.releaseTicks) / QUARTER_TICKS));
     const tx2 = hx - p.dirX * tailTiles * tileZ;
     const ty2 = hy - p.dirY * tailTiles * tileZ;
     const grad = ctx.createLinearGradient(hx, hy, tx2, ty2);
@@ -986,7 +1034,7 @@ export class Combat {
       ctx.shadowColor = '#ff55aa';
       ctx.shadowBlur = 6 * z;
       for (let i = 0; i < 4; i++) {
-        const angle = (i * Math.PI / 2) + ageTiles * 1.8;
+        const angle = (i * Math.PI / 2) + travel * 1.8;
         ctx.beginPath();
         ctx.arc(hx, hy, rr, angle, angle + sweep);
         ctx.stroke();
