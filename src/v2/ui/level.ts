@@ -43,7 +43,7 @@ import { validateLevelAudioConfig } from '../data/level-audio-config';
 import { TutorialManager } from './tutorials';
 import { openShop } from './shop-ui';
 import { openSettings } from './settings-ui';
-import { BUILD_LABEL, createBugReportText, openCopyPanel, openHowToPlay, releaseVersionLine } from './release-info';
+import { BUILD_LABEL, createBugReportText, openCopyPanel, openHowToPlay, openTesterNotes, releaseVersionLine } from './release-info';
 import { createLevelFluidBackground } from './fluid-background';
 import { getWorldAesthetic, WorldAesthetic } from '../data/world-aesthetics';
 import { NotationColors } from './notation';
@@ -380,6 +380,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
   mkHudBtn('Grid', 'Focus camera on the playfield', focusGrid);
   mkHudBtn('↩ Map', 'Return to the world map', () => host.exitToMap());
   mkHudBtn('?', 'How to Play', () => openHowToPlay(app));
+  mkHudBtn('Notes', 'Tester notes and known issues', () => openTesterNotes(app));
   mkHudBtn('Report', 'Copy bug / feedback report', openReportUI);
   hudRight.append(hpEl, resEl, loopEl, btnRow);
 
@@ -1268,6 +1269,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
       runState,
       graph,
       placedOutputTowerCount: towers.size,
+      lastVisibleStateText: stateEl.textContent ?? undefined,
     }));
   }
 

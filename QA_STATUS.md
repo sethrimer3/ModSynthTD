@@ -6,13 +6,15 @@ Manual alpha checklist for the public-alpha content, balance, and game-feel pass
 
 - [x] `npm test` passes on this pass.
 - [x] `npm run build` passes on this pass.
-- [x] Main menu build label is incremented to `BUILD 005` for this code-changing pass.
+- [x] Main menu build label is incremented to `BUILD 007` for this code-changing pass.
 - [x] Development webpack compile passes after limiting ts-loader to bundled browser files; the stale test-type dev overlay was fixed.
 - [x] Electron desktop shell launched via `npm run desktop:no-build`; Electron processes started successfully in this environment.
 - [x] Headless balance simulator prints all campaign worlds and rack profiles.
 - [x] Late-game strong profile clears w40, w60, w80, w100, w120, w140, w160, and w180 in the simulator.
 - [x] w60 audio coverage is explicit: wave 1 has MIDI/OGG coverage, later waves fall back to authored score content with partial-coverage warnings.
 - [x] Static z-index regression fix is implemented: moved modules restore baseline module, plug, and content layers above decorative rack artwork.
+- [x] Tester Notes and Known Issues are available from the world map, Settings, and level HUD.
+- [x] Tester-facing launch/readme and smoke-test checklist are present in `TESTER_README.md` and `TESTER_SMOKE_TEST.md`.
 - [ ] Browser/manual fresh-save validation through w40 and w60 still needs to be run end-to-end on a stable browser session.
 
 ## Known Content Gaps
@@ -111,6 +113,23 @@ Manual alpha checklist for the public-alpha content, balance, and game-feel pass
 - [ ] Performance QA: dense w160/w180 waves with reduced motion off/on and wire opacity at 100%.
 - [x] Static performance fix: between-wave preview projectiles are capped so dense always-running preview cannot grow an unbounded visual projectile list.
 - [ ] Intentional alpha incompletes are visible in this file before external release.
+
+## Tester Distribution Smoke Test
+
+- [ ] Fresh save launch.
+- [ ] w40 entry.
+- [ ] OUT tower placement.
+- [ ] w40 wave 1 clear.
+- [ ] Reward received.
+- [ ] Shop opened.
+- [ ] Module bought.
+- [ ] Save/reload.
+- [ ] w60 entry.
+- [ ] w60 wave 1 audio/MIDI/notation check.
+- [ ] Settings opened.
+- [ ] Bug report copied.
+- [ ] Save exported.
+- [ ] Reset progress.
 
 ## Validation
 

@@ -144,8 +144,13 @@ non-destructively. Migrations are keyed by version.
 
 Private-alpha builds expose a small copy-only feedback helper in Settings and
 the level HUD. It reports version/build/schema, current world/wave/run state,
-rack/cable/output-tower counts, browser user agent, motion setting, and audio
-state without sending telemetry or requiring a backend.
+rack/cable/output-tower counts, audio unlock state, synth state, reduced
+motion, browser user agent, approximate viewport size, and the last visible
+state text without sending telemetry or requiring a backend.
+
+Tester Notes are reachable from the world map, Settings, and the level HUD.
+They are opt-in rather than a recurring modal, and include private-alpha
+warnings, first-test focus, audio caveats, and known issues.
 
 ---
 

@@ -22,6 +22,7 @@ kept only for history.
 
 ### Done
 - [x] Private-alpha release-candidate pass: visible version/schema labels, copy-only bug report helper, compact How to Play access, normal-mode dev button hiding, save hardening tests, and private-alpha release checklist.
+- [x] Tester-distribution and feedback-loop pass: tester launch README, smoke-test checklist, opt-in Tester Notes/Known Issues, richer copy-only bug report context, and build label update.
 - [x] First-playable UX/onboarding pass: contextual starter prompts, actionable invalid-patch messages, clearer patch analysis, richer note hover stats, tower placement ghost feedback, combat readability polish, and alpha QA checklist.
 - [x] Public-alpha readiness polish pass: dev-build overlay fix, first-wave clarity, mobile overlay wrapping, preview projectile cap, desktop shell launch check, and QA status update.
 - [x] Fix alpha regressions: moved rack modules keep stable layers above decorative art, and rack/output preview keeps running between waves without combat damage.
@@ -53,6 +54,7 @@ kept only for history.
 
 ### Deferred / follow-up
 - [ ] Manually run the full `QA_STATUS.md` alpha flow on desktop and a real mobile portrait device before external alpha.
+- [ ] Manually run the `TESTER_SMOKE_TEST.md` checklist against a shared tester build before sending to outside testers.
 - [ ] Manually verify the tuned simulator curve against fresh-save w40/w60 play before external alpha.
 - [ ] Finish per-output tower UI/runtime: direct slot-to-board dragging, unique shapes/colors, per-output controls, and independent Combat firing/rendering from `eventsByOutput`.
 - [ ] Require every contributing output to have a placed tower before wave start and surface missing-output placement warnings.

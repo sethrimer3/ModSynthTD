@@ -14,7 +14,7 @@ import { CURRENCY_SYMBOL } from '../state/economy';
 import { getModuleType, MODULE_TYPES } from '../core/modules';
 import { openSettings } from './settings-ui';
 import { getAudioEngine } from './audio-engine';
-import { BUILD_LABEL, openHowToPlay, releaseVersionLine } from './release-info';
+import { BUILD_LABEL, openHowToPlay, openTesterNotes, releaseVersionLine } from './release-info';
 
 const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
 
@@ -83,12 +83,16 @@ export function showWorldMap(app: HTMLElement, opts: WorldMapOpts): void {
   helpBtn.textContent = 'How to Play';
   helpBtn.style.cssText = `${FF}font-size:0.66rem;font-weight:700;background:rgba(8,15,28,0.85);border:1px solid #2a3d65;color:#88aacc;border-radius:6px;padding:5px 12px;cursor:pointer;`;
   helpBtn.addEventListener('click', () => openHowToPlay(app));
+  const testerBtn = document.createElement('button');
+  testerBtn.textContent = 'Tester Notes';
+  testerBtn.style.cssText = `${FF}font-size:0.66rem;font-weight:700;background:rgba(8,15,28,0.85);border:1px solid #4a3d75;color:#bbaaff;border-radius:6px;padding:5px 12px;cursor:pointer;`;
+  testerBtn.addEventListener('click', () => openTesterNotes(app));
   const devBtn = document.createElement('button');
   devBtn.textContent = 'DEV';
   devBtn.title = 'Dev mode: unlock everything + infinite money';
   devBtn.style.cssText = `${FF}font-size:0.56rem;font-weight:700;background:rgba(8,15,28,0.85);border:1px solid #2a2a1a;color:#665500;border-radius:6px;padding:5px 10px;cursor:pointer;letter-spacing:0.08em;`;
   devBtn.addEventListener('click', () => openDevModal(app, save, opts));
-  topBar.append(currency, helpBtn, settingsBtn);
+  topBar.append(currency, helpBtn, testerBtn, settingsBtn);
   const devMode = typeof location !== 'undefined' && new URLSearchParams(location.search).has('dev');
   if (devMode) topBar.appendChild(devBtn);
   root.appendChild(topBar);

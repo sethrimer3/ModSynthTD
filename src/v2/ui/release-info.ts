@@ -6,7 +6,7 @@ declare const __APP_VERSION__: string | undefined;
 declare const __BUILD_DATE__: string | undefined;
 
 export const PRIVATE_ALPHA_LABEL = 'private alpha';
-export const BUILD_LABEL = 'BUILD 006';
+export const BUILD_LABEL = 'BUILD 007';
 
 export function appVersion(): string {
   return typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.1.0';
@@ -27,6 +27,7 @@ export interface BugReportContext {
   runState?: string;
   graph?: RackGraph;
   placedOutputTowerCount?: number;
+  lastVisibleStateText?: string;
 }
 
 export function createBugReportText(ctx: BugReportContext): string {
@@ -37,6 +38,8 @@ export function createBugReportText(ctx: BugReportContext): string {
   const outputModules = graph.modules.filter(module => module.typeId === 'output');
   const synthEnabledCount = outputModules.filter(module => module.settings['synthOn'] === true).length;
   const audio = getAudioEngine();
+  const viewportWidth = typeof window !== 'undefined' ? Math.round(window.innerWidth) : 'n/a';
+  const viewportHeight = typeof window !== 'undefined' ? Math.round(window.innerHeight) : 'n/a';
   return [
     'ModSynth TD bug / feedback report',
     `version: ${appVersion()}`,
@@ -50,10 +53,13 @@ export function createBugReportText(ctx: BugReportContext): string {
     `rackModuleCount: ${graph.modules.length}`,
     `cableCount: ${graph.cables.length}`,
     `placedOutputTowerCount: ${outputTowerCount}`,
-    `browserUserAgent: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'n/a'}`,
-    `reducedMotion: ${ctx.save.settings.reducedMotion}`,
     `audioUnlocked: ${audio.unlocked}`,
+    `synthEnabled: ${synthEnabledCount > 0}`,
     `synthEnabledOutputCount: ${synthEnabledCount}`,
+    `reducedMotion: ${ctx.save.settings.reducedMotion}`,
+    `browserUserAgent: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'n/a'}`,
+    `viewportSizeApprox: ${viewportWidth}x${viewportHeight}`,
+    `lastVisibleStateText: ${ctx.lastVisibleStateText ?? 'n/a'}`,
     '',
     'What happened:',
     '',
@@ -109,14 +115,42 @@ export function openCopyPanel(parent: HTMLElement, title: string, text: string):
 
 export function openHowToPlay(parent: HTMLElement): void {
   openCopyPanel(parent, 'HOW TO PLAY', [
+    'Start on w40 First Signal.',
+    'Drag, scroll, or pinch to pan/zoom between rack and battlefield.',
     'CLOCK creates rhythm.',
     'OSC creates pitch and voice.',
     'OUT owns an emitter tower.',
     'Drag the OUT tower onto the battlefield.',
-    'Patch cables left-to-right.',
+    'Patch and verify CLOCK -> OSC -> OUT.',
+    'Press START WAVE when Patch Analysis is valid.',
     'Exact Hz hits are strongest.',
+    'Near hits still help; resisted hits are weak.',
     'Clear waves to earn Resonance.',
-    'Buy modules in the shop.',
+    'Open Shop to buy or inspect a module.',
     'The rack keeps running between waves.',
+  ].join('\n'));
+}
+
+export function openTesterNotes(parent: HTMLElement): void {
+  openCopyPanel(parent, 'TESTER NOTES', [
+    'PRIVATE ALPHA',
+    'This build is for tester feedback. Progress may reset between versions.',
+    '',
+    'Tester focus:',
+    '- w40 and w60 are the main intended test worlds right now.',
+    '- Fresh save path: enter w40, place the OUT tower, verify CLOCK -> OSC -> OUT, start wave 1, earn Resonance, then open Shop.',
+    '- Use Report Bug / Feedback when something breaks.',
+    '',
+    'Audio notes:',
+    '- Audio may require a click or tap before it unlocks.',
+    '- Only some levels have full audio/MIDI assets.',
+    '',
+    'Known issues:',
+    '- Audio coverage is incomplete.',
+    '- Mobile layout is still being tested.',
+    '- Some visual polish is unfinished.',
+    '- Advanced worlds may be underbalanced or overbalanced.',
+    '- Browser autoplay restrictions can keep audio silent until interaction.',
+    '- Save migration should work but needs testing.',
   ].join('\n'));
 }

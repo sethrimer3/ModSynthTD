@@ -312,10 +312,11 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 
 ## 27. Alpha Stabilization QA
 
-- [ ] Main menu shows `BUILD 006 · PRIVATE ALPHA` in bright golden text at the top-left
+- [ ] Main menu shows `BUILD 007 · PRIVATE ALPHA` in bright golden text at the top-left
 - [ ] Settings and the level HUD expose version/build date, save schema version, and private-alpha labeling
 - [ ] `How to Play` is reachable from the world map and level HUD and stays compact
 - [ ] `Report Bug / Feedback` opens a copyable report with version, world, wave, run state, rack, cable, tower, browser, motion, audio, synth, and save-schema fields
+- [ ] Tester Notes are reachable from the world map, Settings, and level HUD, and include private-alpha warnings plus Known Issues
 - [ ] Normal mode does not show the DEV button; `?dev` shows it intentionally
 - [ ] Run `npm test` and confirm the balance simulator prints all rack profiles plus the detailed w60 sample
 - [ ] Run `npm run build` and confirm production build succeeds

@@ -1,5 +1,16 @@
 # Implementation Decisions
 
+## D-042: Tester Distribution Uses Opt-In Local Support Surfaces
+
+**Decision**: The tester-distribution pass adds `TESTER_README.md`,
+`TESTER_SMOKE_TEST.md`, opt-in Tester Notes, visible Known Issues, and a richer
+copy-only bug report. It does not add telemetry, a backend, new gameplay
+systems, new worlds, modules, or currencies.
+
+**Reason**: Outside testers need a practical launch path, alpha caveats, and
+actionable report context. Keeping all support local preserves privacy and keeps
+the release-candidate gameplay surface stable.
+
 ## D-041: Private-Alpha Release Helpers Are Local And Copy-Only
 
 **Decision**: Private-alpha version labels, How to Play, and bug/feedback report

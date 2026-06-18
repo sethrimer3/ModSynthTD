@@ -5,7 +5,7 @@
 
 import { SaveData, RackPosition, exportSave, importSave, persistSave, resetSave, SaveStorage } from '../state/save';
 import { getAudioEngine } from './audio-engine';
-import { createBugReportText, openCopyPanel, releaseVersionLine } from './release-info';
+import { createBugReportText, openCopyPanel, openTesterNotes, releaseVersionLine } from './release-info';
 
 const FF = `font-family:'Pixelify Sans','Trebuchet MS',system-ui,sans-serif;`;
 
@@ -232,6 +232,10 @@ export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
 
   toolBtn('REPORT BUG / FEEDBACK', '#ffcc44', () => {
     openCopyPanel(parent.ownerDocument.getElementById('app') ?? parent, 'BUG / FEEDBACK REPORT', createBugReportText({ save: opts.save }));
+  });
+
+  toolBtn('TESTER NOTES', '#aa88ff', () => {
+    openTesterNotes(parent.ownerDocument.getElementById('app') ?? parent);
   });
 
   toolBtn('IMPORT SAVE', '#44aaff', () => {
