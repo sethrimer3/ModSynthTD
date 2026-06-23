@@ -19,6 +19,7 @@ content-extension guide.
 |---|---|
 | Language | TypeScript (strict) |
 | Build | Webpack 5 (`npm run build`) |
+| Web deployment | GitHub Pages workflow builds and uploads `dist/` on pushes to `main` |
 | Tests | `tsc` + node harness (`npm test`) |
 | Desktop shell | Electron |
 | Rendering | HTML5 Canvas 2D (battlefield) + DOM/SVG (rack, cables) |

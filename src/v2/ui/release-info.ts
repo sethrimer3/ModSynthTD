@@ -6,7 +6,7 @@ declare const __APP_VERSION__: string | undefined;
 declare const __BUILD_DATE__: string | undefined;
 
 export const PRIVATE_ALPHA_LABEL = 'private alpha';
-export const BUILD_LABEL = 'BUILD 007';
+export const BUILD_LABEL = 'BUILD 008';
 
 export function appVersion(): string {
   return typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.1.0';
