@@ -1,5 +1,18 @@
 # Implementation Decisions
 
+## D-043: Webpack Performance Budget Matches The Current Alpha App
+
+**Decision**: The production Webpack build keeps performance hints enabled, but
+uses a 350 KiB asset and entrypoint budget instead of Webpack's default 244 KiB
+budget.
+
+**Reason**: The current alpha ships one canvas/DOM game bundle with authored
+campaign data, procedural UI, combat, audio scheduling, save handling, and local
+tester support surfaces. The default Webpack threshold is too low for this
+single-entry game build and created a permanent warning even when tests and type
+checks passed. A 350 KiB budget keeps future growth visible without hiding the
+bundle-size signal.
+
 ## D-042: Tester Distribution Uses Opt-In Local Support Surfaces
 
 **Decision**: The tester-distribution pass adds `TESTER_README.md`,

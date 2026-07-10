@@ -45,6 +45,10 @@ module.exports = {
       }
     ]
   },
+  performance: {
+    maxAssetSize: 350 * 1024,
+    maxEntrypointSize: 350 * 1024
+  },
   plugins: [
     new webpack.DefinePlugin({
       __APP_VERSION__: JSON.stringify(packageJson.version),
