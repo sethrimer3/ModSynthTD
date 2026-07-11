@@ -272,6 +272,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 - [ ] Module nameplate/body clearly communicates dragging and snaps to a valid shelf slot
 - [ ] Dragging a module nameplate/body moves the module instead of panning the scene
 - [ ] `Rack` focuses the camera on the full rack and `Grid` focuses it on the playfield
+- [ ] Dragging empty space outside the playing field pans the shared camera
 - [ ] Mouse-wheel zoom is fine-grained at the default 100% sensitivity
 - [ ] Zoom sensitivity persists and noticeably ranges from 50% to 200%
 - [ ] Module controls and ports do not accidentally move the module or pan the camera

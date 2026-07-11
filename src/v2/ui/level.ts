@@ -186,7 +186,7 @@ export function enterLevel(app: HTMLElement, worldId: string, host: LevelHost): 
 
   // Rack scene layer (CSS-transformed with the same camera).
   const rackLayer = document.createElement('div');
-  rackLayer.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;transform-origin:0 0;pointer-events:none;';
+  rackLayer.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;transform-origin:0 0;pointer-events:auto;';
   viewport.appendChild(rackLayer);
 
   const notationWorld = document.createElement('div');
