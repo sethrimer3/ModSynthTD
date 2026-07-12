@@ -314,7 +314,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 
 ## 27. Alpha Stabilization QA
 
-- [ ] Main menu shows `BUILD 007 · PRIVATE ALPHA` in bright golden text at the top-left
+- [ ] Main menu shows `BUILD 010 · PRIVATE ALPHA` in bright golden text at the top-left
 - [ ] Settings and the level HUD expose version/build date, save schema version, and private-alpha labeling
 - [ ] `How to Play` is reachable from the world map and level HUD and stays compact
 - [ ] `Report Bug / Feedback` opens a copyable report with version, world, wave, run state, rack, cable, tower, browser, motion, audio, synth, and save-schema fields
@@ -331,6 +331,7 @@ Use this checklist when doing a full playtest pass before shipping a build. Chec
 ## 29. Private-Alpha Smoke Path
 
 - [ ] Fresh save starts on the world map with w40 clearly available
+- [ ] Enter w40 and confirm its enemy lane forms a clockwise inward square spiral from the upper-left edge toward the center
 - [ ] Enter w40 and verify the rack and battlefield pan/zoom as one scene
 - [ ] Drag the OUT tower from the OUT module onto an open battlefield tile
 - [ ] Start and clear w40 wave 1

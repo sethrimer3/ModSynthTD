@@ -101,6 +101,16 @@ test('tracks are genuinely distinct between worlds', () => {
   assertEq(new Set(signatures).size, signatures.length, 'no two worlds share identical track geometry');
 });
 
+test('w40 follows the authored inward spiral tutorial path', () => {
+  const world = getWorld('w40')!;
+  const lane = world.lanes[0];
+  assertEq(lane[0], [0, 2], 'spiral enters from the upper-left edge');
+  assertEq(lane[lane.length - 1], [10, 6], 'spiral terminates near the center');
+  for (const corner of [[14, 2], [14, 10], [2, 10], [2, 4], [12, 4], [12, 8], [4, 8], [4, 6]] as const) {
+    assert(lane.some(([x, y]) => x === corner[0] && y === corner[1]), `spiral includes corner (${corner[0]},${corner[1]})`);
+  }
+});
+
 test('tower start tile is on the grid and off the track', () => {
   for (const w of WORLDS) {
     const [tx, ty] = w.towerStart;
