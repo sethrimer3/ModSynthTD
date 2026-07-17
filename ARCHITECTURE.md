@@ -153,6 +153,10 @@ Tester Notes are reachable from the world map, Settings, and the level HUD.
 They are opt-in rather than a recurring modal, and include private-alpha
 warnings, first-test focus, audio caveats, and known issues.
 
+The shared Settings overlay also exposes a visually prominent external Discord
+invite. Because both the world map and level HUD open this overlay, the same
+community entry point is available from either context.
+
 ---
 
 ## 7. Audio safety

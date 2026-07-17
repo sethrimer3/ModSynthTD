@@ -1,6 +1,6 @@
 /**
- * settings-ui.ts — Settings overlay: audio mixer, rack position, reduced motion,
- * save export/import/reset.
+ * settings-ui.ts — Settings overlay: community link, audio mixer, rack position,
+ * reduced motion, save export/import/reset.
  */
 
 import { SaveData, RackPosition, exportSave, importSave, persistSave, resetSave, SaveStorage } from '../state/save';
@@ -41,6 +41,18 @@ export function openSettings(parent: HTMLElement, opts: SettingsUIOpts): void {
   version.textContent = releaseVersionLine();
   version.style.cssText = 'font-size:0.56rem;color:#88aacc;line-height:1.35;';
   panel.appendChild(version);
+
+  const discordLink = document.createElement('a');
+  discordLink.href = 'https://discord.gg/dSwR3Fj7du';
+  discordLink.target = '_blank';
+  discordLink.rel = 'noopener noreferrer';
+  discordLink.textContent = 'JOIN THE MODSYNTH TD DISCORD';
+  discordLink.setAttribute('aria-label', 'Join the ModSynth TD Discord server');
+  discordLink.style.cssText = `${FF}display:block;padding:12px 14px;text-align:center;text-decoration:none;
+    font-size:0.78rem;font-weight:900;letter-spacing:0.08em;color:#fff;background:#5865f2;
+    border:2px solid #aeb5ff;border-radius:9px;box-shadow:0 0 16px rgba(88,101,242,0.72);
+    cursor:pointer;`;
+  panel.appendChild(discordLink);
 
   const row = (label: string, control: HTMLElement) => {
     const r = document.createElement('div');

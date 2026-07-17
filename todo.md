@@ -21,6 +21,7 @@ The factory-defense items below are **legacy** (superseded by the campaign) and
 kept only for history.
 
 ### Done
+- [x] Add a prominent Discord community button to Settings that opens the official server invite.
 - [x] Private-alpha release-candidate pass: visible version/schema labels, copy-only bug report helper, compact How to Play access, normal-mode dev button hiding, save hardening tests, and private-alpha release checklist.
 - [x] Tester-distribution and feedback-loop pass: tester launch README, smoke-test checklist, opt-in Tester Notes/Known Issues, richer copy-only bug report context, and build label update.
 - [x] First-playable UX/onboarding pass: contextual starter prompts, actionable invalid-patch messages, clearer patch analysis, richer note hover stats, tower placement ghost feedback, combat readability polish, and alpha QA checklist.
